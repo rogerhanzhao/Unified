@@ -248,6 +248,96 @@ def load_data(path: str):
 
     return defaults, df_blocks, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve
 
+def validate_excel_health(
+    defaults: dict,
+    df_blocks: pd.DataFrame,
+    df_soh_profile: pd.DataFrame,
+    df_soh_curve: pd.DataFrame,
+    df_rte_profile: pd.DataFrame,
+    df_rte_curve: pd.DataFrame,
+) -> tuple[list[str], list[str]]:
+    """Validate presence and basic numeric ranges for required Excel tables."""
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    def _require_columns(df: pd.DataFrame, name: str, cols: list[str]):
+        missing = [c for c in cols if c not in df.columns]
+        if missing:
+            errors.append(f"'{name}' 缺少列: {', '.join(missing)}")
+        return missing
+
+    # dc_block_template_314_data
+    if df_blocks is None or df_blocks.empty:
+        errors.append("表 'dc_block_template_314_data' 为空或不存在，无法生成 DC Block 配置。")
+    else:
+        missing = _require_columns(
+            df_blocks,
+            "dc_block_template_314_data",
+            ["Block_Form", "Block_Nameplate_Capacity_Mwh", "Is_Active", "Is_Default_Option", "Dc_Block_Code", "Dc_Block_Name"],
+        )
+        if not missing:
+            active_cont = df_blocks[(df_blocks["Block_Form"].str.lower() == "container") & (df_blocks["Is_Active"] == 1)]
+            active_cab = df_blocks[(df_blocks["Block_Form"].str.lower() == "cabinet") & (df_blocks["Is_Active"] == 1)]
+            if active_cont.empty:
+                errors.append("表 'dc_block_template_314_data' 未找到启用的 container。")
+            else:
+                caps = active_cont["Block_Nameplate_Capacity_Mwh"].dropna().astype(float)
+                if not caps.empty and ((caps <= 0).any() or caps.max() > 10):
+                    warnings.append("Container 额定容量应在 (0, 10] MWh，Excel 中存在超出范围值。")
+            if active_cab.empty:
+                warnings.append("表 'dc_block_template_314_data' 未启用任何 cabinet，Hybrid/柜体模式将不可用。")
+            else:
+                caps = active_cab["Block_Nameplate_Capacity_Mwh"].dropna().astype(float)
+                if not caps.empty and ((caps <= 0).any() or caps.max() > 1):
+                    warnings.append("418kWh 柜体额定容量应在 (0, 1] MWh，Excel 中存在超出范围值。")
+
+    # SOH / RTE profile + curve
+    if df_soh_profile is None or df_soh_profile.empty:
+        errors.append("表 'soh_profile_314_data' 为空或不存在。")
+    else:
+        missing = _require_columns(df_soh_profile, "soh_profile_314_data", ["Profile_Id", "C_Rate", "Cycles_Per_Year"])
+        if not missing:
+            c_rates = df_soh_profile["C_Rate"].dropna().astype(float)
+            if not c_rates.empty and ((c_rates <= 0).any() or c_rates.max() > 5):
+                warnings.append("SOH Profile 的 C-Rate 建议在 (0, 5]，发现异常值。")
+            cycles = df_soh_profile["Cycles_Per_Year"].dropna().astype(float)
+            if not cycles.empty and (cycles <= 0).any():
+                warnings.append("SOH Profile 的 Cycles/Year 应为正数，发现 ≤0 的值。")
+
+    if df_soh_curve is None or df_soh_curve.empty:
+        errors.append("表 'soh_curve_314_template' 为空或不存在。")
+    else:
+        missing = _require_columns(df_soh_curve, "soh_curve_314_template", ["Profile_Id", "Life_Year_Index", "Soh_Dc_Pct"])
+        if not missing:
+            soh_vals = df_soh_curve["Soh_Dc_Pct"].dropna().astype(float)
+            if not soh_vals.empty and (soh_vals.max() > 1.2 or soh_vals.min() <= 0):
+                warnings.append("SOH 曲线值应为 (0, 1.2] 的比例，发现异常值。")
+
+    if df_rte_profile is None or df_rte_profile.empty:
+        errors.append("表 'rte_profile_314_data' 为空或不存在。")
+    else:
+        missing = _require_columns(df_rte_profile, "rte_profile_314_data", ["Profile_Id", "C_Rate"])
+        if not missing:
+            c_rates = df_rte_profile["C_Rate"].dropna().astype(float)
+            if not c_rates.empty and ((c_rates <= 0).any() or c_rates.max() > 5):
+                warnings.append("RTE Profile 的 C-Rate 建议在 (0, 5]，发现异常值。")
+
+    if df_rte_curve is None or df_rte_curve.empty:
+        errors.append("表 'rte_curve_314_template' 为空或不存在。")
+    else:
+        missing = _require_columns(df_rte_curve, "rte_curve_314_template", ["Profile_Id", "Soh_Band_Min_Pct", "Rte_Dc_Pct"])
+        if not missing:
+            rte_vals = df_rte_curve["Rte_Dc_Pct"].dropna().astype(float)
+            if not rte_vals.empty and (rte_vals.max() > 1.2 or rte_vals.min() <= 0):
+                warnings.append("RTE 曲线值应为 (0, 1.2] 的比例，发现异常值。")
+
+    required_default_keys = ["poi_power_req_mw", "poi_energy_req_mwh"]
+    missing_defaults = [k for k in required_default_keys if k not in defaults]
+    if missing_defaults:
+        warnings.append(f"默认值缺少字段: {', '.join(missing_defaults)}，表单将回退到预设值。")
+
+    return errors, warnings
+
 # ==========================================
 # 4. CORE CALC LOGIC
 # ==========================================
@@ -923,6 +1013,9 @@ def build_report_bytes(stage1: dict, results_dict: dict, report_order: list):
 # 6. LOAD DATA
 # ==========================================
 defaults, df_blocks, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve = load_data(DATA_FILE)
+excel_errors, excel_warnings = validate_excel_health(
+    defaults, df_blocks, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve
+)
 
 def get_default_numeric(field_name: str, fallback: float):
     raw = defaults.get(field_name, fallback)
@@ -957,6 +1050,21 @@ st.markdown("<br/>", unsafe_allow_html=True)
 # ==========================================
 # 8. MAIN FORM
 # ==========================================
+with st.container():
+    st.markdown("<div class='calb-card'>", unsafe_allow_html=True)
+    st.subheader("数据源健康检查")
+    if excel_errors:
+        st.error("必需 Excel 表校验失败：")
+        for msg in excel_errors:
+            st.markdown(f"- {msg}")
+    else:
+        st.success("所有必需 Excel 表已检测到，字段完整。")
+    for msg in excel_warnings:
+        st.warning(msg)
+    st.markdown("</div>", unsafe_allow_html=True)
+    if excel_errors:
+        st.stop()
+
 with st.container():
     st.markdown("<div class='calb-card'>", unsafe_allow_html=True)
     st.subheader("1 · Project Inputs")
@@ -1116,6 +1224,7 @@ with st.container():
 # 9. RUN CALC & DISPLAY
 # ==========================================
 if run_btn:
+    st.session_state.pop("stage4_adjustment_hint", None)
     # persist for stage4
     st.session_state["poi_nominal_voltage_kv"] = float(poi_nominal_voltage_kv)
 
@@ -1193,6 +1302,22 @@ if run_btn:
 
     st.markdown("<div class='calb-card'>", unsafe_allow_html=True)
     st.subheader("4 · Stage 2 & 3 – DC Block Configurations (Compare)")
+
+    error_map = {
+        "hybrid": "Hybrid",
+        "cabinet_only": "Cabinet Only",
+        "container_only": "Container Only",
+    }
+    stage3_errors = {
+        key: res[1]
+        for key, res in results.items()
+        if isinstance(res, tuple) and len(res) > 1 and res[0] == "ERROR"
+    }
+    if stage3_errors:
+        st.error("Stage 3 校验/计算失败，请调整配置后重试：")
+        for key, msg in stage3_errors.items():
+            st.markdown(f"- **{error_map.get(key, key)}**：{msg}")
+        st.info("提示：检查 Excel 模板是否包含有效的容器/柜体条目，或在项目输入中调整能量需求以改变容器/柜体数量。")
 
     show_key = first_success_key(results, ["hybrid", "cabinet_only", "container_only"])
     if show_key:
@@ -1514,6 +1639,19 @@ if run_btn:
             file_name = make_report_filename(s1.get("project_name", "CALB_ESS_Project"))
 
     # [STAGE4 V0.1] 两列：导出 + 进入 Stage4
+    stage4_hint = st.session_state.get("stage4_adjustment_hint")
+    if stage4_hint:
+        st.warning("上次 Stage 4 未找到合规 AC Block，请根据建议回调 Stage 1–3 输入：")
+        if isinstance(stage4_hint, dict):
+            reason = stage4_hint.get("reason")
+            if reason:
+                st.markdown(f"- 原因：{reason}")
+            suggestions = stage4_hint.get("suggestions") or []
+            for s in suggestions:
+                st.markdown(f"- 建议：{s}")
+        else:
+            st.markdown(f"- {stage4_hint}")
+
     col_export, col_stage4 = st.columns([1, 1])
 
     with col_export:

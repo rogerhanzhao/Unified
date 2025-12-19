@@ -129,6 +129,57 @@ def find_ac_block_mixed(
                 }
     return best
 
+def suggest_dc_adjustments_for_ac_block(
+    poi_mw: float,
+    container_cnt: int,
+    cabinet_cnt: int,
+    *,
+    search_extra: int = 40,
+    max_delta: int = 4,
+) -> list[str]:
+    """Return human-readable suggestions for DC adjustments when no AC block fits."""
+    suggestions: list[str] = []
+    seen: set[tuple[int, int]] = set()
+
+    def _try_match(cont: int, cab: int):
+        res_container = find_ac_block_container_only(
+            poi_mw=poi_mw, container_cnt=cont, search_extra=search_extra
+        )
+        if res_container:
+            return "container_only", res_container
+        res_mixed = find_ac_block_mixed(
+            poi_mw=poi_mw, container_cnt=cont, cabinet_cnt=cab, search_extra=search_extra
+        )
+        if res_mixed:
+            return "mixed", res_mixed
+        return None, None
+
+    for dc_delta in range(-max_delta, max_delta + 1):
+        for cab_delta in range(-max_delta, max_delta + 1):
+            new_cont = max(container_cnt + dc_delta, 0)
+            new_cab = max(cabinet_cnt + cab_delta, 0)
+            if new_cont == container_cnt and new_cab == cabinet_cnt:
+                continue
+            if new_cont + new_cab == 0:
+                continue
+            if (new_cont, new_cab) in seen:
+                continue
+            seen.add((new_cont, new_cab))
+            mode, res = _try_match(new_cont, new_cab)
+            if res:
+                mode_label = "容器优先" if mode == "container_only" else "容器+柜体混合"
+                suggestions.append(
+                    f"调整为集装箱 {new_cont} / 柜体 {new_cab}（{mode_label}，AC Block 方案：{res['ac_block_qty']} × {res['ac_block_rated_mw']:.2f} MW）"
+                )
+            if len(suggestions) >= 3:
+                break
+        if len(suggestions) >= 3:
+            break
+
+    if not suggestions:
+        suggestions.append("增加或减少 1–2 个集装箱/柜体以避免每个 AC Block 对应 3 个 DC Block。")
+    return suggestions
+
 
 # -----------------------------------------------------
 # Main UI
@@ -171,13 +222,21 @@ with tab1:
         min_value=0, value=40, step=5
     )
 
+    stage4_alert_box = st.empty()
+
     if st.button("Run Step 1 · AC Block Sizing"):
+        st.session_state.pop("stage4_adjustment_hint", None)
+        stage4_alert_box.empty()
+
         # Try container-only
         best_container = find_ac_block_container_only(
             poi_mw=float(poi_mw),
             container_cnt=int(container_cnt),
             search_extra=int(search_extra),
         )
+        stage4_top_level = None
+        stage4_suggestions = []
+
         if best_container:
             st.success("Container-only DC Blocks matched AC Block configuration.")
             st.session_state["stage4_step1_result"] = best_container
@@ -190,13 +249,44 @@ with tab1:
                 search_extra=int(search_extra),
             )
             if best_mixed:
-                st.warning("Container-only did not satisfy rules, using mixed DC Blocks for AC Block matching.")
+                stage4_top_level = "warning"
                 st.session_state["stage4_step1_result"] = best_mixed
-            else:
-                st.error(
-                    "Neither container-only nor mixed DC Blocks can satisfy AC Block rules. "
-                    "Please revise DC configuration in Stage 1–3 (e.g., adjust container/cabinet counts)."
+                stage4_suggestions = suggest_dc_adjustments_for_ac_block(
+                    poi_mw=float(poi_mw),
+                    container_cnt=int(container_cnt),
+                    cabinet_cnt=int(cabinet_cnt),
+                    search_extra=int(search_extra),
                 )
+            else:
+                stage4_top_level = "error"
+                stage4_suggestions = suggest_dc_adjustments_for_ac_block(
+                    poi_mw=float(poi_mw),
+                    container_cnt=int(container_cnt),
+                    cabinet_cnt=int(cabinet_cnt),
+                    search_extra=int(search_extra),
+                )
+                st.session_state.pop("stage4_step1_result", None)
+                st.session_state["stage4_adjustment_hint"] = {
+                    "reason": "当前 DC 配置无法找到合规的 AC Block。",
+                    "suggestions": stage4_suggestions,
+                }
+
+        if stage4_top_level == "warning":
+            stage4_alert_box.warning(
+                "容器优先方案不满足设计规则，已尝试混合方案。可调整 DC 配置后重跑 Stage 4。"
+            )
+            if stage4_suggestions:
+                for s in stage4_suggestions:
+                    stage4_alert_box.markdown(f"- 建议：{s}")
+        elif stage4_top_level == "error":
+            stage4_alert_box.error(
+                "未找到满足规则的 AC Block 配置，请调整 Stage 1–3 中的容器/柜体数量后重试。"
+            )
+            if stage4_suggestions:
+                for s in stage4_suggestions:
+                    stage4_alert_box.markdown(f"- 建议：{s}")
+        else:
+            stage4_alert_box.empty()
 
     res = st.session_state.get("stage4_step1_result")
     if res:
