@@ -47,6 +47,13 @@ def _require_fraction(name: str, value: object) -> float:
     return numeric_value
 
 
+def _require_positive_fraction(name: str, value: object) -> float:
+    numeric_value = _require_fraction(name, value)
+    if numeric_value == 0:
+        raise DispatchValidationError(f"{name} must be greater than 0.")
+    return numeric_value
+
+
 def _require_profile(profile: object, *, expected_steps: int | None) -> Iterable[float]:
     if isinstance(profile, (str, bytes)):
         raise DispatchValidationError("profile must be an iterable of numeric values, not a string.")
@@ -85,9 +92,10 @@ def simulate_dispatch(dc_dict, ac_dict, profile, params):
         params: Mapping of simulation parameters. Required keys:
             - ``timestep_hours`` (float): Duration of each profile step in hours.
           Optional keys:
-            - ``roundtrip_efficiency`` (float): 0–1, defaults to 1.0.
+            - ``roundtrip_efficiency`` (float): >0–1, defaults to 1.0.
             - ``charge_efficiency`` / ``discharge_efficiency`` (float):
-              Overrides derived efficiencies if provided.
+              Overrides derived efficiencies if provided. Each efficiency must
+              be greater than 0 and no more than 1.
             - ``expected_steps`` (int): If provided, the profile length must match.
 
     Returns:
@@ -123,12 +131,12 @@ def simulate_dispatch(dc_dict, ac_dict, profile, params):
     profile = _require_profile(profile, expected_steps=expected_steps)
 
     roundtrip_efficiency = params.get("roundtrip_efficiency", 1.0)
-    rte = _require_fraction("params['roundtrip_efficiency']", roundtrip_efficiency)
+    rte = _require_positive_fraction("params['roundtrip_efficiency']", roundtrip_efficiency)
     charge_eff = params.get("charge_efficiency", math.sqrt(rte))
     discharge_eff = params.get("discharge_efficiency", math.sqrt(rte))
 
-    charge_eff = _require_fraction("charge_efficiency", charge_eff)
-    discharge_eff = _require_fraction("discharge_efficiency", discharge_eff)
+    charge_eff = _require_positive_fraction("charge_efficiency", charge_eff)
+    discharge_eff = _require_positive_fraction("discharge_efficiency", discharge_eff)
 
     energy_mwh = capacity_mwh * initial_soc
 
@@ -170,4 +178,3 @@ def simulate_dispatch(dc_dict, ac_dict, profile, params):
         )
 
     return pd.DataFrame(rows)
-
