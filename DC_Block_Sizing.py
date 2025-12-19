@@ -1,6 +1,7 @@
 # app.py
 from stage4_interface import pack_stage13_output
 
+from pathlib import Path
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -137,25 +138,61 @@ st.markdown(
 )
 
 # ==========================================
-# 1. DATA FILE PATH (N1 ADAPTED)
+# 1. DATA FILE PATHS
 # ==========================================
-DEFAULT_FILENAME = "ess_sizing_data_dictionary_v13_dc_autofit.xlsx"
-DATA_FILE = None
+PROJECT_ROOT = Path(__file__).resolve().parent
+DATA_DIR = PROJECT_ROOT / "data" if (PROJECT_ROOT / "data").is_dir() else PROJECT_ROOT
+ESS_DATA_FILENAME = "ess_sizing_data_dictionary_v13_dc_autofit.xlsx"
+AC_DATA_FILENAME = "AC_Block_Data_Dictionary_v1_1.xlsx"
 
-if os.path.exists(DEFAULT_FILENAME):
-    DATA_FILE = DEFAULT_FILENAME
-elif os.path.exists("data_path.txt"):
-    try:
-        with open("data_path.txt", "r") as f:
-            candidate = f.read().strip()
-            if os.path.exists(candidate):
-                DATA_FILE = candidate
-    except Exception:
-        pass
+def resolve_data_file(filename: str) -> Path | None:
+    candidates = [
+        DATA_DIR / filename,
+        PROJECT_ROOT / filename,
+        Path.cwd() / filename,
+    ]
 
-if not DATA_FILE:
-    st.error(f"❌ Data file '{DEFAULT_FILENAME}' not found in current directory. Please put the Excel in the same folder as app.py.")
+    data_path_txt = PROJECT_ROOT / "data_path.txt"
+    if data_path_txt.exists():
+        try:
+            raw = data_path_txt.read_text().strip()
+            if raw:
+                candidate_path = Path(raw)
+                if not candidate_path.is_absolute():
+                    candidate_path = data_path_txt.parent / candidate_path
+                candidates.append(candidate_path)
+        except Exception:
+            pass
+
+    seen = set()
+    for path in candidates:
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.exists():
+            return resolved
+    return None
+
+ESS_DATA_PATH = resolve_data_file(ESS_DATA_FILENAME)
+if not ESS_DATA_PATH:
+    search_candidates = [DATA_DIR.resolve(), PROJECT_ROOT.resolve(), Path.cwd().resolve()]
+    search_locations = "\n".join(f"- {c}" for c in search_candidates)
+    st.error(
+        f"❌ Data file '{ESS_DATA_FILENAME}' not found.\n\n"
+        "Please place the Excel file in one of the following locations or update data_path.txt:\n"
+        f"{search_locations}"
+    )
     st.stop()
+
+AC_DATA_PATH = resolve_data_file(AC_DATA_FILENAME)
+
+debug_expander = st.sidebar.expander("Debug · Data Files", expanded=False)
+debug_expander.caption(f"ESS data dictionary path: `{ESS_DATA_PATH}`")
+if AC_DATA_PATH:
+    debug_expander.caption(f"AC Block data dictionary path: `{AC_DATA_PATH}`")
+else:
+    debug_expander.caption("AC Block data dictionary not found in standard locations.")
 
 # ==========================================
 # 2. HELPERS
@@ -230,23 +267,30 @@ def first_success_key(results: dict, preferred_order: list):
 # 3. LOAD DATA FROM EXCEL
 # ==========================================
 @st.cache_data
-def load_data(path: str):
-    xls = pd.ExcelFile(path)
+def load_data(path: Path):
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Data dictionary '{path}' is missing.")
 
-    df_case = pd.read_excel(xls, "ess_sizing_case")
-    defaults = {}
-    for _, row in df_case.iterrows():
-        field_name = row.get("Field Name")
-        if isinstance(field_name, str) and field_name.strip():
-            defaults[field_name.strip()] = row.get("Default Value")
+    try:
+        xls = pd.ExcelFile(path)
 
-    df_blocks = pd.read_excel(xls, "dc_block_template_314_data")
-    df_soh_profile = pd.read_excel(xls, "soh_profile_314_data")
-    df_soh_curve = pd.read_excel(xls, "soh_curve_314_template")
-    df_rte_profile = pd.read_excel(xls, "rte_profile_314_data")
-    df_rte_curve = pd.read_excel(xls, "rte_curve_314_template")
+        df_case = pd.read_excel(xls, "ess_sizing_case")
+        defaults = {}
+        for _, row in df_case.iterrows():
+            field_name = row.get("Field Name")
+            if isinstance(field_name, str) and field_name.strip():
+                defaults[field_name.strip()] = row.get("Default Value")
 
-    return defaults, df_blocks, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve
+        df_blocks = pd.read_excel(xls, "dc_block_template_314_data")
+        df_soh_profile = pd.read_excel(xls, "soh_profile_314_data")
+        df_soh_curve = pd.read_excel(xls, "soh_curve_314_template")
+        df_rte_profile = pd.read_excel(xls, "rte_profile_314_data")
+        df_rte_curve = pd.read_excel(xls, "rte_curve_314_template")
+
+        return defaults, df_blocks, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve
+    except Exception as exc:
+        raise RuntimeError(f"Failed to load data from '{path}': {exc}") from exc
 
 # ==========================================
 # 4. CORE CALC LOGIC
@@ -667,11 +711,11 @@ def size_with_guarantee(stage1: dict,
 # ==========================================
 def find_logo_for_report():
     try:
-        data_dir = os.path.dirname(os.path.abspath(DATA_FILE))
-        for fname in os.listdir(data_dir):
-            lower = fname.lower()
+        data_dir = ESS_DATA_PATH.resolve().parent
+        for file in data_dir.iterdir():
+            lower = file.name.lower()
             if lower.endswith((".png", ".jpg", ".jpeg")) and ("logo" in lower or "calb" in lower):
-                return os.path.join(data_dir, fname)
+                return str(file)
     except Exception:
         return None
     return None
@@ -922,7 +966,11 @@ def build_report_bytes(stage1: dict, results_dict: dict, report_order: list):
 # ==========================================
 # 6. LOAD DATA
 # ==========================================
-defaults, df_blocks, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve = load_data(DATA_FILE)
+try:
+    defaults, df_blocks, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve = load_data(ESS_DATA_PATH)
+except Exception as exc:
+    st.error(f"❌ Unable to load ESS sizing data dictionary: {exc}")
+    st.stop()
 
 def get_default_numeric(field_name: str, fallback: float):
     raw = defaults.get(field_name, fallback)

@@ -1,11 +1,82 @@
 # pages/4_Stage4_AC_Block.py
 from __future__ import annotations
+from pathlib import Path
 import math
 from typing import Any, Dict, Optional
 
+import pandas as pd
 import streamlit as st
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = PROJECT_ROOT / "data" if (PROJECT_ROOT / "data").is_dir() else PROJECT_ROOT
+ESS_DATA_FILENAME = "ess_sizing_data_dictionary_v13_dc_autofit.xlsx"
+AC_DATA_FILENAME = "AC_Block_Data_Dictionary_v1_1.xlsx"
+
+def resolve_data_file(filename: str) -> Path | None:
+    candidates = [
+        DATA_DIR / filename,
+        PROJECT_ROOT / filename,
+        Path.cwd() / filename,
+    ]
+    data_path_txt = PROJECT_ROOT / "data_path.txt"
+    if data_path_txt.exists():
+        try:
+            raw = data_path_txt.read_text().strip()
+            if raw:
+                candidate = Path(raw)
+                if not candidate.is_absolute():
+                    candidate = data_path_txt.parent / candidate
+                candidates.append(candidate)
+        except Exception:
+            pass
+
+    seen = set()
+    for path in candidates:
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.exists():
+            return resolved
+    return None
+
+@st.cache_data
+def ensure_excel_accessible(path: Path) -> str:
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Data file '{path}' is missing.")
+    try:
+        pd.ExcelFile(path)
+        return str(path)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to read '{path}': {exc}") from exc
+
 st.set_page_config(page_title="Stage 4 – AC Block", layout="wide")
+
+ac_data_path = resolve_data_file(AC_DATA_FILENAME)
+if not ac_data_path:
+    search_candidates = [DATA_DIR.resolve(), PROJECT_ROOT.resolve(), Path.cwd().resolve()]
+    search_locations = "\n".join(f"- {c}" for c in search_candidates)
+    st.error(
+        f"❌ AC Block data dictionary '{AC_DATA_FILENAME}' not found.\n\n"
+        "Please place the Excel file in one of the following locations or update data_path.txt:\n"
+        f"{search_locations}"
+    )
+    st.stop()
+
+try:
+    ensure_excel_accessible(ac_data_path)
+except Exception as exc:
+    st.error(f"❌ Unable to load AC Block data dictionary: {exc}")
+    st.stop()
+
+ess_data_path = resolve_data_file(ESS_DATA_FILENAME)
+debug_expander = st.sidebar.expander("Debug · Data Files", expanded=False)
+debug_expander.caption(f"AC Block data dictionary path: `{ac_data_path}`")
+if ess_data_path:
+    debug_expander.caption(f"ESS data dictionary path: `{ess_data_path}`")
+else:
+    debug_expander.caption("ESS data dictionary not found in standard locations.")
 
 # -----------------------------------------------------
 # AC Block Sizing Functions
