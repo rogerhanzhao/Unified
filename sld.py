@@ -26,6 +26,6 @@ def build_sld(req: SLDRequest) -> Dict[str, Any]:
         raise ValueError(issues)
 
     return {
-        "diagram": f\"AC Blocks: {req.ac_blocks} | Note: {req.layout_note}\",
+        "diagram": f"AC Blocks: {req.ac_blocks} | Note: {req.layout_note}",
         "warnings": ["Placeholder SLD generated for preview only."],
     }

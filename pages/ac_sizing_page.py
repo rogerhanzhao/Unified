@@ -14,7 +14,7 @@ from validation import ValidationIssue
 def _render_errors(errors: List[ValidationIssue]) -> None:
     if not errors:
         return
-    st.error("; ".join(f\"{err.field}: {err.message}\" for err in errors))
+    st.error("; ".join(f"{err.field}: {err.message}" for err in errors))
 
 
 def render() -> None:
