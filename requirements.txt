@@ -1,0 +1,8 @@
+streamlit
+pandas
+numpy
+altair
+python-docx
+matplotlib
+openpyxl
+pytest

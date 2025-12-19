@@ -1,9 +1,17 @@
 # pages/4_Stage4_AC_Block.py
 from __future__ import annotations
 import math
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
 
 import streamlit as st
+
+from artifact_generation import (
+    ensure_output_dirs,
+    generate_stage4_report,
+    render_block_sld,
+    render_layout_plot,
+)
 
 st.set_page_config(page_title="Stage 4 – AC Block", layout="wide")
 
@@ -142,9 +150,45 @@ if not stage13:
     st.error("Stage 1–3 output not found. Please complete sizing in Stage 1–3 first.")
     st.stop()
 
+
+def _stage4_dirs(key_prefix: str) -> Tuple[Path, Path]:
+    """Return temp/output directories configured by the user."""
+    temp_key = f"{key_prefix}_temp_dir"
+    output_key = f"{key_prefix}_output_dir"
+
+    temp_dir = Path(st.session_state.get(temp_key, st.session_state.get("stage4_temp_dir", "temp")))
+    output_dir = Path(st.session_state.get(output_key, st.session_state.get("stage4_output_dir", "outputs")))
+
+    temp_dir = Path(
+        st.text_input(
+            "Temporary directory for render artifacts",
+            value=str(temp_dir),
+            key=f"{key_prefix}_temp_input",
+        )
+    )
+    output_dir = Path(
+        st.text_input(
+            "Output directory for saved artifacts",
+            value=str(output_dir),
+            key=f"{key_prefix}_output_input",
+        )
+    )
+
+    st.session_state[temp_key] = str(temp_dir)
+    st.session_state[output_key] = str(output_dir)
+    st.session_state["stage4_temp_dir"] = str(temp_dir)
+    st.session_state["stage4_output_dir"] = str(output_dir)
+
+    ensure_output_dirs(temp_dir=temp_dir, output_dir=output_dir)
+    return temp_dir, output_dir
+
 # Tabs for interaction
 tab1, tab2, tab3 = st.tabs(
-    ["Step 1 · AC Block Sizing", "Step 2 · Block SLD + Layout (placeholder)", "Step 3 · Site + Simulation (placeholder)"]
+    [
+        "Step 1 · AC Block Sizing",
+        "Step 2 · Block SLD + Layout",
+        "Step 3 · Reports & Simulation Preview",
+    ]
 )
 
 with tab1:
@@ -154,7 +198,6 @@ with tab1:
     cabinet_cnt = stage13.get("cabinet_count", 0)
     dc_total = stage13.get("dc_total_blocks", container_cnt + cabinet_cnt)
     poi_voltage = stage13.get("poi_nominal_voltage_kv", "")
-    highest_equip_voltage = stage13.get("highest_equipment_voltage_kv", "")
 
     # Top Metrics
     c1, c2, c3 = st.columns(3)
@@ -234,7 +277,72 @@ with tab1:
             )
 
 with tab2:
-    st.info("Step 2 placeholder: Block-level Single Line Diagram and Local Layout (to be implemented).")
+    st.subheader("Generate Block SLD and Layout Artifacts")
+    st.caption("Creates PNGs in the chosen temp/output folders for quick visual checks.")
+
+    temp_dir, output_dir = _stage4_dirs("stage4_layout")
+    st.caption(f"Artifacts will be written to **{temp_dir}** (temp) and **{output_dir}** (outputs).")
+
+    existing_sld = st.session_state.get("stage4_sld_paths", {})
+    existing_layout = st.session_state.get("stage4_layout_paths", {})
+    if existing_sld or existing_layout:
+        st.write("Last generated:")
+        if existing_sld:
+            st.write(f"• SLD: {existing_sld.get('temp')} (temp), {existing_sld.get('output')} (output)")
+        if existing_layout:
+            st.write(f"• Layout: {existing_layout.get('temp')} (temp), {existing_layout.get('output')} (output)")
+
+    if st.button("Generate SLD + Layout Files", type="primary"):
+        try:
+            sld_temp, sld_output = render_block_sld(stage13, temp_dir=temp_dir, output_dir=output_dir)
+            layout_temp, layout_output = render_layout_plot(stage13, temp_dir=temp_dir, output_dir=output_dir)
+            st.session_state["stage4_sld_paths"] = {"temp": str(sld_temp), "output": str(sld_output)}
+            st.session_state["stage4_layout_paths"] = {"temp": str(layout_temp), "output": str(layout_output)}
+            st.success("Saved SLD and layout plots to temp/output folders.")
+            st.image(str(sld_temp), caption="Block SLD preview")
+            st.image(str(layout_temp), caption="Layout preview")
+        except Exception as exc:
+            st.error(f"Rendering failed: {exc}")
 
 with tab3:
-    st.info("Step 3 placeholder: Site Layout and Simulation (to be implemented).")
+    st.subheader("Reports & Simulation Preview")
+    st.caption("Save a DOCX that references the latest SLD/Layout files.")
+
+    temp_dir, output_dir = _stage4_dirs("stage4_reports")
+    sld_paths = st.session_state.get("stage4_sld_paths", {})
+    layout_paths = st.session_state.get("stage4_layout_paths", {})
+
+    sld_path = Path(sld_paths["output"]) if "output" in sld_paths else None
+    layout_path = Path(layout_paths["output"]) if "output" in layout_paths else None
+
+    if st.button("Generate Sample Stage 4 DOCX", type="primary"):
+        try:
+            if sld_path is None or not sld_path.exists():
+                sld_temp, sld_output = render_block_sld(stage13, temp_dir=temp_dir, output_dir=output_dir)
+                st.session_state["stage4_sld_paths"] = {"temp": str(sld_temp), "output": str(sld_output)}
+                sld_path = sld_output
+            if layout_path is None or not layout_path.exists():
+                layout_temp, layout_output = render_layout_plot(stage13, temp_dir=temp_dir, output_dir=output_dir)
+                st.session_state["stage4_layout_paths"] = {"temp": str(layout_temp), "output": str(layout_output)}
+                layout_path = layout_output
+
+            report_path = generate_stage4_report(
+                stage13,
+                sld_path=sld_path,
+                layout_path=layout_path,
+                output_dir=output_dir,
+            )
+            st.session_state["stage4_report_path"] = str(report_path)
+            st.success(f"Report saved to {report_path}")
+            with open(report_path, "rb") as fh:
+                st.download_button(
+                    "Download Latest Report",
+                    data=fh,
+                    file_name=report_path.name,
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+        except Exception as exc:
+            st.error(f"Report generation failed: {exc}")
+
+    if "stage4_report_path" in st.session_state:
+        st.caption(f"Last report: {st.session_state['stage4_report_path']}")
