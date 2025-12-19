@@ -14,5 +14,10 @@ __pycache__/
 # Streamlit cache
 .streamlit/cache/
 
+# Testing and reports
+.pytest_cache/
+reports/
+figures/
+
 # Temporary files
 *.log

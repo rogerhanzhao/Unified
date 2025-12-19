@@ -5,6 +5,11 @@ from typing import Any, Dict, Optional
 
 import streamlit as st
 
+from . import DATA_DIR, PROJECT_ROOT
+
+# Path utilities reserved for future data access
+_ = (PROJECT_ROOT, DATA_DIR)
+
 st.set_page_config(page_title="Stage 4 – AC Block", layout="wide")
 
 # -----------------------------------------------------
