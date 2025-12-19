@@ -1,8 +1,12 @@
 # pages/4_Stage4_AC_Block.py
 from __future__ import annotations
+import json
 import math
-from typing import Any, Dict, Optional
+from io import StringIO
+from typing import Any, Dict, List, Optional
 
+import altair as alt
+import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="Stage 4 – AC Block", layout="wide")
@@ -130,6 +134,55 @@ def find_ac_block_mixed(
     return best
 
 
+def compute_dc_distribution(res: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Expand the AC Block sizing result into per-block DC distribution rows.
+    """
+    rows: List[Dict[str, Any]] = []
+    qty = int(res.get("ac_block_qty", 0) or 0)
+    if qty <= 0:
+        return rows
+
+    if res.get("strategy") == "container_only":
+        dc_per = int(res.get("dc_blocks_per_block", 0) or 0)
+        for i in range(qty):
+            rows.append(
+                {
+                    "ac_block": i + 1,
+                    "containers": dc_per,
+                    "cabinets": 0,
+                    "dc_blocks_total": dc_per,
+                }
+            )
+    else:
+        base_cont = int(res.get("container_per_block", 0) or 0)
+        base_cab = int(res.get("cabinet_per_block", 0) or 0)
+        rem_cont = int(res.get("container_rem", 0) or 0)
+        rem_cab = int(res.get("cabinet_rem", 0) or 0)
+        for i in range(qty):
+            cont = base_cont + (1 if i < rem_cont else 0)
+            cab = base_cab + (1 if i < rem_cab else 0)
+            rows.append(
+                {
+                    "ac_block": i + 1,
+                    "containers": cont,
+                    "cabinets": cab,
+                    "dc_blocks_total": cont + cab,
+                }
+            )
+    return rows
+
+
+def compute_line_current_a(power_mw: float, voltage_kv: float, power_factor: float = 0.95) -> float:
+    """Simple 3-phase current estimate from MW and kV."""
+    if voltage_kv <= 0 or power_factor <= 0:
+        return 0.0
+    power_w = power_mw * 1_000_000
+    voltage_v = voltage_kv * 1_000
+    current = power_w / (math.sqrt(3) * voltage_v * power_factor)
+    return current
+
+
 # -----------------------------------------------------
 # Main UI
 # -----------------------------------------------------
@@ -144,7 +197,7 @@ if not stage13:
 
 # Tabs for interaction
 tab1, tab2, tab3 = st.tabs(
-    ["Step 1 · AC Block Sizing", "Step 2 · Block SLD + Layout (placeholder)", "Step 3 · Site + Simulation (placeholder)"]
+    ["Step 1 · AC Block Sizing", "Step 2 · Block SLD + Layout", "Step 3 · Site + Simulation & Export"]
 )
 
 with tab1:
@@ -234,7 +287,142 @@ with tab1:
             )
 
 with tab2:
-    st.info("Step 2 placeholder: Block-level Single Line Diagram and Local Layout (to be implemented).")
+    res = st.session_state.get("stage4_step1_result")
+    if not res:
+        st.info("Run Step 1 to generate AC Block selection before viewing SLD and layout.")
+    else:
+        st.subheader("Single Line Diagram (SLD) Overview")
+        poi_voltage = stage13.get("poi_nominal_voltage_kv", "")
+        highest_equipment_voltage = stage13.get("highest_equipment_voltage_kv", "")
+        poi_mw = stage13.get("poi_power_req_mw", 0.0)
+        sld = f"""
+digraph G {{
+  rankdir=LR;
+  node [shape=rectangle style="rounded,filled" fillcolor="#f4f8ff" color="#2b6cb0" fontname="Arial"];
+  POI [label="POI\\n{poi_mw:.2f} MW @ {poi_voltage} kV"];
+  RMU [label="RMU / Switchgear"];
+  TX [label="Transformer\\nHighest Equip: {highest_equipment_voltage} kV"];
+  PCS [label="PCS\\n{res.get('pcs_units', 0)} × {res.get('pcs_unit_kw', 0)} kW"];
+  DCBus [label="DC Busbar"];
+  DCBlock [label="DC Blocks / AC Block\\n{res.get('ac_block_rated_mw', 0):.2f} MW"];
+  POI -> RMU -> TX -> PCS -> DCBus -> DCBlock;
+}}
+"""
+        st.graphviz_chart(sld, use_container_width=True)
+
+        st.caption("Voltage and capacity references come from Stage 1–3 outputs and the AC Block selection above.")
+
+        st.subheader("Block-Level Layout Preview")
+        distribution = compute_dc_distribution(res)
+        if distribution:
+            df = pd.DataFrame(distribution)
+            df_chart = df.rename(columns={"containers": "Containers", "cabinets": "Cabinets"})
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                st.metric("AC Blocks", f"{res.get('ac_block_qty', 0)}")
+                st.metric("AC Block Rating (MW)", f"{res.get('ac_block_rated_mw', 0):.2f}")
+                st.metric("PCS Combo", f"{res.get('pcs_units', 0)} × {res.get('pcs_unit_kw', 0)} kW")
+            with c2:
+                st.dataframe(df.rename(columns={
+                    "ac_block": "AC Block #",
+                    "containers": "Containers",
+                    "cabinets": "Cabinets",
+                    "dc_blocks_total": "DC Blocks Total",
+                }), use_container_width=True)
+
+            chart = (
+                alt.Chart(df_chart)
+                .transform_fold(["Containers", "Cabinets"], as_=["type", "qty"])
+                .mark_bar()
+                .encode(
+                    x=alt.X("ac_block:O", title="AC Block #"),
+                    y=alt.Y("qty:Q", title="DC Blocks per AC Block"),
+                    color=alt.Color("type:N", title="DC Block Type"),
+                    tooltip=["ac_block", "type", "qty", "dc_blocks_total"],
+                )
+                .properties(height=300)
+            )
+            st.altair_chart(chart, use_container_width=True)
+        else:
+            st.warning("No DC distribution rows found for the selected AC Blocks.")
 
 with tab3:
-    st.info("Step 3 placeholder: Site Layout and Simulation (to be implemented).")
+    res = st.session_state.get("stage4_step1_result")
+    if not res:
+        st.info("Run Step 1 to enable site-level simulation and export.")
+    else:
+        st.subheader("Station-Level Impact (Simplified)")
+        load_pct = st.slider("Assumed operating level vs. POI requirement (%)", min_value=50, max_value=120, value=90, step=5)
+
+        poi_mw = float(stage13.get("poi_power_req_mw", 0.0) or 0.0)
+        transformer_rating_mva = float(stage13.get("transformer_rating_mva", 0.0) or poi_mw * 1.1)
+        voltage_kv = float(stage13.get("poi_nominal_voltage_kv", 0.0) or 0.0)
+
+        load_case_mw = poi_mw * load_pct / 100
+        max_ac_case_mw = float(res.get("total_ac_mw", 0.0) or 0.0)
+
+        sim_rows = [
+            {
+                "Scenario": "Operating Load",
+                "Power MW": load_case_mw,
+                "Transformer Util (%)": (load_case_mw / transformer_rating_mva * 100) if transformer_rating_mva else 0,
+                "Line Current (A)": compute_line_current_a(load_case_mw, voltage_kv),
+            },
+            {
+                "Scenario": "Max AC Block Output",
+                "Power MW": max_ac_case_mw,
+                "Transformer Util (%)": (max_ac_case_mw / transformer_rating_mva * 100) if transformer_rating_mva else 0,
+                "Line Current (A)": compute_line_current_a(max_ac_case_mw, voltage_kv),
+            },
+        ]
+        sim_df = pd.DataFrame(sim_rows)
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Transformer Rating (MVA)", f"{transformer_rating_mva:.2f}")
+        c2.metric("POI Voltage (kV)", f"{voltage_kv}")
+        c3.metric("AC Blocks Total (MW)", f"{max_ac_case_mw:.2f}")
+
+        util_chart = (
+            alt.Chart(sim_df)
+            .mark_bar()
+            .encode(
+                x=alt.X("Scenario:N", title="Scenario"),
+                y=alt.Y("Transformer Util (%):Q", title="Transformer Utilization (%)"),
+                color=alt.Color("Scenario:N", legend=None),
+                tooltip=["Power MW", "Transformer Util (%)", "Line Current (A)"],
+            )
+            .properties(height=260)
+        )
+        st.altair_chart(util_chart, use_container_width=True)
+
+        st.caption("Transformer utilization and line current are approximations based on 3-phase power at the POI voltage with PF=0.95.")
+
+        st.subheader("Export / Download")
+        export_payload = {
+            "project": stage13.get("project_name", "CALB ESS Project"),
+            "stage13_snapshot": stage13,
+            "ac_block_selection": res,
+            "simulation_inputs": {
+                "load_pct": load_pct,
+                "transformer_rating_mva": transformer_rating_mva,
+                "poi_voltage_kv": voltage_kv,
+            },
+            "simulation_results": sim_rows,
+        }
+        export_json = json.dumps(export_payload, indent=2, ensure_ascii=False)
+        st.download_button(
+            "Download Stage 1–4 Summary (JSON)",
+            data=export_json,
+            file_name="stage1-4_summary.json",
+            mime="application/json",
+        )
+
+        distribution_export = compute_dc_distribution(res)
+        layout_csv_buffer = StringIO()
+        pd.DataFrame(distribution_export).to_csv(layout_csv_buffer, index=False)
+        st.download_button(
+            "Download Block Layout (CSV)",
+            data=layout_csv_buffer.getvalue(),
+            file_name="ac_block_layout.csv",
+            mime="text/csv",
+        )
