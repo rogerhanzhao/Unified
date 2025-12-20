@@ -48,9 +48,9 @@ def _require_fraction(name: str, value: object) -> float:
 
 
 def _require_positive_fraction(name: str, value: object) -> float:
-    numeric_value = _require_fraction(name, value)
-    if numeric_value == 0:
-        raise DispatchValidationError(f"{name} must be greater than 0.")
+    numeric_value = _require_positive(name, value)
+    if numeric_value > 1:
+        raise DispatchValidationError(f"{name} must be greater than 0 and no more than 1.")
     return numeric_value
 
 

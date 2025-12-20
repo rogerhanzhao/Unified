@@ -74,3 +74,17 @@ def test_simulate_dispatch_profile_length_mismatch():
     with pytest.raises(DispatchValidationError):
         simulate_dispatch(dc_dict, ac_dict, profile, params)
 
+
+def test_simulate_dispatch_rejects_zero_efficiencies():
+    dc_dict = {
+        "capacity_mwh": 1.0,
+        "max_charge_mw": 1.0,
+        "max_discharge_mw": 1.0,
+        "initial_soc": 0.5,
+    }
+    ac_dict = {"ac_power_limit_mw": 1.0}
+    profile = [0.2, 0.2]
+    params = {"timestep_hours": 1.0, "roundtrip_efficiency": 0.0}
+
+    with pytest.raises(DispatchValidationError):
+        simulate_dispatch(dc_dict, ac_dict, profile, params)
