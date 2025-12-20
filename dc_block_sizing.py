@@ -1460,13 +1460,13 @@ def render_results_view(payload: dict | None):
                 pages = st.experimental_get_pages()
             except Exception:
                 return None
+            default_url = f"/{Path(page_file).stem}"
             for page_data in pages.values():
                 if page_data.get("script_path") == page_file:
-                    url = page_data.get("url_pathname")
-                    if not url:
-                        # Fallback to a reasonable default to avoid KeyError
-                        url = f"/{Path(page_file).stem}"
-                    return url
+                    if "url_pathname" not in page_data or not page_data.get("url_pathname"):
+                        # Initialize the link target to avoid KeyError downstream.
+                        page_data["url_pathname"] = default_url
+                    return page_data["url_pathname"]
             return None
 
         if stage4_path and hasattr(st, "page_link"):

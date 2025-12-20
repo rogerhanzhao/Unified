@@ -1,6 +1,8 @@
 # ac_block_sizing.py
 from __future__ import annotations
 
+import importlib.util
+import io
 import math
 from typing import Any, Dict, List, Optional
 
@@ -15,6 +17,13 @@ AC_BLOCK_CANDIDATES: List[Dict[str, float]] = [
     {"pcs_units": 4, "pcs_unit_kw": 1250, "ac_block_mw": 5.0},
     {"pcs_units": 4, "pcs_unit_kw": 1725, "ac_block_mw": 6.9},
 ]
+
+DOCX_AVAILABLE = False
+if importlib.util.find_spec("docx"):
+    from docx import Document
+    from docx.shared import Pt
+
+    DOCX_AVAILABLE = True
 
 # -----------------------------------------------------
 # AC Block Sizing Functions
@@ -175,6 +184,74 @@ def render_step1_summary(res: Dict[str, Any]) -> None:
     )
 
 
+def make_ac_report_filename(project_name: str) -> str:
+    safe = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in project_name) or "CALB_ESS_Project"
+    return f"{safe}_AC_Block_Report.docx"
+
+
+def build_ac_report(stage13: Dict[str, Any], res: Dict[str, Any]) -> bytes | None:
+    if not DOCX_AVAILABLE:
+        return None
+
+    project_name = stage13.get("project_name", "CALB ESS Project")
+    doc = Document()
+    doc.add_heading("AC Block Sizing Report", level=0)
+    doc.add_paragraph(f"Project: {project_name}")
+
+    strategy = res.get("strategy", "").replace("_", " ").title()
+    doc.add_paragraph(f"Strategy: {strategy}")
+
+    p_meta = doc.add_paragraph()
+    p_meta.add_run("Input Snapshot").bold = True
+    doc.add_paragraph(
+        f"POI Power Requirement: {stage13.get('poi_power_req_mw', 0.0):.2f} MW\n"
+        f"POI Nominal Voltage: {stage13.get('poi_nominal_voltage_kv', '')} kV\n"
+        f"DC Containers: {stage13.get('container_count', 0)}\n"
+        f"DC Cabinets: {stage13.get('cabinet_count', 0)}"
+    )
+
+    doc.add_heading("AC Block Summary", level=1)
+    summary_items = {
+        "AC Blocks Quantity": res.get("ac_block_qty", 0),
+        "AC Block Rating (MW)": f"{res.get('ac_block_rated_mw', 0.0):.2f}",
+        "PCS per Block": f"{res.get('pcs_units', 0)} × {res.get('pcs_unit_kw', 0)} kW",
+        "Total AC Capacity (MW)": f"{res.get('total_ac_mw', 0.0):.2f}",
+        "Oversize vs POI (MW)": f"{res.get('oversize_mw', 0.0):.2f}",
+    }
+
+    if res.get("strategy") == "mixed":
+        summary_items.update(
+            {
+                "Containers / Block": res.get("container_per_block", 0),
+                "Cabinets / Block": res.get("cabinet_per_block", 0),
+                "DC Blocks per Block (base/max)": f"{res.get('dc_blocks_per_block_base', 0)} / {res.get('dc_blocks_per_block_max', 0)}",
+            }
+        )
+    else:
+        summary_items["DC Blocks per AC Block"] = res.get("dc_blocks_per_block", 0)
+
+    table = doc.add_table(rows=1, cols=2)
+    header_cells = table.rows[0].cells
+    header_cells[0].text = "Metric"
+    header_cells[1].text = "Value"
+
+    for key, value in summary_items.items():
+        row_cells = table.add_row().cells
+        row_cells[0].text = key
+        row_cells[1].text = str(value)
+
+    for row in table.rows:
+        for cell in row.cells:
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.font.size = Pt(10)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
 def run_step1_sizing(
     poi_mw: float,
     container_cnt: int,
@@ -256,6 +333,18 @@ def main() -> None:
         res = st.session_state.get("stage4_step1_result")
         if res:
             render_step1_summary(res)
+            if DOCX_AVAILABLE:
+                report_bytes = build_ac_report(stage13, res)
+                if report_bytes:
+                    st.download_button(
+                        "📄 Export AC Block Report (DOCX)",
+                        data=report_bytes,
+                        file_name=make_ac_report_filename(stage13.get("project_name", "CALB_ESS_Project")),
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        use_container_width=True,
+                    )
+            else:
+                st.info("python-docx not installed; cannot export AC Block report in this environment.")
 
     with tab2:
         st.info("Step 2 placeholder: Block-level Single Line Diagram and Local Layout (to be implemented).")
