@@ -151,6 +151,7 @@ def resolve_data_file(default_filename: str) -> str | None:
     Priority:
       1) Path specified inside a nearby data_path.txt
       2) Default filename in common locations (cwd, script dir, repo root, repo_root/data)
+      3) Any matching workbook discovered by glob search under the usual roots
     """
     candidates = []
 
@@ -192,6 +193,27 @@ def resolve_data_file(default_filename: str) -> str | None:
         seen.add(resolved)
         if resolved.is_file():
             return str(resolved)
+
+    fallback_roots = [
+        Path(DATA_DIR),
+        SCRIPT_DIR / "data",
+        REPO_ROOT,
+        SCRIPT_DIR,
+    ]
+    fallback_patterns = [
+        default_filename,
+        "ess_sizing_data_dictionary*dc*.xlsx",
+        "ess_sizing_data_dictionary*.xlsx",
+    ]
+    for root in fallback_roots:
+        if not root.exists():
+            continue
+        for pattern in fallback_patterns:
+            for match in root.rglob(pattern):
+                if match.is_file():
+                    resolved = match.resolve()
+                    if resolved not in seen:
+                        return str(resolved)
     return None
 
 
@@ -204,9 +226,11 @@ if not DATA_FILE:
         str(REPO_ROOT),
         str(REPO_ROOT / "data"),
     ]
+    pattern_hint = "ess_sizing_data_dictionary*dc*.xlsx"
     st.error(
         "❌ Data file "
         f"'{DEFAULT_FILENAME}' not found. Looked in:\n- " + "\n- ".join(search_locations)
+        + f"\nAlso searched for files matching '{pattern_hint}' in those locations."
         + "\nYou can also provide a custom path inside a 'data_path.txt' file."
     )
     st.stop()
