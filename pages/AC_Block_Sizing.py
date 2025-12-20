@@ -1,4 +1,5 @@
-# pages/4_Stage4_AC_Block.py
+# pages/AC_Block_Sizing.py
+from sizing.ac_logic import load_ac_data, ac_power_limit, ac_efficiency
 from __future__ import annotations
 import math
 from typing import Any, Dict, Optional
