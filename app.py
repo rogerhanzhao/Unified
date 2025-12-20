@@ -46,9 +46,10 @@ if app_nav_default not in app_nav_options:
     app_nav_default = app_nav_options[0]
 
 nav_option = st.sidebar.radio(
-    "Select View",
+    "Select Page",
     app_nav_options,
     index=app_nav_options.index(app_nav_default),
+    key="app_nav_choice",
     help="Choose between Stage 1–3 (DC) and Stage 4 (AC) sizing flows.",
 )
 st.session_state["app_nav"] = nav_option
