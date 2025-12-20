@@ -808,15 +808,44 @@ def size_with_guarantee(stage1: dict,
 # ==========================================
 # 5. REPORT EXPORT HELPERS
 # ==========================================
-def find_logo_for_report():
-    try:
-        data_dir = os.path.dirname(os.path.abspath(DATA_FILE))
-        for fname in os.listdir(data_dir):
-            lower = fname.lower()
-            if lower.endswith((".png", ".jpg", ".jpeg")) and ("logo" in lower or "calb" in lower):
-                return os.path.join(data_dir, fname)
-    except Exception:
-        return None
+def find_logo_for_report() -> str | None:
+    """
+    Locate a CALB-branded logo image for DOCX exports.
+    Searches common project directories so the header logo is embedded even when
+    the data workbook lives in a different folder.
+    """
+    seen_dirs = set()
+    search_dirs: list[Path] = []
+
+    def add_dir(path_like):
+        if not path_like:
+            return
+        try:
+            resolved = Path(path_like).resolve()
+        except Exception:
+            return
+        if resolved in seen_dirs or not resolved.exists():
+            return
+        seen_dirs.add(resolved)
+        search_dirs.append(resolved)
+
+    add_dir(Path(DATA_FILE).parent if DATA_FILE else None)
+    add_dir(SCRIPT_DIR)
+    add_dir(REPO_ROOT)
+    add_dir(REPO_ROOT / "data")
+    add_dir(Path.cwd())
+
+    for directory in search_dirs:
+        try:
+            for entry in directory.iterdir():
+                if not entry.is_file():
+                    continue
+                lower = entry.name.lower()
+                if lower.endswith((".png", ".jpg", ".jpeg")) and ("logo" in lower or "calb" in lower):
+                    return str(entry)
+        except Exception:
+            continue
+
     return None
 
 def make_report_filename(project_name: str) -> str:
