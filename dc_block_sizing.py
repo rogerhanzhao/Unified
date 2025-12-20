@@ -1462,7 +1462,11 @@ def render_results_view(payload: dict | None):
                 return None
             for page_data in pages.values():
                 if page_data.get("script_path") == page_file:
-                    return page_data.get("url_pathname")
+                    url = page_data.get("url_pathname")
+                    if not url:
+                        # Fallback to a reasonable default to avoid KeyError
+                        url = f"/{Path(page_file).stem}"
+                    return url
             return None
 
         if stage4_path and hasattr(st, "page_link"):
