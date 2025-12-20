@@ -6,7 +6,10 @@ import io
 import math
 from typing import Any, Dict, List, Optional
 
+import graphviz
+import matplotlib.pyplot as plt
 import streamlit as st
+from matplotlib.patches import Rectangle
 
 # Note: Stage 4 is intentionally isolated from the main app entrypoint
 # (see stage4_app.py). The sizing logic and data sources remain unchanged.
@@ -141,6 +144,101 @@ def find_ac_block_mixed(
 # -----------------------------------------------------
 # Helpers
 # -----------------------------------------------------
+
+
+def get_dc_block_total(stage13: Dict[str, Any]) -> int:
+    return int(
+        stage13.get("dc_block_total_qty")
+        or stage13.get("dc_total_blocks")
+        or (stage13.get("container_count", 0) + stage13.get("cabinet_count", 0))
+    )
+
+
+def build_block_sld(dc_block_count: int, res: Dict[str, Any]) -> graphviz.Digraph:
+    ac_label = (
+        "AC Block\n"
+        f"{res.get('ac_block_rated_mw', 0):.2f} MW\n"
+        f"{res.get('pcs_units', 0)} × {res.get('pcs_unit_kw', 0)} kW"
+    )
+
+    dot = graphviz.Digraph("block_sld")
+    dot.attr(rankdir="LR", splines="ortho", nodesep="0.65", ranksep="0.9")
+    dot.attr("node", shape="box", style="rounded,filled", fillcolor="#E8F1FF")
+
+    dot.node("ac_block", ac_label)
+    dot.node("xfmr", "Transformer\n(MV/LV)")
+    dot.node("pcs", "PCS")
+    dot.node("ac_bus", "AC Busbar")
+
+    dot.edge("ac_block", "xfmr")
+    dot.edge("xfmr", "pcs")
+    dot.edge("pcs", "ac_bus")
+
+    for idx in range(dc_block_count or 1):
+        name = f"DC Block {idx + 1}" if dc_block_count else "DC Block"
+        node_id = f"dc_{idx + 1}" if dc_block_count else "dc"
+        dot.node(node_id, name)
+        dot.edge("ac_bus", node_id)
+
+    return dot
+
+
+def compute_layout_positions(dc_block_count: int, *, columns: int = 4, spacing: float = 2.4) -> Dict[str, Any]:
+    positions: Dict[str, Any] = {}
+
+    span = (max(columns, 1) - 1) * spacing
+    center_x = span / 2
+
+    positions["AC Block"] = (center_x, spacing * 2.4)
+    positions["Transformer"] = (center_x - spacing, spacing * 1.6)
+    positions["PCS"] = (center_x + spacing, spacing * 1.6)
+    positions["AC Busbar"] = (center_x, spacing * 0.9)
+
+    for idx in range(dc_block_count):
+        row = idx // max(columns, 1)
+        col = idx % max(columns, 1)
+        positions[f"DC Block {idx + 1}"] = (col * spacing, -row * spacing)
+
+    return positions
+
+
+def render_layout_plot(positions: Dict[str, Any], *, ac_color: str = "#CFE2FF", dc_color: str = "#E2F6CF"):
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    def draw_box(name: str, xy: tuple[float, float], color: str) -> None:
+        width, height = 1.5, 0.9
+        rect = Rectangle((xy[0] - width / 2, xy[1] - height / 2), width, height, facecolor=color, edgecolor="#4B5563")
+        ax.add_patch(rect)
+        ax.text(xy[0], xy[1], name, ha="center", va="center", fontsize=9)
+
+    for name, xy in positions.items():
+        if name.startswith("DC Block"):
+            draw_box(name, xy, dc_color)
+        else:
+            draw_box(name, xy, ac_color)
+
+    bus_xy = positions.get("AC Busbar")
+    if bus_xy:
+        for name, xy in positions.items():
+            if name.startswith("DC Block"):
+                ax.plot([bus_xy[0], xy[0]], [bus_xy[1], xy[1]], color="#9CA3AF", linestyle="--", linewidth=1)
+
+    chain = ["AC Block", "Transformer", "PCS", "AC Busbar"]
+    for left, right in zip(chain, chain[1:]):
+        if left in positions and right in positions:
+            lx, ly = positions[left]
+            rx, ry = positions[right]
+            ax.plot([lx, rx], [ly, ry], color="#2563EB", linewidth=2)
+
+    xs = [xy[0] for xy in positions.values()]
+    ys = [xy[1] for xy in positions.values()]
+    margin = 1.5
+    ax.set_xlim(min(xs) - margin, max(xs) + margin)
+    ax.set_ylim(min(ys) - margin, max(ys) + margin)
+    ax.set_aspect("equal", adjustable="datalim")
+    ax.axis("off")
+    ax.set_title("Physical Layout: 1 AC Block with Connected DC Blocks")
+    return fig
 
 def require_stage13_output() -> Dict[str, Any]:
     stage13 = st.session_state.get("stage13_output")
@@ -293,8 +391,8 @@ def main() -> None:
     tab1, tab2, tab3 = st.tabs(
         [
             "Step 1 · AC Block Sizing",
-            "Step 2 · Block SLD + Layout (placeholder)",
-            "Step 3 · Site + Simulation (placeholder)",
+            "Step 2 · Block SLD + Layout",
+            "Step 3 · Site + Simulation",
         ]
     )
 
@@ -347,10 +445,56 @@ def main() -> None:
                 st.info("python-docx not installed; cannot export AC Block report in this environment.")
 
     with tab2:
-        st.info("Step 2 placeholder: Block-level Single Line Diagram and Local Layout (to be implemented).")
+        res = st.session_state.get("stage4_step1_result")
+        if not res:
+            st.info("Run Step 1 first to populate the Block-level SLD and layout.")
+        else:
+            dc_block_count = get_dc_block_total(stage13)
+            st.subheader("Block-level Single Line Diagram (AC + multiple DC Blocks)")
+            dot = build_block_sld(dc_block_count, res)
+            st.graphviz_chart(dot, use_container_width=True)
+
+            st.divider()
+            st.subheader("Physical Layout (not to scale)")
+            columns = st.slider("DC Blocks per row", min_value=1, max_value=6, value=4, step=1)
+            spacing = st.slider("Spacing between Blocks (m)", min_value=1.0, max_value=4.0, value=2.4, step=0.2)
+            positions = compute_layout_positions(dc_block_count, columns=columns, spacing=spacing)
+            fig = render_layout_plot(positions)
+            st.pyplot(fig, use_container_width=True)
 
     with tab3:
-        st.info("Step 3 placeholder: Site Layout and Simulation (to be implemented).")
+        res = st.session_state.get("stage4_step1_result")
+        if not res:
+            st.info("Run Step 1 first to enable power flow and fault simulations.")
+        else:
+            st.subheader("Site Power Flow Snapshot")
+            poi_mw = stage13.get("poi_power_req_mw", 0.0)
+            eff_chain = stage13.get("eff_dc_to_poi_frac", 0.95) or 0.95
+            dc_flow = poi_mw * eff_chain
+            st.metric("POI Power Requirement (MW)", f"{poi_mw:.2f}")
+            st.metric("Estimated DC Block Power (MW)", f"{dc_flow:.2f}")
+            st.write(
+                "Power flow assumes steady-state operation across Transformer → PCS → AC Busbar → DC Blocks. "
+                "Adjust Stage 1–3 efficiency to refine the snapshot."
+            )
+
+            st.divider()
+            st.subheader("Fault Scenario Simulation (conceptual)")
+            scenario = st.selectbox(
+                "Select a fault scenario",
+                ["normal_operation", "short_circuit", "transformer_failure"],
+                format_func=lambda v: v.replace("_", " ").title(),
+            )
+
+            def simulate_fault(s: str) -> str:
+                if s == "short_circuit":
+                    return "Short circuit detected at AC Busbar. Isolate bus section and re-route via remaining feeders."
+                if s == "transformer_failure":
+                    return "Transformer failure detected. Shed load on affected AC Block and engage redundant transformer if available."
+                return "System operating normally. Power routed through AC Block to connected DC Blocks."
+
+            st.write(simulate_fault(scenario))
+            st.caption("Detailed time-series simulations can be integrated with dispatch logic in future iterations.")
 
 
 if __name__ == "__main__":
