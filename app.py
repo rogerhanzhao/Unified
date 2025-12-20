@@ -3,11 +3,20 @@ import runpy
 
 import streamlit as st
 
-st.set_page_config(page_title="CALB ESS Sizing Tool", layout="wide")
-st.title("CALB ESS Sizing Tool – Stage 1–3 (DC)")
-st.sidebar.info(
-    "AC Block sizing is now separated into stage4_app.py for future integration. "
-    "Run it in a separate Streamlit session when Stage 4 is needed."
+if not st.session_state.get("_dc_page_configured"):
+    st.set_page_config(page_title="CALB ESS Sizing Tool – Stage 1–3 (DC)", layout="wide")
+    st.session_state["_dc_page_configured"] = True
+
+st.sidebar.title("Navigation")
+nav_option = st.sidebar.radio(
+    "Select Page",
+    ("Stage 1–3 Inputs", "DC Block Sizing"),
+    help="Toggle between input form and DC block sizing/export on a single page.",
+)
+
+st.session_state["dc_nav_external"] = True
+st.session_state["dc_nav"] = (
+    "Stage 1–3 Inputs" if nav_option == "Stage 1–3 Inputs" else "DC Block Results & Export"
 )
 
 PAGE_FILE = "dc_block_sizing.py"
