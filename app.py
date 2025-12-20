@@ -1,24 +1,22 @@
-import streamlit as st
-import runpy
-import sys
 import os
+import runpy
 
-st.title("CALB ESS Sizing Tool")
+import streamlit as st
 
-PAGES = {
-    "DC Block Sizing": "pages/DC_Block_Sizing.py",
-    "AC Block Sizing": "pages/AC_Block_Sizing.py",
-}
+st.set_page_config(page_title="CALB ESS Sizing Tool", layout="wide")
+st.title("CALB ESS Sizing Tool – Stage 1–3 (DC)")
+st.sidebar.info(
+    "AC Block sizing is now separated into stage4_app.py for future integration. "
+    "Run it in a separate Streamlit session when Stage 4 is needed."
+)
 
-choice = st.sidebar.selectbox("Select page", list(PAGES.keys()))
+PAGE_FILE = "pages/DC_Block_Sizing.py"
 
-page_file = PAGES[choice]
-
-if not os.path.isfile(page_file):
-    st.error(f"Page file not found: {page_file}")
+if not os.path.isfile(PAGE_FILE):
+    st.error(f"Page file not found: {PAGE_FILE}")
 else:
     try:
-        runpy.run_path(page_file, run_name="__main__")
-    except Exception as e:
-        st.error(f"Error in page {choice}:\n{e}")
+        runpy.run_path(PAGE_FILE, run_name="__main__")
+    except Exception as exc:
+        st.error(f"Error loading Stage 1–3 page:\n{exc}")
         raise
