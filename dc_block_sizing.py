@@ -1,4 +1,4 @@
-# pages/DC_Block_Sizing.py
+# dc_block_sizing.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -32,11 +32,6 @@ except Exception:
 
 # Design rule: max 418kWh cabinets per DC busbar
 K_MAX_FIXED = 10
-
-st.set_page_config(
-    page_title="CALB ESS Sizing Tool V1.0 – Stage 1–3",
-    layout="wide"
-)
 
 # ==========================================
 # CALB VI COLORS
@@ -765,14 +760,32 @@ def size_with_guarantee(stage1: dict,
 # 5. REPORT EXPORT HELPERS
 # ==========================================
 def find_logo_for_report():
+    search_dirs: list[Path] = []
+
     try:
-        data_dir = os.path.dirname(os.path.abspath(DATA_FILE))
-        for fname in os.listdir(data_dir):
-            lower = fname.lower()
-            if lower.endswith((".png", ".jpg", ".jpeg")) and ("logo" in lower or "calb" in lower):
-                return os.path.join(data_dir, fname)
+        search_dirs.append(Path(DATA_FILE).resolve().parent)
     except Exception:
-        return None
+        pass
+
+    for extra in [SCRIPT_DIR, REPO_ROOT, Path.cwd()] + list(Path.cwd().parents):
+        if extra is not None:
+            search_dirs.append(Path(extra))
+
+    seen = set()
+    for folder in search_dirs:
+        try:
+            folder_resolved = folder.resolve()
+        except Exception:
+            continue
+        if folder_resolved in seen or not folder_resolved.is_dir():
+            continue
+        seen.add(folder_resolved)
+
+        for fname in folder_resolved.iterdir():
+            lower = fname.name.lower()
+            if lower.endswith((".png", ".jpg", ".jpeg")) and ("logo" in lower or "calb" in lower):
+                return str(fname)
+
     return None
 
 def make_report_filename(project_name: str) -> str:
@@ -1044,209 +1057,18 @@ def get_default_percent_val(field_name: str, fallback: float) -> float:
         return val * 100.0
     return val
 
-# ==========================================
-# 7. HEADER
-# ==========================================
-st.markdown(
-    """
-    <div style="padding-top:0.6rem; padding-bottom:0.6rem;">
-        <h1 class="calb-page-title">Utility-Scale ESS Sizing Tool V1.0</h1>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-st.markdown("<br/>", unsafe_allow_html=True)
+NAV_OPTIONS = ["Stage 1–3 Inputs", "DC Block Results & Export"]
 
-# ==========================================
-# 8. MAIN FORM
-# ==========================================
-with st.container():
-    st.markdown("<div class='calb-card'>", unsafe_allow_html=True)
-    st.subheader("1 · Project Inputs")
 
-    with st.form("main_form"):
-        project_name = st.text_input(
-            "Project Name",
-            value=get_default_str("project_name", "CALB ESS Project"),
-        )
+def render_results_view(payload: dict | None):
+    if not payload:
+        st.info("Run the sizing from the inputs tab to view DC Block results and export reports.")
+        return
 
-        c1, c2, c3 = st.columns(3)
-        poi_power = c1.number_input(
-            "POI Required Power (MW)",
-            value=get_default_numeric("poi_power_req_mw", 100.0),
-            min_value=0.0,
-        )
-        poi_energy = c2.number_input(
-            "POI Required Capacity (MWh)",
-            value=get_default_numeric("poi_energy_req_mwh", 400.0),
-            min_value=0.0,
-        )
-        project_life = int(
-            c3.number_input(
-                "Project Life (Years)",
-                value=int(get_default_numeric("project_life_years", 20)),
-                min_value=1,
-                step=1,
-                format="%d",
-            )
-        )
-
-        # [STAGE4 V0.1] POI 电压输入（Stage4 需要）
-        poi_nominal_voltage_kv = st.number_input(
-            "POI / MV Voltage (kV)",
-            value=float(st.session_state.get("poi_nominal_voltage_kv", 22.0)),
-            min_value=1.0,
-            max_value=60.0,
-            step=0.1,
-            help="Typical MV range 10–35kV. Used for Stage 4 AC Block / MV equipment selection.",
-        )
-
-        c4, c5, c6 = st.columns(3)
-        cycles_year = int(
-            c4.number_input(
-                "Cycles Per Year",
-                value=int(get_default_numeric("cycles_per_year", 365)),
-                min_value=1,
-                step=1,
-                format="%d",
-            )
-        )
-        guarantee_year = int(
-            c5.number_input(
-                "POI Guarantee Year (Default @ COD )",
-                value=int(get_default_numeric("poi_guarantee_year", 0)),
-                min_value=0,
-                max_value=project_life,
-                step=1,
-                format="%d",
-            )
-        )
-
-        def_sc = int(get_default_numeric("sc_time_months", 6.0))
-        if def_sc < 3:
-            def_sc = 3
-        sc_time_months = int(
-            c6.number_input(
-                "S&C Time (Months, From FAT To COD)",
-                value=def_sc,
-                min_value=3,
-                max_value=60,
-                step=1,
-                format="%d",
-            )
-        )
-
-        st.markdown("---")
-        st.subheader("2 · DC Parameters")
-
-        c7, c8 = st.columns(2)
-        dod_pct = c7.number_input(
-            "DOD (%)",
-            value=get_default_percent_val("dod_pct", 97.0),
-            min_value=0.0,
-            max_value=100.0,
-        )
-        dc_rte_pct = c8.number_input(
-            "DC RTE (%) – Cell Only Base on Default Data",
-            value=get_default_percent_val("dc_round_trip_efficiency_pct", 94.0),
-            min_value=0.0,
-            max_value=100.0,
-        )
-
-        st.info(f"Design Rule: Max 418kWh Cabinets per DC Busbar (K) = {K_MAX_FIXED} (fixed)")
-
-        st.markdown("**3 · Configuration Options**")
-        copt1, copt2, copt3 = st.columns([2, 2, 3])
-        enable_hybrid = copt1.checkbox("Enable Hybrid Mode (5MWh + Cabinet)", value=True)
-        enable_cabinet_only = copt2.checkbox("Enable Cabinet-Only Mode (Cabinet Modular Shipping)", value=True)
-        hybrid_disable_threshold = copt3.number_input(
-            "Disable Hybrid When POI Required Capacity ≥ (MWh) (0 = no limit)",
-            value=9999.0,
-            min_value=0.0,
-            help="If POI required energy ≥ this threshold, Hybrid mode will be skipped. Set 0 for no limit.",
-        )
-
-        with st.expander(
-            "Advanced: DC → POI @ MV Efficiency Chain. If the POI is located at the DC side, you may enable the checkbox below to force all efficiencies to 100%.",
-            expanded=False
-        ):
-
-            poi_is_dc_side = st.checkbox(
-                "POI Is Located At DC Side (Force All Efficiencies To 100%)",
-                value=False,
-                help="When enabled, the DC→POI efficiency chain is bypassed (all set to 100%).",
-            )
-
-            c10, c11, c12 = st.columns(3)
-            eff_dc_cables = c10.number_input(
-                "DC Cables Efficiency (%)",
-                value=get_default_percent_val("eff_dc_cables", 99.50),
-                min_value=0.0,
-                max_value=100.0,
-            )
-            eff_pcs = c11.number_input(
-                "PCS Efficiency (%)",
-                value=get_default_percent_val("eff_pcs", 98.50),
-                min_value=0.0,
-                max_value=100.0,
-            )
-            eff_mvt = c12.number_input(
-                "MV Transformer Efficiency (%)",
-                value=get_default_percent_val("eff_mvt", 99.50),
-                min_value=0.0,
-                max_value=100.0,
-            )
-            c13, c14 = st.columns(2)
-            eff_ac_sw = c13.number_input(
-                "AC Cables + SW/RMU Efficiency (%)",
-                value=get_default_percent_val("eff_ac_cables_sw_rmu", 99.20),
-                min_value=0.0,
-                max_value=100.0,
-            )
-            eff_hvt = c14.number_input(
-                "Other--HVT Efficiency (%)",
-                value=get_default_percent_val("eff_hvt_others", 100.0),
-                min_value=0.0,
-                max_value=100.0,
-            )
-
-        st.markdown("---")
-        run_btn = st.form_submit_button("🔄 Run Sizing")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ==========================================
-# 9. RUN CALC & DISPLAY
-# ==========================================
-if run_btn:
-    # persist for stage4
-    st.session_state["poi_nominal_voltage_kv"] = float(poi_nominal_voltage_kv)
-
-    if poi_is_dc_side:
-        eff_dc_cables = 100.0
-        eff_pcs = 100.0
-        eff_mvt = 100.0
-        eff_ac_sw = 100.0
-        eff_hvt = 100.0
-
-    inputs = {
-        "project_name": project_name,
-        "poi_power_req_mw": poi_power,
-        "poi_energy_req_mwh": poi_energy,
-        "project_life_years": project_life,
-        "cycles_per_year": cycles_year,
-        "poi_guarantee_year": guarantee_year,
-        "sc_time_months": sc_time_months,
-        "dod_pct": dod_pct,
-        "dc_round_trip_efficiency_pct": dc_rte_pct,
-        "eff_dc_cables": eff_dc_cables,
-        "eff_pcs": eff_pcs,
-        "eff_mvt": eff_mvt,
-        "eff_ac_cables_sw_rmu": eff_ac_sw,
-        "eff_hvt_others": eff_hvt,
-    }
-
-    s1 = run_stage1(inputs, defaults)
+    s1 = payload["stage1"]
+    results = payload["results"]
+    modes_to_run = payload["modes_to_run"]
+    poi_nominal_voltage_kv = float(payload.get("poi_nominal_voltage_kv", st.session_state.get("poi_nominal_voltage_kv", 22.0)))
 
     st.markdown("<div class='calb-card'>", unsafe_allow_html=True)
     st.subheader("3 · Stage 1 – DC Requirement @ FAT/BOL")
@@ -1272,28 +1094,6 @@ if run_btn:
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-    modes_to_run = ["container_only"]
-    if enable_cabinet_only:
-        modes_to_run.insert(0, "cabinet_only")
-    if enable_hybrid:
-        if hybrid_disable_threshold > 0 and poi_energy >= hybrid_disable_threshold:
-            pass
-        else:
-            modes_to_run.insert(0, "hybrid")
-
-    results = {}
-    for mode in modes_to_run:
-        try:
-            results[mode] = size_with_guarantee(
-                s1, mode,
-                df_blocks,
-                df_soh_profile, df_soh_curve,
-                df_rte_profile, df_rte_curve,
-                k_max=K_MAX_FIXED
-            )
-        except Exception as e:
-            results[mode] = ("ERROR", str(e))
-
     st.markdown("<div class='calb-card'>", unsafe_allow_html=True)
     st.subheader("4 · Stage 2 & 3 – DC Block Configurations (Compare)")
 
@@ -1316,14 +1116,6 @@ if run_btn:
         )
         st.table(pre_cod_df)
 
-    # [STAGE4 V0.1] 生成 session_state["stage13_output"] 供 Stage4 使用（选 show_key 作为“当前主方案”）
-    # ===== Stage4: Prepare Stage 1–3 output for Stage 4 (AC Block Sizing) =====
-    # Notes:
-    # 1) We pack ALL successful scenarios for Stage 4 to choose.
-    # 2) Default is Container-Only (unless user overrides).
-    # 3) Auto fallback: if Container-Only DC block qty would create a 3-DC-block AC Block (odd split),
-    #    we switch to Hybrid (if available) to keep DC busbar power balanced.
-
     def _sanitize_stage2_for_stage4(s2: dict) -> dict:
         if not isinstance(s2, dict):
             return {}
@@ -1340,7 +1132,6 @@ if run_btn:
             if k in s2:
                 out[k] = s2.get(k)
 
-        # Avoid storing DataFrame objects in session_state (may break JSON/serialization in some envs).
         bct = s2.get("block_config_table", None)
         try:
             if isinstance(bct, pd.DataFrame):
@@ -1351,25 +1142,21 @@ if run_btn:
         return out
 
     def _good_dc_split_for_acblock(dc_blocks: int, per_ac: int = 4) -> bool:
-        # With 2 DC busbars per AC block, we want an even DC-block count per AC block.
-        # For the default per_ac=4, remainder 3 is the classic "bad" case (2+1 split).
         if dc_blocks <= 0:
             return False
         r = int(dc_blocks) % int(per_ac)
-        return r in (0, 2)  # OK: ...+4 or ...+2 ; bad: ...+1 or ...+3
+        return r in (0, 2)
 
     available_stage4_sources = []
     for k in ["container_only", "hybrid", "cabinet_only"]:
         if isinstance(results.get(k), tuple) and results[k][0] != "ERROR":
             available_stage4_sources.append(k)
 
-    # User override (persisted)
     if "stage4_source_user" not in st.session_state:
         st.session_state["stage4_source_user"] = "AUTO"
 
     if available_stage4_sources:
         opts = ["AUTO"] + available_stage4_sources
-        # Keep selection stable
         if st.session_state["stage4_source_user"] not in opts:
             st.session_state["stage4_source_user"] = "AUTO"
 
@@ -1383,7 +1170,6 @@ if run_btn:
     else:
         stage4_source_user = "AUTO"
 
-    # AUTO logic
     preferred_default = "container_only" if "container_only" in available_stage4_sources else (available_stage4_sources[0] if available_stage4_sources else None)
     stage4_source_mode = preferred_default
 
@@ -1400,7 +1186,6 @@ if run_btn:
             if (not _good_dc_split_for_acblock(n_c, per_ac=4)) and ("hybrid" in available_stage4_sources):
                 stage4_source_mode = "hybrid"
 
-    # Pack ALL scenarios (for Stage 4 side fallback / comparison)
     stage13_output_all = {}
     try:
         for k in available_stage4_sources:
@@ -1413,18 +1198,16 @@ if run_btn:
                 stage3=s3_meta_k,
                 dc_block_total_qty=dc_qty_k,
                 selected_scenario=k,
-                poi_nominal_voltage_kv=float(poi_nominal_voltage_kv),
+                poi_nominal_voltage_kv=poi_nominal_voltage_kv,
             )
     except Exception as e:
         st.warning(f"Stage 4 pre-pack failed: {e}")
 
-    # Set the active one for Stage 4 navigation
     if stage4_source_mode and stage4_source_mode in stage13_output_all:
         st.session_state["stage13_output"] = stage13_output_all[stage4_source_mode]
         st.session_state["stage13_output_all"] = stage13_output_all
         st.session_state["stage4_source_mode"] = stage4_source_mode
 
-        # Convenience keys (Stage 4 can read either from stage13_output or these)
         st.session_state["dc_block_total_qty"] = int(st.session_state["stage13_output"].get("dc_block_total_qty", 0))
         st.session_state["dc_block_container_count"] = int(st.session_state["stage13_output"].get("container_count", 0))
         st.session_state["dc_block_cabinet_count"] = int(st.session_state["stage13_output"].get("cabinet_count", 0))
@@ -1598,7 +1381,6 @@ if run_btn:
 
     st.markdown("---")
 
-    # --- report build (same as your logic) ---
     report_buf = None
     file_name = None
     if DOCX_AVAILABLE:
@@ -1616,7 +1398,6 @@ if run_btn:
         if report_buf is not None:
             file_name = make_report_filename(s1.get("project_name", "CALB_ESS_Project"))
 
-    # [STAGE4 V0.1] 两列：导出 + 进入 Stage4
     col_export, col_stage4 = st.columns([1, 1])
 
     with col_export:
@@ -1633,23 +1414,261 @@ if run_btn:
             st.error("⚠️ Report generation returned empty data. Please verify environment.")
 
     with col_stage4:
-        stage4_path = None
-        if os.path.exists("pages/4_Stage4_AC_Block.py"):
-            stage4_path = "pages/4_Stage4_AC_Block.py"
-        elif os.path.exists("4_Stage4_AC_Block.py"):
-            stage4_path = "4_Stage4_AC_Block.py"
-
+        stage4_path = "stage4_app.py" if os.path.exists("stage4_app.py") else None
         ready = ("stage13_output" in st.session_state) and (int(st.session_state.get("dc_block_total_qty", 0)) > 0)
 
-        if stage4_path and hasattr(st, "switch_page"):
-            if st.button("➡️ Go to Stage 4 (AC Block Sizing)", disabled=not ready):
-                st.switch_page(stage4_path)
-        elif stage4_path and hasattr(st, "page_link"):
-            if ready:
-                st.page_link(stage4_path, label="➡️ Open Stage 4 (AC Block Sizing)")
-            else:
+        if stage4_path and hasattr(st, "page_link"):
+            st.page_link(stage4_path, label="➡️ Open Stage 4 (AC Block Sizing)", disabled=not ready)
+            if not ready:
                 st.caption("Run sizing first to enable Stage 4.")
         else:
-            st.caption("Stage 4 page not found (or this Streamlit version lacks page switching). Please open Stage 4 from the sidebar Pages menu.")
+            st.caption("Stage 4 (AC Block) runs via stage4_app.py in a separate Streamlit session.")
 
     st.markdown("</div>", unsafe_allow_html=True)
+
+# ==========================================
+# 7. HEADER
+# ==========================================
+nav_default = st.session_state.get("dc_nav", NAV_OPTIONS[0])
+if nav_default not in NAV_OPTIONS:
+    nav_default = NAV_OPTIONS[0]
+nav_choice = st.sidebar.radio(
+    "Navigation",
+    NAV_OPTIONS,
+    index=NAV_OPTIONS.index(nav_default),
+    help="Toggle between inputs and results on a single page.",
+)
+st.session_state["dc_nav"] = nav_choice
+
+st.markdown(
+    """
+    <div style="padding-top:0.6rem; padding-bottom:0.6rem;">
+        <h1 class="calb-page-title">Utility-Scale ESS Sizing Tool V1.0</h1>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+st.markdown("<br/>", unsafe_allow_html=True)
+
+# ==========================================
+# 8. MAIN FORM + RESULTS
+# ==========================================
+run_btn = False
+last_run = st.session_state.get("dc_last_run")
+
+if nav_choice == NAV_OPTIONS[0]:
+    with st.container():
+        st.markdown("<div class='calb-card'>", unsafe_allow_html=True)
+        st.subheader("1 · Project Inputs")
+
+        with st.form("main_form"):
+            project_name = st.text_input(
+                "Project Name",
+                value=get_default_str("project_name", "CALB ESS Project"),
+            )
+
+            c1, c2, c3 = st.columns(3)
+            poi_power = c1.number_input(
+                "POI Required Power (MW)",
+                value=get_default_numeric("poi_power_req_mw", 100.0),
+                min_value=0.0,
+            )
+            poi_energy = c2.number_input(
+                "POI Required Capacity (MWh)",
+                value=get_default_numeric("poi_energy_req_mwh", 400.0),
+                min_value=0.0,
+            )
+            project_life = int(
+                c3.number_input(
+                    "Project Life (Years)",
+                    value=int(get_default_numeric("project_life_years", 20)),
+                    min_value=1,
+                    step=1,
+                    format="%d",
+                )
+            )
+
+            poi_nominal_voltage_kv = st.number_input(
+                "POI / MV Voltage (kV)",
+                value=float(st.session_state.get("poi_nominal_voltage_kv", 22.0)),
+                min_value=1.0,
+                max_value=60.0,
+                step=0.1,
+                help="Typical MV range 10–35kV. Used for Stage 4 AC Block / MV equipment selection.",
+            )
+
+            c4, c5, c6 = st.columns(3)
+            cycles_year = int(
+                c4.number_input(
+                    "Cycles Per Year",
+                    value=int(get_default_numeric("cycles_per_year", 365)),
+                    min_value=1,
+                    step=1,
+                    format="%d",
+                )
+            )
+            guarantee_year = int(
+                c5.number_input(
+                    "POI Guarantee Year (Default @ COD )",
+                    value=int(get_default_numeric("poi_guarantee_year", 0)),
+                    min_value=0,
+                    max_value=project_life,
+                    step=1,
+                    format="%d",
+                )
+            )
+
+            def_sc = int(get_default_numeric("sc_time_months", 6.0))
+            if def_sc < 3:
+                def_sc = 3
+            sc_time_months = int(
+                c6.number_input(
+                    "S&C Time (Months, From FAT To COD)",
+                    value=def_sc,
+                    min_value=3,
+                    max_value=60,
+                    step=1,
+                    format="%d",
+                )
+            )
+
+            st.markdown("---")
+            st.subheader("2 · DC Parameters")
+
+            c7, c8 = st.columns(2)
+            dod_pct = c7.number_input(
+                "DOD (%)",
+                value=get_default_percent_val("dod_pct", 97.0),
+                min_value=0.0,
+                max_value=100.0,
+            )
+            dc_rte_pct = c8.number_input(
+                "DC RTE (%) – Cell Only Base on Default Data",
+                value=get_default_percent_val("dc_round_trip_efficiency_pct", 94.0),
+                min_value=0.0,
+                max_value=100.0,
+            )
+
+            st.info(f"Design Rule: Max 418kWh Cabinets per DC Busbar (K) = {K_MAX_FIXED} (fixed)")
+
+            st.markdown("**3 · Configuration Options**")
+            copt1, copt2, copt3 = st.columns([2, 2, 3])
+            enable_hybrid = copt1.checkbox("Enable Hybrid Mode (5MWh + Cabinet)", value=True)
+            enable_cabinet_only = copt2.checkbox("Enable Cabinet-Only Mode (Cabinet Modular Shipping)", value=True)
+            hybrid_disable_threshold = copt3.number_input(
+                "Disable Hybrid When POI Required Capacity ≥ (MWh) (0 = no limit)",
+                value=9999.0,
+                min_value=0.0,
+                help="If POI required energy ≥ this threshold, Hybrid mode will be skipped. Set 0 for no limit.",
+            )
+
+            with st.expander(
+                "Advanced: DC → POI @ MV Efficiency Chain. If the POI is located at the DC side, you may enable the checkbox below to force all efficiencies to 100%.",
+                expanded=False
+            ):
+
+                poi_is_dc_side = st.checkbox(
+                    "POI Is Located At DC Side (Force All Efficiencies To 100%)",
+                    value=False,
+                    help="When enabled, the DC→POI efficiency chain is bypassed (all set to 100%).",
+                )
+
+                c10, c11, c12 = st.columns(3)
+                eff_dc_cables = c10.number_input(
+                    "DC Cables Efficiency (%)",
+                    value=get_default_percent_val("eff_dc_cables", 99.50),
+                    min_value=0.0,
+                    max_value=100.0,
+                )
+                eff_pcs = c11.number_input(
+                    "PCS Efficiency (%)",
+                    value=get_default_percent_val("eff_pcs", 98.50),
+                    min_value=0.0,
+                    max_value=100.0,
+                )
+                eff_mvt = c12.number_input(
+                    "MV Transformer Efficiency (%)",
+                    value=get_default_percent_val("eff_mvt", 99.50),
+                    min_value=0.0,
+                    max_value=100.0,
+                )
+                c13, c14 = st.columns(2)
+                eff_ac_sw = c13.number_input(
+                    "AC Cables + SW/RMU Efficiency (%)",
+                    value=get_default_percent_val("eff_ac_cables_sw_rmu", 99.20),
+                    min_value=0.0,
+                    max_value=100.0,
+                )
+                eff_hvt = c14.number_input(
+                    "Other--HVT Efficiency (%)",
+                    value=get_default_percent_val("eff_hvt_others", 100.0),
+                    min_value=0.0,
+                    max_value=100.0,
+                )
+
+            st.markdown("---")
+            run_btn = st.form_submit_button("🔄 Run Sizing")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    if run_btn:
+        st.session_state["poi_nominal_voltage_kv"] = float(poi_nominal_voltage_kv)
+
+        if poi_is_dc_side:
+            eff_dc_cables = 100.0
+            eff_pcs = 100.0
+            eff_mvt = 100.0
+            eff_ac_sw = 100.0
+            eff_hvt = 100.0
+
+        inputs = {
+            "project_name": project_name,
+            "poi_power_req_mw": poi_power,
+            "poi_energy_req_mwh": poi_energy,
+            "project_life_years": project_life,
+            "cycles_per_year": cycles_year,
+            "poi_guarantee_year": guarantee_year,
+            "sc_time_months": sc_time_months,
+            "dod_pct": dod_pct,
+            "dc_round_trip_efficiency_pct": dc_rte_pct,
+            "eff_dc_cables": eff_dc_cables,
+            "eff_pcs": eff_pcs,
+            "eff_mvt": eff_mvt,
+            "eff_ac_cables_sw_rmu": eff_ac_sw,
+            "eff_hvt_others": eff_hvt,
+        }
+
+        s1 = run_stage1(inputs, defaults)
+
+        modes_to_run = ["container_only"]
+        if enable_cabinet_only:
+            modes_to_run.insert(0, "cabinet_only")
+        if enable_hybrid:
+            if not (hybrid_disable_threshold > 0 and poi_energy >= hybrid_disable_threshold):
+                modes_to_run.insert(0, "hybrid")
+
+        results = {}
+        for mode in modes_to_run:
+            try:
+                results[mode] = size_with_guarantee(
+                    s1, mode,
+                    df_blocks,
+                    df_soh_profile, df_soh_curve,
+                    df_rte_profile, df_rte_curve,
+                    k_max=K_MAX_FIXED
+                )
+            except Exception as e:
+                results[mode] = ("ERROR", str(e))
+
+        last_run = {
+            "stage1": s1,
+            "results": results,
+            "modes_to_run": modes_to_run,
+            "poi_nominal_voltage_kv": poi_nominal_voltage_kv,
+        }
+        st.session_state["dc_last_run"] = last_run
+        st.session_state["dc_nav"] = NAV_OPTIONS[1]
+        render_results_view(last_run)
+
+elif nav_choice == NAV_OPTIONS[1]:
+    render_results_view(last_run)

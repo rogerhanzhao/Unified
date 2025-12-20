@@ -10,7 +10,7 @@ st.sidebar.info(
     "Run it in a separate Streamlit session when Stage 4 is needed."
 )
 
-PAGE_FILE = "pages/DC_Block_Sizing.py"
+PAGE_FILE = "dc_block_sizing.py"
 
 if not os.path.isfile(PAGE_FILE):
     st.error(f"Page file not found: {PAGE_FILE}")

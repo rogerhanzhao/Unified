@@ -1,4 +1,4 @@
-# pages/AC_Block_Sizing.py
+# ac_block_sizing.py
 from __future__ import annotations
 
 import math
@@ -8,8 +8,6 @@ import streamlit as st
 
 # Note: Stage 4 is intentionally isolated from the main app entrypoint
 # (see stage4_app.py). The sizing logic and data sources remain unchanged.
-
-st.set_page_config(page_title="Stage 4 – AC Block", layout="wide")
 
 AC_BLOCK_CANDIDATES: List[Dict[str, float]] = [
     {"pcs_units": 2, "pcs_unit_kw": 1250, "ac_block_mw": 2.5},
