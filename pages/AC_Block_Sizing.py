@@ -1,9 +1,11 @@
 # pages/4_Stage4_AC_Block.py
 from __future__ import annotations
 import math
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
+import matplotlib.pyplot as plt
 import streamlit as st
+from matplotlib.patches import Rectangle
 
 from . import DATA_DIR, PROJECT_ROOT
 
@@ -239,7 +241,175 @@ with tab1:
             )
 
 with tab2:
-    st.info("Step 2 placeholder: Block-level Single Line Diagram and Local Layout (to be implemented).")
+    st.markdown("## Step 2 · Block SLD and Local Layout")
+
+    step1 = st.session_state.get("stage4_step1_result", {})
+    ac_blocks_qty = int(step1.get("ac_block_qty", 1) or 1)
+    pcs_units = int(step1.get("pcs_units", 2) or 2)
+    dc_blocks_total = int(stage13.get("dc_block_total_qty", stage13.get("dc_total_blocks", 1)) or 1)
+    dc_per_ac_block = max(1, int(round(dc_blocks_total / ac_blocks_qty)))
+
+    def plot_block_sld(ac_qty: int, pcs_per_block: int, dc_blocks: int) -> plt.Figure:
+        fig, ax = plt.subplots(figsize=(10, 4))
+
+        nodes: Dict[str, Tuple[float, float]] = {
+            "RMU": (0.5, 0.5),
+            "Transformer (MV/LV)": (2.0, 0.5),
+            "PCS": (3.5, 0.5),
+            "AC Busbar": (5.0, 0.7),
+            "DC Busbar": (6.5, 0.7),
+            "DC Blocks": (8.0, 0.7),
+        }
+
+        for label, (x, y) in nodes.items():
+            rect = Rectangle((x - 0.35, y - 0.2), 0.7, 0.4, edgecolor="black", facecolor="#cde6ff")
+            ax.add_patch(rect)
+            ax.text(x, y, label, ha="center", va="center", fontsize=10)
+
+        edges: List[Tuple[str, str]] = [
+            ("RMU", "Transformer (MV/LV)"),
+            ("Transformer (MV/LV)", "PCS"),
+            ("PCS", "AC Busbar"),
+            ("AC Busbar", "DC Busbar"),
+            ("DC Busbar", "DC Blocks"),
+        ]
+
+        for src, dst in edges:
+            xs, ys = nodes[src]
+            xd, yd = nodes[dst]
+            ax.annotate(
+                "",
+                xy=(xd - 0.35, yd),
+                xytext=(xs + 0.35, ys),
+                arrowprops=dict(arrowstyle="->", lw=2, color="#1f77b4"),
+            )
+
+        ax.set_xlim(0, 8.5)
+        ax.set_ylim(0, 1.2)
+        ax.axis("off")
+        ax.set_title("Block-level Single Line Diagram (SLD)")
+        ax.text(
+            3.5,
+            1.05,
+            f"AC Blocks: {ac_qty} · PCS per Block: {pcs_per_block} · DC Blocks per AC Block: {dc_blocks}",
+            ha="center",
+            fontsize=9,
+        )
+        return fig
+
+    st.pyplot(plot_block_sld(ac_blocks_qty, pcs_units, dc_per_ac_block))
+
+    st.markdown("### Local Layout (20 ft container, NFPA 855 clearances)")
+    clearance_m = st.number_input("Minimum clearance between equipment (m)", min_value=0.1, max_value=1.0, value=0.3, step=0.05)
+
+    def plot_local_layout(clearance: float) -> Tuple[plt.Figure, List[Tuple[str, str, float]]]:
+        fig, ax = plt.subplots(figsize=(8, 4))
+
+        container_length = 6.096
+        container_width = 2.438
+        ax.add_patch(Rectangle((0, 0), container_length, container_width, fill=False, linestyle="--", color="#555"))
+        ax.text(container_length / 2, container_width + 0.05, "20 ft Container Footprint", ha="center", va="bottom")
+
+        positions: Dict[str, Tuple[float, float]] = {
+            "RMU": (0.6, 1.2),
+            "Transformer": (1.8, 1.2),
+            "PCS": (3.1, 1.2),
+            "AC Busbar": (4.4, 0.7),
+            "DC Busbar": (5.1, 1.7),
+        }
+
+        for name, (x, y) in positions.items():
+            ax.add_patch(Rectangle((x - 0.35, y - 0.25), 0.7, 0.5, facecolor="#f0f6ff", edgecolor="#1f77b4"))
+            ax.text(x, y, name, ha="center", va="center", fontsize=9)
+
+        distances: List[Tuple[str, str, float]] = []
+        keys = list(positions.keys())
+        for i, a in enumerate(keys):
+            for b in keys[i + 1 :]:
+                xa, ya = positions[a]
+                xb, yb = positions[b]
+                dist = math.dist((xa, ya), (xb, yb))
+                distances.append((a, b, dist))
+                if dist < clearance:
+                    ax.plot([xa, xb], [ya, yb], color="red", linestyle=":", lw=1)
+                else:
+                    ax.plot([xa, xb], [ya, yb], color="green", linestyle=":", lw=0.5)
+
+        ax.set_xlim(-0.2, container_length + 0.2)
+        ax.set_ylim(-0.2, container_width + 0.6)
+        ax.set_aspect("equal")
+        ax.set_xlabel("Meters (longitudinal)")
+        ax.set_ylabel("Meters (transverse)")
+        ax.set_title("Local Layout with Clearance Checks")
+        ax.grid(True, linestyle=":", linewidth=0.5)
+
+        return fig, distances
+
+    layout_fig, clearance_data = plot_local_layout(clearance_m)
+    st.pyplot(layout_fig)
+
+    st.markdown("#### Clearance Verification (NFPA 855 style guidance)")
+    warn_rows = []
+    ok_rows = []
+    for a, b, dist in clearance_data:
+        row = f"{a} → {b}: {dist:.2f} m"
+        if dist < clearance_m:
+            warn_rows.append(row + " (below target clearance)")
+        else:
+            ok_rows.append(row)
+
+    if warn_rows:
+        st.error("Clearance shortfalls detected:")
+        for line in warn_rows:
+            st.write(f"- {line}")
+    else:
+        st.success("All component spacings meet or exceed the selected clearance target.")
+
+    st.write("Compliant spacing supports NFPA 855 objectives for working clearances and fire separation between PCS, transformers, and busbars.")
 
 with tab3:
-    st.info("Step 3 placeholder: Site Layout and Simulation (to be implemented).")
+    st.markdown("## Step 3 · Power Flow + Fault Simulation")
+
+    default_dc = float(stage13.get("dc_power_required_mw", stage13.get("poi_power_req_mw", 5.0)) or 5.0)
+    dc_power = st.slider("DC Block output (MW)", min_value=1.0, max_value=max(10.0, default_dc), value=default_dc, step=0.5)
+    pcs_eff = st.slider("PCS efficiency", min_value=0.90, max_value=0.99, value=0.96, step=0.005)
+    transformer_eff = st.slider("Transformer efficiency", min_value=0.95, max_value=0.99, value=0.985, step=0.005)
+    aux_losses = st.slider("Auxiliary losses (fraction)", min_value=0.0, max_value=0.1, value=0.02, step=0.005)
+    fault_mode = st.selectbox("Fault scenario", ["normal", "short_circuit", "transformer_failure", "pcs_derate"])
+
+    def simulate_power(dc_mw: float, eff_pcs: float, eff_tx: float, aux_loss: float, scenario: str) -> Dict[str, Any]:
+        gross_ac = dc_mw * eff_pcs * eff_tx
+        aux_penalty = gross_ac * aux_loss
+        ac_at_poi = gross_ac - aux_penalty
+        status = "System operating normally"
+
+        if scenario == "short_circuit":
+            ac_at_poi = 0.0
+            status = "Short circuit detected → isolating fault and re-routing to remaining feeders"
+        elif scenario == "transformer_failure":
+            ac_at_poi *= 0.5
+            status = "Transformer failure → shifting to backup / parallel transformer at 50% availability"
+        elif scenario == "pcs_derate":
+            ac_at_poi *= 0.75
+            status = "PCS derated → thermal limit triggered; output limited to 75%"
+
+        losses = dc_mw - (ac_at_poi / (eff_tx * eff_pcs) if eff_pcs and eff_tx else 0.0)
+        return {
+            "gross_ac": gross_ac,
+            "ac_at_poi": max(ac_at_poi, 0.0),
+            "status": status,
+            "losses_mw": max(losses, 0.0),
+        }
+
+    sim = simulate_power(dc_power, pcs_eff, transformer_eff, aux_losses, fault_mode)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Gross AC after PCS + Transformer (MW)", f"{sim['gross_ac']:.2f}")
+    c2.metric("Delivered to POI (MW)", f"{sim['ac_at_poi']:.2f}")
+    c3.metric("Estimated Losses (MW)", f"{sim['losses_mw']:.2f}")
+
+    st.info(sim["status"])
+
+    st.markdown("#### Notes")
+    st.write("- Power flow applies PCS + transformer efficiency chain and deducts auxiliary losses.")
+    st.write("- Fault cases illustrate isolation, backup transformer engagement, and PCS derating impacts.")
