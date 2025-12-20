@@ -1,5 +1,5 @@
 # app.py
-from stage4_interface import pack_stage13_output
+from pathlib import Path
 
 import streamlit as st
 import pandas as pd
@@ -8,6 +8,7 @@ import math
 import altair as alt
 import os
 import io
+from stage4_interface import pack_stage13_output
 
 # ==========================================
 # 0. SETUP & LIBRARY CHECK
@@ -140,21 +141,75 @@ st.markdown(
 # 1. DATA FILE PATH (N1 ADAPTED)
 # ==========================================
 DEFAULT_FILENAME = "ess_sizing_data_dictionary_v13_dc_autofit.xlsx"
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
 DATA_FILE = None
 
-if os.path.exists(DEFAULT_FILENAME):
-    DATA_FILE = DEFAULT_FILENAME
-elif os.path.exists("data_path.txt"):
-    try:
-        with open("data_path.txt", "r") as f:
-            candidate = f.read().strip()
-            if os.path.exists(candidate):
-                DATA_FILE = candidate
-    except Exception:
-        pass
+
+def resolve_data_file(default_filename: str) -> str | None:
+    """
+    Find the data dictionary Excel file.
+    Priority:
+      1) Path specified inside a nearby data_path.txt
+      2) Default filename in common locations (cwd, script dir, repo root, repo_root/data)
+    """
+    candidates = []
+
+    config_files = [
+        Path("data_path.txt"),
+        SCRIPT_DIR / "data_path.txt",
+        REPO_ROOT / "data_path.txt",
+    ]
+    for cfg in config_files:
+        if cfg.is_file():
+            try:
+                raw = cfg.read_text().strip()
+            except Exception:
+                continue
+            if raw:
+                raw_path = Path(raw).expanduser()
+                if not raw_path.is_absolute():
+                    raw_path = (cfg.parent / raw_path).resolve()
+                candidates.append(raw_path)
+
+    search_dirs = [
+        Path.cwd(),
+        SCRIPT_DIR,
+        REPO_ROOT,
+        REPO_ROOT / "data",
+    ]
+    for directory in search_dirs:
+        candidates.append(directory / default_filename)
+
+    seen = set()
+    for cand in candidates:
+        cand = cand.expanduser()
+        try:
+            resolved = cand.resolve()
+        except FileNotFoundError:
+            resolved = cand.absolute()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.is_file():
+            return str(resolved)
+    return None
+
+
+DATA_FILE = resolve_data_file(DEFAULT_FILENAME)
 
 if not DATA_FILE:
-    st.error(f"❌ Data file '{DEFAULT_FILENAME}' not found in current directory. Please put the Excel in the same folder as app.py.")
+    search_locations = [
+        str(Path.cwd()),
+        str(SCRIPT_DIR),
+        str(REPO_ROOT),
+        str(REPO_ROOT / "data"),
+    ]
+    st.error(
+        "❌ Data file "
+        f"'{DEFAULT_FILENAME}' not found. Looked in:\n- " + "\n- ".join(search_locations)
+        + "\nYou can also provide a custom path inside a 'data_path.txt' file."
+    )
     st.stop()
 
 # ==========================================
@@ -231,9 +286,38 @@ def first_success_key(results: dict, preferred_order: list):
 # ==========================================
 @st.cache_data
 def load_data(path: str):
-    xls = pd.ExcelFile(path)
+    data_path = Path(path).expanduser()
+    if not data_path.is_file():
+        raise FileNotFoundError(f"Data file not found: {data_path}")
+
+    try:
+        xls = pd.ExcelFile(data_path)
+    except Exception as exc:
+        raise ValueError(f"Unable to open Excel file '{data_path}': {exc}") from exc
+
+    required_sheets = {
+        "ess_sizing_case",
+        "dc_block_template_314_data",
+        "soh_profile_314_data",
+        "soh_curve_314_template",
+        "rte_profile_314_data",
+        "rte_curve_314_template",
+    }
+    missing_sheets = [s for s in required_sheets if s not in xls.sheet_names]
+    if missing_sheets:
+        raise ValueError(
+            f"Excel file '{data_path.name}' is missing required sheets: {', '.join(sorted(missing_sheets))}"
+        )
+
+    def ensure_columns(df: pd.DataFrame, sheet_name: str, required_cols: list[str]):
+        missing = [c for c in required_cols if c not in df.columns]
+        if missing:
+            raise ValueError(
+                f"Sheet '{sheet_name}' in '{data_path.name}' is missing required columns: {', '.join(missing)}"
+            )
 
     df_case = pd.read_excel(xls, "ess_sizing_case")
+    ensure_columns(df_case, "ess_sizing_case", ["Field Name", "Default Value"])
     defaults = {}
     for _, row in df_case.iterrows():
         field_name = row.get("Field Name")
@@ -241,10 +325,23 @@ def load_data(path: str):
             defaults[field_name.strip()] = row.get("Default Value")
 
     df_blocks = pd.read_excel(xls, "dc_block_template_314_data")
+    ensure_columns(
+        df_blocks,
+        "dc_block_template_314_data",
+        ["Block_Form", "Is_Active", "Is_Default_Option", "Block_Nameplate_Capacity_Mwh", "Dc_Block_Code", "Dc_Block_Name"],
+    )
+
     df_soh_profile = pd.read_excel(xls, "soh_profile_314_data")
+    ensure_columns(df_soh_profile, "soh_profile_314_data", ["Profile_Id", "C_Rate", "Cycles_Per_Year"])
+
     df_soh_curve = pd.read_excel(xls, "soh_curve_314_template")
+    ensure_columns(df_soh_curve, "soh_curve_314_template", ["Profile_Id", "Life_Year_Index", "Soh_Dc_Pct"])
+
     df_rte_profile = pd.read_excel(xls, "rte_profile_314_data")
+    ensure_columns(df_rte_profile, "rte_profile_314_data", ["Profile_Id", "C_Rate"])
+
     df_rte_curve = pd.read_excel(xls, "rte_curve_314_template")
+    ensure_columns(df_rte_curve, "rte_curve_314_template", ["Profile_Id", "Soh_Band_Min_Pct", "Rte_Dc_Pct"])
 
     return defaults, df_blocks, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve
 
@@ -922,7 +1019,11 @@ def build_report_bytes(stage1: dict, results_dict: dict, report_order: list):
 # ==========================================
 # 6. LOAD DATA
 # ==========================================
-defaults, df_blocks, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve = load_data(DATA_FILE)
+try:
+    defaults, df_blocks, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve = load_data(DATA_FILE)
+except Exception as exc:
+    st.error(f"❌ Failed to load data file '{DATA_FILE}': {exc}")
+    st.stop()
 
 def get_default_numeric(field_name: str, fallback: float):
     raw = defaults.get(field_name, fallback)
