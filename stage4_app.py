@@ -55,8 +55,9 @@ def render_simulation_tab(stage13: Dict[str, Any], ac_result: Optional[Dict[str,
     dc_blocks = stage13.get("dc_block_total_qty") or (
         stage13.get("container_count", 0) + stage13.get("cabinet_count", 0)
     )
-    busbars_needed = stage13.get("busbars_needed")
-    busbars = 2 if busbars_needed is None else busbars_needed
+    busbars = stage13.get("busbars_needed")
+    # Respect Stage 2 payload; fall back to 2 only when busbar metadata is missing entirely.
+    busbars = 2 if busbars is None else busbars
     fault_eq = estimate_dc_fault_equivalent(
         dc_blocks=int(dc_blocks),
         dc_busbars=int(busbars),
