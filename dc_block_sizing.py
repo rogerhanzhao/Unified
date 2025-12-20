@@ -142,6 +142,15 @@ st.markdown(
 DEFAULT_FILENAME = "ess_sizing_data_dictionary_v13_dc_autofit.xlsx"
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
+DATA_DIR_ENV = os.environ.get("DATA_DIR")
+DATA_DIR = None
+if DATA_DIR_ENV and DATA_DIR_ENV.strip():
+    try:
+        DATA_DIR = Path(DATA_DIR_ENV.strip()).expanduser()
+    except Exception:
+        DATA_DIR = None
+if DATA_DIR is None:
+    DATA_DIR = REPO_ROOT / "data"
 DATA_FILE = None
 
 
@@ -176,8 +185,14 @@ def resolve_data_file(default_filename: str) -> str | None:
         Path.cwd(),
         SCRIPT_DIR,
         REPO_ROOT,
-        REPO_ROOT / "data",
     ]
+    if DATA_DIR:
+        try:
+            search_dirs.insert(3, Path(DATA_DIR))
+        except TypeError:
+            pass
+    else:
+        search_dirs.append(REPO_ROOT / "data")
     for directory in search_dirs:
         candidates.append(directory / default_filename)
 
@@ -194,12 +209,17 @@ def resolve_data_file(default_filename: str) -> str | None:
         if resolved.is_file():
             return str(resolved)
 
-    fallback_roots = [
-        Path(DATA_DIR),
+    fallback_roots = []
+    if DATA_DIR:
+        try:
+            fallback_roots.append(Path(DATA_DIR))
+        except TypeError:
+            pass
+    fallback_roots.extend([
         SCRIPT_DIR / "data",
         REPO_ROOT,
         SCRIPT_DIR,
-    ]
+    ])
     fallback_patterns = [
         default_filename,
         "ess_sizing_data_dictionary*dc*.xlsx",
@@ -224,8 +244,11 @@ if not DATA_FILE:
         str(Path.cwd()),
         str(SCRIPT_DIR),
         str(REPO_ROOT),
-        str(REPO_ROOT / "data"),
     ]
+    if DATA_DIR:
+        search_locations.append(str(DATA_DIR))
+    else:
+        search_locations.append(str(REPO_ROOT / "data"))
     pattern_hint = "ess_sizing_data_dictionary*dc*.xlsx"
     st.error(
         "❌ Data file "
