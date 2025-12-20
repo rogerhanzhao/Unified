@@ -10,7 +10,7 @@ st.caption(
     "Stage 1–3 remains in the main app.py entrypoint."
 )
 
-PAGE_FILE = "pages/AC_Block_Sizing.py"
+PAGE_FILE = "ac_block_sizing.py"
 
 if not os.path.isfile(PAGE_FILE):
     st.error(f"Page file not found: {PAGE_FILE}")
