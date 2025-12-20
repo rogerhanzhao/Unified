@@ -8,6 +8,7 @@ import math
 import altair as alt
 import os
 import io
+from dc_logic import select_rte_profile, select_soh_profile
 
 # ==========================================
 # 0. SETUP & LIBRARY CHECK
@@ -439,25 +440,11 @@ def build_config_hybrid(required_dc_mwh: float,
         "busbars_needed": busbars,
     }
 
-def select_soh_profile(effective_c_rate: float, cycles_per_year: int, df_soh_profile: pd.DataFrame):
-    df = df_soh_profile.copy()
-    df["c_rate_diff"] = (df["C_Rate"] - effective_c_rate).abs()
-    df["cycles_diff"] = (df["Cycles_Per_Year"] - cycles_per_year).abs()
-    df["score"] = df["c_rate_diff"] * 10.0 + df["cycles_diff"] / 365.0
-    best = df.sort_values("score").iloc[0]
-    return int(best["Profile_Id"]), float(best["C_Rate"]), int(best["Cycles_Per_Year"])
-
-def select_rte_profile(effective_c_rate: float, df_rte_profile: pd.DataFrame):
-    df = df_rte_profile.copy()
-    df["c_rate_diff"] = (df["C_Rate"] - effective_c_rate).abs()
-    best = df.sort_values("c_rate_diff").iloc[0]
-    return int(best["Profile_Id"]), float(best["C_Rate"])
-
 def run_stage3(stage1: dict,
                stage2: dict,
                df_soh_profile: pd.DataFrame,
                df_soh_curve: pd.DataFrame,
-               df_rte_profile: pd.DataFrame,
+                df_rte_profile: pd.DataFrame,
                df_rte_curve: pd.DataFrame):
 
     dc_nameplate_bol_mwh = stage2["dc_nameplate_bol_mwh"]
@@ -1303,7 +1290,7 @@ if run_btn:
         for k in available_stage4_sources:
             s2_k, _s3_df_k, s3_meta_k, _iter_k, _poi_g_k, _conv_k = results[k]
             s2_clean = _sanitize_stage2_for_stage4(s2_k)
-            dc_qty_k = int(s2_k.get("container_count", 0))
+            dc_qty_k = int(s2_k.get("container_count", 0) + s2_k.get("cabinet_count", 0))
             stage13_output_all[k] = pack_stage13_output(
                 stage1=s1,
                 stage2=s2_clean,

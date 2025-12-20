@@ -13,6 +13,7 @@ def pack_stage13_output(
     dc_block_total_qty: int,
     selected_scenario: str,
     poi_nominal_voltage_kv: float,
+    highest_equipment_voltage_kv: float | None = None,
 ) -> Dict[str, Any]:
     """Pack Stage 1–3 outputs into a lightweight dict for Stage 4.
 
@@ -23,6 +24,7 @@ def pack_stage13_output(
         dc_block_total_qty: Total 5MWh DC Block containers (for Stage 4 layout / AC sizing).
         selected_scenario: 'container_only' / 'hybrid' / 'cabinet_only' etc.
         poi_nominal_voltage_kv: MV voltage used for Stage 4.
+        highest_equipment_voltage_kv: Optional MV equipment BIL; defaults to POI voltage if omitted.
 
     Returns:
         A dict safe to store in st.session_state.
@@ -37,6 +39,11 @@ def pack_stage13_output(
         "selected_scenario": selected_scenario,
         "poi_nominal_voltage_kv": float(poi_nominal_voltage_kv),
         "dc_block_total_qty": int(dc_block_total_qty),
+        "highest_equipment_voltage_kv": float(
+            highest_equipment_voltage_kv
+            if highest_equipment_voltage_kv is not None
+            else poi_nominal_voltage_kv
+        ),
 
         # Stage 2 (sanitized)
         "container_count": int(s2.get("container_count", 0) or 0),
