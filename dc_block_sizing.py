@@ -1,13 +1,12 @@
 # dc_block_sizing.py
-import streamlit as st
-import pandas as pd
-import numpy as np
+import streamlit as st # type: ignore
+import pandas as pd # type: ignore
+import numpy as np # type: ignore
 import math
-import altair as alt
+import altair as alt # type: ignore
 import os
 import io
 from pathlib import Path
-
 from sizing.dc_logic import load_dc_data, calculate_dc_energy, dc_rte_calculation
 from sizing.validation import validate_input_data
 from stage4_interface import pack_stage13_output
