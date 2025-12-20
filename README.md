@@ -15,7 +15,7 @@ This repository contains a Streamlit application for sizing energy storage syste
 Launch the Streamlit application from the repository root:
 
 ```bash
-streamlit run DC_Block_Sizing.py
+streamlit run app.py
 ```
 
 Ensure the Excel data files (for example, `ess_sizing_data_dictionary_v13_dc_autofit.xlsx`) are present in the same directory before running.
