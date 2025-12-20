@@ -37,6 +37,7 @@ K_MAX_FIXED = 10
 # CALB VI COLORS
 # ==========================================
 if not st.session_state.get("_dc_page_configured"):
+    # app.py sets the global page config; keep fallback for direct module runs
     st.set_page_config(page_title="CALB ESS Sizing Tool – Stage 1–3 (DC)", layout="wide")
     st.session_state["_dc_page_configured"] = True
 CALB_SKY_BLUE   = "#5cc3e4"
