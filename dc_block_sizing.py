@@ -36,6 +36,9 @@ K_MAX_FIXED = 10
 # ==========================================
 # CALB VI COLORS
 # ==========================================
+if not st.session_state.get("_dc_page_configured"):
+    st.set_page_config(page_title="CALB ESS Sizing Tool – Stage 1–3 (DC)", layout="wide")
+    st.session_state["_dc_page_configured"] = True
 CALB_SKY_BLUE   = "#5cc3e4"
 CALB_DEEP_BLUE  = "#23496b"
 CALB_BLACK      = "#1e1e1e"
@@ -138,8 +141,21 @@ st.markdown(
 # 1. DATA FILE PATH (N1 ADAPTED)
 # ==========================================
 DEFAULT_FILENAME = "ess_sizing_data_dictionary_v13_dc_autofit.xlsx"
+DEFAULT_LOGO_NAME = "calb_logo.png"
 SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent
+
+
+def find_repo_root(start: Path) -> Path:
+    """Return the repository root (looks for a ``.git`` folder) or ``start``."""
+
+    for candidate in [start] + list(start.parents):
+        if (candidate / ".git").is_dir():
+            return candidate
+    return start
+
+
+REPO_ROOT = find_repo_root(SCRIPT_DIR)
+DATA_DIR = REPO_ROOT / "data"
 DATA_FILE = None
 
 
@@ -170,10 +186,11 @@ def resolve_data_file(default_filename: str) -> str | None:
                 candidates.append(raw_path)
 
     search_dirs = [
+        Path(DATA_DIR),
+        SCRIPT_DIR / "data",
         Path.cwd(),
         SCRIPT_DIR,
         REPO_ROOT,
-        REPO_ROOT / "data",
     ]
     for directory in search_dirs:
         candidates.append(directory / default_filename)
@@ -197,10 +214,11 @@ DATA_FILE = resolve_data_file(DEFAULT_FILENAME)
 
 if not DATA_FILE:
     search_locations = [
+        str(Path(DATA_DIR)),
+        str(SCRIPT_DIR / "data"),
         str(Path.cwd()),
         str(SCRIPT_DIR),
         str(REPO_ROOT),
-        str(REPO_ROOT / "data"),
     ]
     st.error(
         "❌ Data file "
@@ -760,6 +778,19 @@ def size_with_guarantee(stage1: dict,
 # 5. REPORT EXPORT HELPERS
 # ==========================================
 def find_logo_for_report():
+    preferred_files = [
+        DATA_DIR / DEFAULT_LOGO_NAME,
+        SCRIPT_DIR / DEFAULT_LOGO_NAME,
+        REPO_ROOT / DEFAULT_LOGO_NAME,
+    ]
+
+    for candidate in preferred_files:
+        try:
+            if candidate.is_file():
+                return str(candidate.resolve())
+        except Exception:
+            continue
+
     search_dirs: list[Path] = []
 
     try:
@@ -1432,12 +1463,18 @@ def render_results_view(payload: dict | None):
 nav_default = st.session_state.get("dc_nav", NAV_OPTIONS[0])
 if nav_default not in NAV_OPTIONS:
     nav_default = NAV_OPTIONS[0]
-nav_choice = st.sidebar.radio(
-    "Navigation",
-    NAV_OPTIONS,
-    index=NAV_OPTIONS.index(nav_default),
-    help="Toggle between inputs and results on a single page.",
-)
+use_external_nav = bool(st.session_state.get("dc_nav_external", False))
+
+if use_external_nav:
+    nav_choice = nav_default
+else:
+    nav_choice = st.sidebar.radio(
+        "Navigation",
+        NAV_OPTIONS,
+        index=NAV_OPTIONS.index(nav_default),
+        help="Toggle between inputs and results on a single page.",
+    )
+
 st.session_state["dc_nav"] = nav_choice
 
 st.markdown(
