@@ -4,6 +4,7 @@ import runpy
 import streamlit as st
 
 st.set_page_config(page_title="CALB ESS Sizing Tool – Stage 4 (AC)", layout="wide")
+st.session_state["_stage4_page_config_set"] = True
 st.title("CALB ESS Sizing Tool – Stage 4 (AC Block)")
 st.caption(
     "Run this app separately to explore AC Block sizing. "

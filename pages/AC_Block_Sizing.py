@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import math
+import json
+import os
 from typing import Any, Dict, List, Optional
 
 import streamlit as st
@@ -9,7 +11,9 @@ import streamlit as st
 # Note: Stage 4 is intentionally isolated from the main app entrypoint
 # (see stage4_app.py). The sizing logic and data sources remain unchanged.
 
-st.set_page_config(page_title="Stage 4 – AC Block", layout="wide")
+if not st.session_state.get("_stage4_page_config_set"):
+    st.set_page_config(page_title="Stage 4 – AC Block", layout="wide")
+    st.session_state["_stage4_page_config_set"] = True
 
 AC_BLOCK_CANDIDATES: List[Dict[str, float]] = [
     {"pcs_units": 2, "pcs_unit_kw": 1250, "ac_block_mw": 2.5},
@@ -135,12 +139,70 @@ def find_ac_block_mixed(
 # Helpers
 # -----------------------------------------------------
 
+def _load_stage13_from_file(path: str = "stage13_output.json") -> Optional[Dict[str, Any]]:
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except Exception as exc:
+        st.warning(f"Failed to load Stage 1–3 output from {path}: {exc}")
+    return None
+
+
 def require_stage13_output() -> Dict[str, Any]:
     stage13 = st.session_state.get("stage13_output")
-    if not stage13:
-        st.error("Stage 1–3 output not found. Please complete sizing in Stage 1–3 first.")
-        st.stop()
-    return stage13
+    if stage13:
+        return stage13
+
+    default_path = st.session_state.get("_stage13_default_path", "stage13_output.json")
+    loaded = _load_stage13_from_file(default_path)
+    if loaded:
+        st.session_state["stage13_output"] = loaded
+        st.info(f"Loaded Stage 1–3 output from {default_path}.")
+        return loaded
+
+    st.warning(
+        "Stage 1–3 output not found in session. Upload a Stage 1–3 payload or enter the essentials below."
+    )
+
+    uploaded = st.file_uploader("Upload Stage 1–3 output (JSON)", type=["json"])
+    if uploaded:
+        try:
+            payload = json.load(uploaded)
+            if isinstance(payload, dict):
+                st.session_state["stage13_output"] = payload
+                st.success("Stage 1–3 output uploaded successfully.")
+                st.experimental_rerun()
+            else:
+                st.error("Uploaded JSON must be an object/dictionary.")
+        except Exception as exc:
+            st.error(f"Could not read uploaded JSON: {exc}")
+
+    with st.expander("Manual entry (minimal fields required for Stage 4)"):
+        with st.form("stage13_manual_form"):
+            poi_mw = st.number_input("POI Power Requirement (MW)", min_value=0.0, value=0.0, step=0.1)
+            container_cnt = st.number_input("Container Count", min_value=0, value=0, step=1)
+            cabinet_cnt = st.number_input("Cabinet Count", min_value=0, value=0, step=1)
+            poi_voltage = st.text_input("POI Nominal Voltage (kV)", value="")
+            submitted = st.form_submit_button("Use these values for Stage 4")
+
+        if submitted:
+            stage13_manual = {
+                "poi_power_req_mw": float(poi_mw),
+                "container_count": int(container_cnt),
+                "cabinet_count": int(cabinet_cnt),
+                "dc_total_blocks": int(container_cnt + cabinet_cnt),
+                "poi_nominal_voltage_kv": poi_voltage,
+                "project_name": "Manual Stage 4 Input",
+            }
+            st.session_state["stage13_output"] = stage13_manual
+            st.success("Stage 4 will use the manual Stage 1–3 inputs provided.")
+            st.experimental_rerun()
+
+    st.stop()
 
 
 def render_step1_summary(res: Dict[str, Any]) -> None:
