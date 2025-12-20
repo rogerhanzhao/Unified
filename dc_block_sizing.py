@@ -1470,10 +1470,13 @@ def render_results_view(payload: dict | None):
             return None
 
         if stage4_path and hasattr(st, "page_link"):
-            stage4_url = _stage4_url_pathname(stage4_path) or "/stage4_app"
-            st.page_link(stage4_url, label="➡️ Open Stage 4 (AC Block Sizing)", disabled=not ready)
-            if not ready:
-                st.caption("Run sizing first to enable Stage 4.")
+            stage4_url = _stage4_url_pathname(stage4_path)
+            if stage4_url:
+                st.page_link(stage4_url, label="➡️ Open Stage 4 (AC Block Sizing)", disabled=not ready)
+                if not ready:
+                    st.caption("Run sizing first to enable Stage 4.")
+            else:
+                st.caption("Stage 4 (AC Block) runs via stage4_app.py in a separate Streamlit session.")
         else:
             st.caption("Stage 4 (AC Block) runs via stage4_app.py in a separate Streamlit session.")
 
