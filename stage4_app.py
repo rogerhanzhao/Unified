@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 import streamlit as st
 
-from ac_logic import build_ac_block_layout, simulate_ac_power_flow
+from ac_logic import build_ac_block_layout, build_block_layout_figure, build_block_sld, simulate_ac_power_flow
 from dc_logic import estimate_dc_fault_equivalent
 
 
@@ -30,6 +30,10 @@ def render_block_layout_tab(stage13: Dict[str, Any], ac_result: Optional[Dict[st
         f"- Aisle / corridor: **{layout['aisle_mm']} mm**  \n"
         f"- Future allowance: **{int(layout['future_space_ratio'] * 100)}%** width reserved per block"
     )
+    st.markdown(
+        f"- Total block string width: **{layout['total_width_m']:.1f} m**  \n"
+        f"- Max depth: **{layout['max_depth_m']:.1f} m**"
+    )
 
     for block in layout["blocks"]:
         st.markdown(f"#### {block.label}")
@@ -44,6 +48,18 @@ def render_block_layout_tab(stage13: Dict[str, Any], ac_result: Optional[Dict[st
                     f"• **{comp['name']}** — qty {comp['quantity']} | {comp['detail']} "
                     f"| clearance ≥ {comp['clearance_mm']} mm"
                 )
+
+    try:
+        sld_fig = build_block_sld(ac_result, stage13)
+        layout_fig = build_block_layout_figure(layout)
+    except ImportError as exc:
+        st.warning(str(exc))
+    else:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.pyplot(sld_fig, clear_figure=True)
+        with c2:
+            st.pyplot(layout_fig, clear_figure=True)
 
 
 def render_simulation_tab(stage13: Dict[str, Any], ac_result: Optional[Dict[str, Any]]) -> None:
@@ -94,3 +110,15 @@ def render_simulation_tab(stage13: Dict[str, Any], ac_result: Optional[Dict[str,
             d2.metric("AC Flow (MVA)", f"{scenario['ac_flow_mva']:.2f}")
             d3.metric("Status", scenario["status"])
             st.progress(min(scenario["ac_flow_mva"] / max(sim["available_mva"], 0.01), 1.0))
+
+    st.markdown("##### Scenario comparison")
+    st.dataframe(
+        {
+            "Scenario": [s["name"] for s in sim["scenarios"]],
+            "AC Flow (MW)": [round(s["ac_flow_mw"], 2) for s in sim["scenarios"]],
+            "AC Flow (MVA)": [round(s["ac_flow_mva"], 2) for s in sim["scenarios"]],
+            "Status": [s["status"] for s in sim["scenarios"]],
+        },
+        hide_index=True,
+        use_container_width=True,
+    )

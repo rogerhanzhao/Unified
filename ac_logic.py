@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 AC_BLOCK_CANDIDATES: List[Dict[str, float]] = [
@@ -10,6 +10,18 @@ AC_BLOCK_CANDIDATES: List[Dict[str, float]] = [
     {"pcs_units": 4, "pcs_unit_kw": 1250, "ac_block_mw": 5.0},
     {"pcs_units": 4, "pcs_unit_kw": 1725, "ac_block_mw": 6.9},
 ]
+
+
+def _get_matplotlib():
+    try:
+        import matplotlib.pyplot as plt  # type: ignore
+        from matplotlib.patches import FancyBboxPatch, Rectangle  # type: ignore
+    except Exception as exc:  # pragma: no cover - import guard
+        raise ImportError(
+            "matplotlib is required to render SLD and layout visuals. "
+            "Install matplotlib in the Streamlit environment to enable plotting."
+        ) from exc
+    return plt, FancyBboxPatch, Rectangle
 
 
 def find_ac_block_container_only(
@@ -142,6 +154,7 @@ def build_ac_block_layout(
     base_width = 6.0 + ac_result.get("pcs_units", 0) * 0.6
     base_depth = 5.5
     future_space = base_width * future_space_ratio
+    corridor_m = aisle_mm / 1000.0
 
     for idx in range(ac_result.get("ac_block_qty", 0)):
         components = [
@@ -182,12 +195,169 @@ def build_ac_block_layout(
             )
         )
 
+    total_width = sum(block.footprint_width_m + corridor_m for block in blocks) + (blocks[-1].future_space_m if blocks else 0.0)
+    max_depth = max((block.footprint_depth_m for block in blocks), default=0.0)
+
     return {
         "clearance_mm": clearance_mm,
         "aisle_mm": aisle_mm,
         "future_space_ratio": future_space_ratio,
+        "total_width_m": total_width,
+        "max_depth_m": max_depth,
         "blocks": blocks,
     }
+
+
+def _draw_component_box(ax: Any, center: Tuple[float, float], text: str, box_cls: Any, *, color: str = "#cfe2ff") -> None:
+    """Utility to draw a rounded component box with centered text."""
+    x, y = center
+    width, height = 1.2, 0.6
+    box = box_cls(
+        (x - width / 2, y - height / 2),
+        width,
+        height,
+        boxstyle="round,pad=0.1,rounding_size=0.08",
+        linewidth=1.2,
+        facecolor=color,
+        edgecolor="#0d6efd",
+    )
+    ax.add_patch(box)
+    ax.text(x, y, text, ha="center", va="center", fontsize=10, weight="bold")
+
+
+def build_block_sld(ac_result: Dict[str, Any], stage13: Dict[str, Any]) -> Any:
+    """Create a simplified block-level SLD showing RMU → Transformer → PCS → DC Busbar → DC Block."""
+    plt, FancyBboxPatch, _ = _get_matplotlib()
+    fig, ax = plt.subplots(figsize=(9, 3))
+    ax.axis("off")
+
+    pcs_units = ac_result.get("pcs_units", 0)
+    pcs_unit_kw = ac_result.get("pcs_unit_kw", 0)
+    dc_total = stage13.get("container_count", 0) + stage13.get("cabinet_count", 0)
+    busbars = stage13.get("busbars_needed", 2) or 2
+
+    nodes = {
+        "RMU": (-1, 0),
+        "Transformer": (1, 0),
+        "PCS": (3, 0),
+        "AC Busbar": (5, 0),
+        "DC Busbar": (7, 0),
+        "DC Blocks": (9, 0),
+    }
+
+    _draw_component_box(ax, nodes["RMU"], "RMU / SWG", FancyBboxPatch)
+    _draw_component_box(ax, nodes["Transformer"], "MV / LV TX", FancyBboxPatch)
+    _draw_component_box(ax, nodes["PCS"], f"PCS\n{pcs_units} × {pcs_unit_kw} kW", FancyBboxPatch)
+    _draw_component_box(ax, nodes["AC Busbar"], "AC Busbar", FancyBboxPatch)
+    _draw_component_box(ax, nodes["DC Busbar"], f"DC Busbars\n{busbars} section(s)", FancyBboxPatch)
+    _draw_component_box(ax, nodes["DC Blocks"], f"DC Blocks\n{dc_total} units", FancyBboxPatch)
+
+    order = ["RMU", "Transformer", "PCS", "AC Busbar", "DC Busbar", "DC Blocks"]
+    for left, right in zip(order, order[1:]):
+        x0, y0 = nodes[left]
+        x1, y1 = nodes[right]
+        ax.annotate(
+            "",
+            xy=(x1 - 0.7, y1),
+            xytext=(x0 + 0.7, y0),
+            arrowprops=dict(arrowstyle="->", linewidth=1.4, color="#495057"),
+        )
+
+    ax.set_xlim(-2, 10)
+    ax.set_ylim(-1.5, 1.5)
+    ax.set_title("Block-Level Single Line Diagram (SLD)", fontsize=12, weight="bold")
+    return fig
+
+
+def build_block_layout_figure(layout: Dict[str, Any]) -> Any:
+    """Visualize physical placement of AC Blocks with corridors and future expansion space."""
+    plt, _, Rectangle = _get_matplotlib()
+    fig, ax = plt.subplots(figsize=(10, 3 + len(layout.get("blocks", [])) * 0.5))
+    ax.set_aspect("equal")
+    ax.axis("off")
+
+    x_cursor = 0.5
+    corridor_m = layout.get("aisle_mm", 1200) / 1000.0
+
+    for block in layout.get("blocks", []):
+        rect = Rectangle(
+            (x_cursor, 0.5),
+            block.footprint_width_m,
+            block.footprint_depth_m,
+            linewidth=1.4,
+            edgecolor="#0d6efd",
+            facecolor="#e7f1ff",
+        )
+        ax.add_patch(rect)
+        ax.text(
+            x_cursor + block.footprint_width_m / 2,
+            0.5 + block.footprint_depth_m / 2 + 0.2,
+            block.label,
+            ha="center",
+            va="center",
+            fontsize=10,
+            weight="bold",
+        )
+
+        component_y = 0.5 + block.footprint_depth_m / 2 - 0.4
+        for idx, comp in enumerate(block.components):
+            ax.text(
+                x_cursor + block.footprint_width_m / 2,
+                component_y - idx * 0.35,
+                f"{comp['name']} (≥{comp['clearance_mm']} mm)",
+                ha="center",
+                va="center",
+                fontsize=8.5,
+            )
+
+        # Reserved corridor
+        corridor_rect = Rectangle(
+            (x_cursor + block.footprint_width_m, 0.5),
+            corridor_m,
+            block.footprint_depth_m,
+            linewidth=1.0,
+            edgecolor="#adb5bd",
+            facecolor="#f8f9fa",
+            linestyle="--",
+        )
+        ax.add_patch(corridor_rect)
+        ax.text(
+            x_cursor + block.footprint_width_m + corridor_m / 2,
+            0.5 + block.footprint_depth_m + 0.1,
+            f"Corridor {block.reserved_corridor_mm} mm",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+            color="#6c757d",
+        )
+
+        # Future space shading
+        future_rect = Rectangle(
+            (x_cursor + block.footprint_width_m + corridor_m, 0.5),
+            block.future_space_m,
+            block.footprint_depth_m,
+            linewidth=0.0,
+            facecolor="#ffe8cc",
+            alpha=0.7,
+        )
+        ax.add_patch(future_rect)
+        ax.text(
+            x_cursor + block.footprint_width_m + corridor_m + block.future_space_m / 2,
+            0.5 + block.footprint_depth_m / 2,
+            "Future\nallowance",
+            ha="center",
+            va="center",
+            fontsize=8.5,
+            color="#d9480f",
+            weight="bold",
+        )
+
+        x_cursor += block.footprint_width_m + corridor_m + block.future_space_m + 0.5
+
+    ax.set_xlim(0, max(x_cursor, 5))
+    ax.set_ylim(0, max(layout.get("max_depth_m", 0.0) + 1.5, 3))
+    ax.set_title("AC Block Layout (not to scale)", fontsize=12, weight="bold")
+    return fig
 
 
 def simulate_ac_power_flow(
@@ -227,6 +397,12 @@ def simulate_ac_power_flow(
             "ac_flow_mw": fault_mva * power_factor,
             "ac_flow_mva": fault_mva,
             "status": "Check Protections",
+        },
+        {
+            "name": "Single Transformer Outage",
+            "ac_flow_mw": max(total_capacity_mw - (ac_result.get("ac_block_rated_mw", 0.0) or 0.0), 0.0),
+            "ac_flow_mva": max(total_capacity_mw - (ac_result.get("ac_block_rated_mw", 0.0) or 0.0), 0.0) / max(power_factor, 0.01),
+            "status": "Redundant" if total_capacity_mw - poi_mw >= (ac_result.get("ac_block_rated_mw", 0.0) or 0.0) else "Limited",
         },
     ]
 
