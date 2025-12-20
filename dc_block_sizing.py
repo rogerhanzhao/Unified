@@ -1449,8 +1449,25 @@ def render_results_view(payload: dict | None):
         stage4_path = "stage4_app.py" if os.path.exists("stage4_app.py") else None
         ready = ("stage13_output" in st.session_state) and (int(st.session_state.get("dc_block_total_qty", 0)) > 0)
 
+        def _stage4_url_pathname(page_file: str) -> str | None:
+            """
+            Resolve a safe url_pathname for Streamlit page links.
+            Prevents KeyError when page metadata is missing or incomplete.
+            """
+            if not hasattr(st, "experimental_get_pages"):
+                return None
+            try:
+                pages = st.experimental_get_pages()
+            except Exception:
+                return None
+            for page_data in pages.values():
+                if page_data.get("script_path") == page_file:
+                    return page_data.get("url_pathname")
+            return None
+
         if stage4_path and hasattr(st, "page_link"):
-            st.page_link(stage4_path, label="➡️ Open Stage 4 (AC Block Sizing)", disabled=not ready)
+            stage4_url = _stage4_url_pathname(stage4_path) or "/stage4_app"
+            st.page_link(stage4_url, label="➡️ Open Stage 4 (AC Block Sizing)", disabled=not ready)
             if not ready:
                 st.caption("Run sizing first to enable Stage 4.")
         else:

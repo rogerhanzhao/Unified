@@ -3,8 +3,6 @@ import runpy
 
 import streamlit as st
 
-from ac_block_sizing import main as render_ac_block_sizing
-
 if not st.session_state.get("_app_page_configured"):
     st.set_page_config(page_title="CALB ESS Sizing Tool", layout="wide")
     st.session_state["_app_page_configured"] = True
@@ -31,13 +29,9 @@ def render_dc_block_page(nav_choice: str) -> None:
 st.sidebar.title("Navigation")
 nav_option = st.sidebar.radio(
     "Select View",
-    ("Stage 1–3 Inputs", "DC Block Sizing", "AC Block Sizing"),
-    help="Switch between Stage 1–3 inputs/results and AC block sizing within a single app run.",
+    ("DC Block Sizing",),
+    help="Stage 1–3 inputs and DC block sizing are combined into a single experience.",
 )
 
-if nav_option == "AC Block Sizing":
-    render_ac_block_sizing()
-elif nav_option == "DC Block Sizing":
-    render_dc_block_page("DC Block Results & Export")
-else:
+if nav_option == "DC Block Sizing":
     render_dc_block_page("Stage 1–3 Inputs")
