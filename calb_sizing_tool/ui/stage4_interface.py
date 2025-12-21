@@ -1,6 +1,7 @@
 # calb_sizing_tool/ui/stage4_interface.py
 from typing import Any, Dict
-
+def pack_stage13_output(*args, **kwargs):
+    return kwargs # Simple pass-through or formatting logic
 def pack_stage13_output(
     stage1: Dict[str, Any],
     stage2: Dict[str, Any],
