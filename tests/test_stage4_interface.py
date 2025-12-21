@@ -1,6 +1,6 @@
 import time
 
-from stage4_interface import pack_stage13_output
+from calb_sizing_tool.ui.stage4_interface5 import pack_stage13_output
 
 
 def test_pack_stage13_output_coerces_types(monkeypatch):

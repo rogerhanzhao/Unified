@@ -1,60 +1,41 @@
-import os
-import runpy
-
 import streamlit as st
+from PIL import Image
 
-if not st.session_state.get("_app_page_configured"):
-    st.set_page_config(page_title="CALB ESS Sizing Tool", layout="wide")
-    st.session_state["_app_page_configured"] = True
-    # Keep backwards-compatible flag for downstream modules
-    st.session_state["_dc_page_configured"] = True
+# Setup Page
+st.set_page_config(page_title="CALB ESS Sizing Tool", layout="wide")
 
+# Sidebar Logo
+try:
+    logo = Image.open("calb_logo.png")
+    st.sidebar.image(logo, width=200)
+except:
+    st.sidebar.write("CALB ESS Platform")
 
-def render_dc_block_page(nav_choice: str) -> None:
-    st.session_state["dc_nav_external"] = True
-    st.session_state["dc_nav"] = nav_choice
-
-    page_file = "dc_block_sizing.py"
-    if not os.path.isfile(page_file):
-        st.error(f"Page file not found: {page_file}")
-        return
-
-    try:
-        runpy.run_path(page_file, run_name="__main__")
-    except Exception as exc:
-        st.error(f"Error loading DC sizing page:\n{exc}")
-        raise
-
-
-def render_ac_block_page() -> None:
-    page_file = "ac_block_sizing.py"
-    if not os.path.isfile(page_file):
-        st.error(f"Page file not found: {page_file}")
-        return
-
-    try:
-        runpy.run_path(page_file, run_name="__main__")
-    except Exception as exc:
-        st.error(f"Error loading AC sizing page:\n{exc}")
-        raise
-
-
+# Navigation
 st.sidebar.title("Navigation")
-app_nav_options = ("DC Block Sizing", "AC Block Sizing")
-app_nav_default = st.session_state.get("app_nav", app_nav_options[0])
-if app_nav_default not in app_nav_options:
-    app_nav_default = app_nav_options[0]
+page = st.sidebar.radio("Go to", ["Dashboard", "AC Sizing", "DC Sizing", "Single Line Diagram"])
 
-nav_option = st.sidebar.radio(
-    "Select Page",
-    app_nav_options,
-    index=app_nav_options.index(app_nav_default),
-    key="app_nav_choice",
-    help="Choose between Stage 1–3 (DC) and Stage 4 (AC) sizing flows.",
-)
-st.session_state["app_nav"] = nav_option
+# Import Logic (Lazy imports to prevent circular issues)
+if page == "Dashboard":
+    st.title("ESS Sizing Platform Dashboard")
+    st.write("Select a module from the sidebar to begin.")
+    
+elif page == "AC Sizing":
+    # Refactored import: assumes you moved logic to calb_sizing_tool/ui/ac_view.py
+    # or you can temporarily import the old file if you haven't moved it yet
+    try:
+        from calb_sizing_tool.ui import ac_view
+        ac_view.show() 
+    except ImportError:
+        st.warning("Please move 'ac_block_sizing.py' logic to 'calb_sizing_tool/ui/ac_view.py'")
+        
+elif page == "DC Sizing":
+    try:
+        from calb_sizing_tool.ui import dc_view
+        dc_view.show()
+    except ImportError:
+        st.warning("Please move 'dc_block_sizing.py' logic to 'calb_sizing_tool/ui/dc_view.py'")
 
-if nav_option == "DC Block Sizing":
-    render_dc_block_page("Stage 1–3 Inputs")
-elif nav_option == "AC Block Sizing":
-    render_ac_block_page()
+elif page == "Single Line Diagram":
+    from calb_sizing_tool.ui.sld_view import show_sld_interface
+    show_sld_interface()

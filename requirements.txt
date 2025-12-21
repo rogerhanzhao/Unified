@@ -1,8 +1,7 @@
 streamlit
 pandas
-openpyxl
 numpy
+pydantic
+networkx
 graphviz
-matplotlib
-python-docx
 pytest

@@ -1,6 +1,4 @@
-# ac_block_sizing.py
 from __future__ import annotations
-
 import importlib.util
 import io
 import math
@@ -8,12 +6,23 @@ from typing import Any, Dict, List, Optional
 
 import graphviz
 import matplotlib.pyplot as plt
-import streamlit as st
 from matplotlib.patches import Rectangle
+import streamlit as st
+import pandas as pd
+import numpy as np
 
-# Note: Stage 4 is intentionally isolated from the main app entrypoint
-# (see stage4_app.py). The sizing logic and data sources remain unchanged.
+# --- 核心修改: 引入配置和包内模块 ---
+from calb_sizing_tool.config import AC_DATA_PATH
 
+# 尝试导入 simulation，如果未迁移成功则容错处理
+try:
+    from calb_sizing_tool.sizing import simulation
+except ImportError:
+    simulation = None
+
+# -----------------------------------------------------
+# Global Constants & Checks
+# -----------------------------------------------------
 AC_BLOCK_CANDIDATES: List[Dict[str, float]] = [
     {"pcs_units": 2, "pcs_unit_kw": 1250, "ac_block_mw": 2.5},
     {"pcs_units": 2, "pcs_unit_kw": 1725, "ac_block_mw": 3.45},
@@ -25,11 +34,10 @@ DOCX_AVAILABLE = False
 if importlib.util.find_spec("docx"):
     from docx import Document
     from docx.shared import Pt
-
     DOCX_AVAILABLE = True
 
 # -----------------------------------------------------
-# AC Block Sizing Functions
+# Helper Functions (Logic)
 # -----------------------------------------------------
 
 def find_ac_block_container_only(
@@ -141,11 +149,6 @@ def find_ac_block_mixed(
     return best
 
 
-# -----------------------------------------------------
-# Helpers
-# -----------------------------------------------------
-
-
 def get_dc_block_total(stage13: Dict[str, Any]) -> int:
     return int(
         stage13.get("dc_block_total_qty")
@@ -240,11 +243,16 @@ def render_layout_plot(positions: Dict[str, Any], *, ac_color: str = "#CFE2FF", 
     ax.set_title("Physical Layout: 1 AC Block with Connected DC Blocks")
     return fig
 
+
 def require_stage13_output() -> Dict[str, Any]:
     stage13 = st.session_state.get("stage13_output")
     if not stage13:
-        st.error("Stage 1–3 output not found. Please complete sizing in Stage 1–3 first.")
-        st.stop()
+        # Check if we have DC sizing results in session state from dc_view.py
+        # If user ran DC sizing but stage13_output wasn't formed yet, we can try to form it or warn.
+        # For now, consistent with the request, just stop.
+        st.warning("Stage 1–3 output not found. Please complete 'DC Block Sizing' first.")
+        # Return empty dict to prevent crash, but UI will likely stop logic
+        return {}
     return stage13
 
 
@@ -381,13 +389,27 @@ def run_step1_sizing(
     )
     return None
 
-
-def main() -> None:
+# -----------------------------------------------------
+# Main Interface Function (Called by app.py)
+# -----------------------------------------------------
+def show() -> None:
     st.title("Stage 4 – AC Block (V0.4)")
     st.caption("Chain: RMU/SW → Transformer (MV/LV) → PCS → DC Busbar → DC Block")
 
-    stage13 = require_stage13_output()
+    # 1. 尝试读取 AC 数据字典 (用于后续逻辑扩展)
+    try:
+        df = pd.read_excel(AC_DATA_PATH)
+        # st.success("Loaded AC Block Data Dictionary") # Optional: Debug msg
+    except Exception as e:
+        st.error(f"无法读取数据文件 (AC_DATA_PATH): {e}")
+        st.stop()
 
+    # 2. 检查前置步骤数据
+    stage13 = require_stage13_output()
+    if not stage13:
+        st.stop()
+
+    # 3. 页面 Tabs
     tab1, tab2, tab3 = st.tabs(
         [
             "Step 1 · AC Block Sizing",
@@ -495,7 +517,3 @@ def main() -> None:
 
             st.write(simulate_fault(scenario))
             st.caption("Detailed time-series simulations can be integrated with dispatch logic in future iterations.")
-
-
-if __name__ == "__main__":
-    main()
