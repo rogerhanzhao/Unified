@@ -90,7 +90,8 @@ def _setup_doc(doc):
     h2.font.color.rgb = RGBColor(60, 60, 60)
     h2.font.bold = True
 
-def _add_header(doc, title_suffix="Report"):
+def _setup_header(doc, title_suffix="Report"):
+    """Adds standard header with Logo and Title Suffix."""
     section = doc.sections[0]
     header = section.header
     header.is_linked_to_previous = False
@@ -170,7 +171,6 @@ def _write_cover(doc, data, title):
 
 def _write_exec_summary(doc, data):
     doc.add_heading("1. Executive Summary", 1)
-    # Safely access list index
     mv = data.ac_blocks[0].mv_voltage_kv if data.ac_blocks else "-"
     
     bullets = [
