@@ -1,225 +1,226 @@
-import os
-from io import BytesIO
+import io
+import datetime
 import pandas as pd
+import matplotlib.pyplot as plt
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from calb_sizing_tool.config import PROJECT_ROOT
 from calb_sizing_tool.models import ProjectSizingResult
 
-def _setup_page_header(doc):
-    """设置符合 CALB 标准的页眉 (Logo + 保密声明)"""
+# --- Style Constants ---
+CALB_BLUE = RGBColor(0x2E, 0x74, 0xB5)
+HEADER_GRAY = 'E7E6E6'
+FONT_HEAD = 'Arial'
+FONT_BODY = 'Times New Roman'
+
+class ChartBuilder:
+    """Generates engineering-grade charts for the report."""
+    
+    @staticmethod
+    def create_dc_chart(df: pd.DataFrame, target_mwh: float):
+        if df is None or df.empty: return None
+        
+        fig, ax = plt.subplots(figsize=(6.5, 3.2))
+        
+        # Determine columns
+        col_yr = 'Year' if 'Year' in df.columns else 'Year_Index'
+        col_egy = 'POI_Usable_Energy_MWh'
+        
+        # Filter negative years and data
+        data = df[df[col_yr] >= 0].copy()
+        
+        # Plot
+        ax.bar(data[col_yr], data[col_egy], color='#5cc3e4', width=0.6, label='Usable Energy', zorder=3)
+        ax.axhline(y=target_mwh, color='red', linestyle='--', linewidth=1.5, label='Requirement', zorder=4)
+        
+        # Strict Engineering Axis
+        ax.set_ylim(bottom=0, top=max(data[col_egy].max(), target_mwh) * 1.15)
+        ax.set_xlim(left=-0.6, right=len(data)-0.4)
+        ax.set_ylabel('Energy (MWh)', fontname=FONT_HEAD, fontsize=9)
+        ax.set_title('DC Usable Energy Profile', fontname=FONT_HEAD, fontsize=10, weight='bold')
+        
+        ax.grid(axis='y', linestyle=':', alpha=0.5)
+        ax.legend(loc='upper right', fontsize=8)
+        plt.tight_layout()
+        
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', dpi=150)
+        plt.close(fig)
+        buf.seek(0)
+        return buf
+
+    @staticmethod
+    def create_ac_chart(ac_blocks: list):
+        if not ac_blocks: return None
+        fig, ax = plt.subplots(figsize=(6, 3))
+        
+        count = len(ac_blocks)
+        # Calculate totals
+        total_mw = sum(b.pcs_power_kw * b.num_pcs / 1000.0 for b in ac_blocks)
+        
+        # Simple Visualization
+        ax.bar(['AC Blocks'], [count], color='#90EE90', width=0.3)
+        ax.text(0, count, f"{count}", ha='center', va='bottom')
+        
+        ax2 = ax.twinx()
+        ax2.bar(['Total Power'], [total_mw], color='#87CEEB', width=0.3)
+        ax2.text(1, total_mw, f"{total_mw:.2f} MW", ha='center', va='bottom')
+        
+        ax.set_ylabel('Quantity')
+        ax2.set_ylabel('Power (MW)')
+        ax.set_title('AC System Configuration')
+        ax.set_ylim(bottom=0, top=count*1.3)
+        ax2.set_ylim(bottom=0, top=total_mw*1.3)
+        
+        plt.tight_layout()
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', dpi=150)
+        plt.close(fig)
+        buf.seek(0)
+        return buf
+
+def _setup_styles(doc):
+    styles = doc.styles
+    
+    # Normal
+    p = styles['Normal']
+    p.font.name = FONT_BODY
+    p.font.size = Pt(10.5)
+    
+    # Heading 1
+    h1 = styles['Heading 1']
+    h1.font.name = FONT_HEAD
+    h1.font.size = Pt(16)
+    h1.font.color.rgb = CALB_BLUE
+    h1.font.bold = True
+    h1.paragraph_format.space_before = Pt(18)
+    
+    # Heading 2
+    h2 = styles['Heading 2']
+    h2.font.name = FONT_HEAD
+    h2.font.size = Pt(12)
+    h2.font.color.rgb = RGBColor(60, 60, 60)
+    h2.font.bold = True
+    h2.paragraph_format.space_before = Pt(12)
+
+def _setup_header(doc):
     section = doc.sections[0]
     header = section.header
     header.is_linked_to_previous = False
     
-    # 创建 1行2列 的表格用于布局
-    table = header.add_table(rows=1, cols=2, width=Inches(6.5))
-    table.autofit = False
-    table.columns[0].width = Inches(2.0) # Logo 区域
-    table.columns[1].width = Inches(4.5) # 文字区域
+    tbl = header.add_table(rows=1, cols=2, width=Inches(7))
+    tbl.autofit = False
+    tbl.columns[0].width = Inches(2.5)
+    tbl.columns[1].width = Inches(4.5)
     
-    # 插入 Logo
-    logo_path = PROJECT_ROOT / "calb_logo.png"
-    cell_logo = table.cell(0, 0)
-    if logo_path.exists():
-        paragraph = cell_logo.paragraphs[0]
-        paragraph.add_run().add_picture(str(logo_path), width=Inches(1.2))
+    # Logo
+    logo_file = PROJECT_ROOT / "calb_logo.png"
+    if logo_file.exists():
+        tbl.cell(0,0).paragraphs[0].add_run().add_picture(str(logo_file), width=Inches(1.2))
     else:
-        cell_logo.text = "[CALB Logo]"
+        tbl.cell(0,0).text = "CALB ESS"
+        
+    # Text
+    p = tbl.cell(0,1).paragraphs[0]
+    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    r = p.add_run("CALB Group Co., Ltd.\nESS Combined Technical Report\nConfidential")
+    r.font.name = FONT_HEAD
+    r.font.size = Pt(8)
+    r.font.color.rgb = RGBColor(128, 128, 128)
 
-    # 插入右对齐文本
-    cell_text = table.cell(0, 1)
-    paragraph = cell_text.paragraphs[0]
-    paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    run = paragraph.add_run("CALB Group Co., Ltd.\nUtility-Scale ESS Technical Proposal\nConfidential")
-    run.font.name = "Arial"
-    run.font.size = Pt(9)
-    run.font.bold = True
+def _add_table(doc, data, headers=None, col_widths=None):
+    """Robust table generator with gray header shading."""
+    rows = len(data) + (1 if headers else 0)
+    cols = len(data[0]) if data else (len(headers) if headers else 0)
+    
+    t = doc.add_table(rows=rows, cols=cols)
+    t.style = 'Table Grid'
+    t.autofit = False
+    
+    if col_widths:
+        for r in t.rows:
+            for i, w in enumerate(col_widths):
+                if i < len(r.cells): r.cells[i].width = Inches(w)
+                
+    ridx = 0
+    if headers:
+        for i, h in enumerate(headers):
+            cell = t.cell(0, i)
+            # Shading
+            tcPr = cell._tc.get_or_add_tcPr()
+            shd = OxmlElement('w:shd')
+            shd.set(qn('w:fill'), HEADER_GRAY)
+            tcPr.append(shd)
+            
+            p = cell.paragraphs[0]
+            r = p.add_run(str(h))
+            r.bold = True
+            r.font.name = FONT_HEAD
+            r.font.size = Pt(10)
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        ridx = 1
+        
+    for row_data in data:
+        for i, val in enumerate(row_data):
+            cell = t.cell(ridx, i)
+            p = cell.paragraphs[0]
+            p.text = str(val)
+            p.runs[0].font.name = FONT_BODY
+            p.runs[0].font.size = Pt(10)
+            if i == 0: p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            else: p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        ridx += 1
+    return t
 
-def _add_table_style(table):
-    """应用统一的表格样式"""
-    table.style = 'Table Grid'
-    for row in table.rows:
-        for cell in row.cells:
-            for paragraph in cell.paragraphs:
-                for run in paragraph.runs:
-                    run.font.size = Pt(10)
-                    run.font.name = 'Arial'
-
-def create_combined_report(data: ProjectSizingResult, report_type="combined", extra_context=None) -> BytesIO:
+def generate_combined_report(data: ProjectSizingResult, report_type="combined", extra_context=None) -> io.BytesIO:
     """
-    生成完整的技术方案报告
-    :param data: ProjectSizingResult 对象
-    :param report_type: 'combined', 'ac', 'dc'
-    :param extra_context: 字典，包含 'degradation_table' (DataFrame) 等额外数据
+    Main entry point for report generation.
+    Supports 'dc', 'ac', or 'combined'.
     """
-    if extra_context is None:
-        extra_context = {}
-
+    if extra_context is None: extra_context = {}
+    
+    # Unpack Context
+    inputs = extra_context.get('inputs', {})
+    deg_table = extra_context.get('degradation_table')
+    # Raw dictionary row for exact specs
+    dc_spec_raw = extra_context.get('dc_spec_raw', {}) 
+    
     doc = Document()
-    _setup_page_header(doc)
-
-    # --- 标题 ---
-    title = doc.add_heading(f"ESS Technical Proposal: {data.project_name}", 0)
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _setup_styles(doc)
+    _setup_header(doc)
     
-    doc.add_paragraph("\n")
+    # ================= A. COVER PAGE =================
+    doc.add_paragraph("\n"*5)
+    t = doc.add_heading("ESS Combined Technical Report", 0)
+    t.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
-    # --- 1. Executive Summary ---
-    doc.add_heading('1. Executive Summary', level=1)
-    p = doc.add_paragraph()
-    p.add_run(f"Total System Power: ").bold = True
-    p.add_run(f"{data.system_power_mw:.2f} MW\n")
-    p.add_run(f"Total System Capacity (BOL): ").bold = True
-    p.add_run(f"{data.system_capacity_mwh:.2f} MWh\n")
+    p = doc.add_paragraph(f"\nProject Name: {data.project_name}")
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
-    # 统计 AC/DC 数量
-    total_ac_blocks = len(data.ac_blocks)
-    total_dc_containers = data.total_dc_blocks
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    p = doc.add_paragraph(f"Generated: {ts}\nVersion: 1.2-Auto")
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
-    p.add_run(f"System Configuration: ").bold = True
-    p.add_run(f"{total_ac_blocks} x AC Blocks + {total_dc_containers} x Battery Containers.")
-
-    # --- 2. DC Subsystem Configuration ---
-    if report_type in ["dc", "combined"]:
-        doc.add_heading('2. DC Subsystem Configuration', level=1)
-        
-        # 2.1 DC Equipment Parameters
-        doc.add_heading('2.1 DC Equipment Specification', level=2)
-        if data.ac_blocks and data.ac_blocks[0].dc_blocks_connected:
-            dc_sample = data.ac_blocks[0].dc_blocks_connected[0]
-            
-            table = doc.add_table(rows=1, cols=2)
-            _add_table_style(table)
-            
-            specs = [
-                ("Battery Container Model", dc_sample.container_model),
-                ("Cell Technology", "CALB 314Ah LiFePO4"),
-                ("System Voltage", f"{dc_sample.voltage_v:.0f} V"),
-                ("Racks per Container", str(dc_sample.racks_per_container)),
-                ("Unit Capacity (BOL)", f"{dc_sample.capacity_mwh:.4f} MWh"),
-                ("Total Quantity", f"{total_dc_containers} Units"),
-                ("Total DC Capacity", f"{data.system_capacity_mwh:.2f} MWh")
-            ]
-            
-            for k, v in specs:
-                row = table.add_row().cells
-                row[0].text = k
-                row[1].text = v
-        
-        # 2.2 Capacity Degradation (Annual Data)
-        doc.add_paragraph("\n")
-        doc.add_heading('2.2 Estimated Capacity Degradation', level=2)
-        
-        deg_df = extra_context.get("degradation_table")
-        if isinstance(deg_df, pd.DataFrame) and not deg_df.empty:
-            # 只取关键列，防止表格过宽
-            cols_to_keep = ["Year", "SOH_Display_Pct", "POI_Usable_Energy_MWh"]
-            # 尝试匹配列名（处理不同版本的列名差异）
-            final_cols = []
-            headers = []
-            
-            if "Year" in deg_df.columns: 
-                final_cols.append("Year")
-                headers.append("Year")
-            elif "Year_Index" in deg_df.columns:
-                final_cols.append("Year_Index")
-                headers.append("Year")
-                
-            if "SOH_Display_Pct" in deg_df.columns:
-                final_cols.append("SOH_Display_Pct")
-                headers.append("SOH (%)")
-                
-            if "POI_Usable_Energy_MWh" in deg_df.columns:
-                final_cols.append("POI_Usable_Energy_MWh")
-                headers.append("Usable Energy (MWh)")
-            
-            if final_cols:
-                # 创建表格
-                rows_count = len(deg_df) + 1
-                table = doc.add_table(rows=rows_count, cols=len(final_cols))
-                _add_table_style(table)
-                
-                # 表头
-                hdr_cells = table.rows[0].cells
-                for i, h in enumerate(headers):
-                    hdr_cells[i].text = h
-                    hdr_cells[i].paragraphs[0].runs[0].font.bold = True
-                
-                # 数据填充
-                for i, row in enumerate(deg_df[final_cols].itertuples(index=False)):
-                    cells = table.rows[i+1].cells
-                    for j, val in enumerate(row):
-                        if isinstance(val, float):
-                            cells[j].text = f"{val:.2f}"
-                        else:
-                            cells[j].text = str(val)
-            else:
-                doc.add_paragraph("(Data columns not matching template)")
-        else:
-            doc.add_paragraph("Degradation data not available in this context.")
-
-    # --- 3. AC Subsystem Configuration ---
-    if report_type in ["ac", "combined"]:
-        header_title = '2. AC Subsystem Configuration' if report_type == "ac" else '3. AC Subsystem Configuration'
-        doc.add_heading(header_title, level=1)
-        
-        if data.ac_blocks:
-            ac_sample = data.ac_blocks[0]
-            
-            doc.add_heading('3.1 AC Block Specification', level=2)
-            table = doc.add_table(rows=1, cols=2)
-            _add_table_style(table)
-            
-            ac_specs = [
-                ("Grid Voltage (MV)", f"{ac_sample.mv_voltage_kv} kV"),
-                ("PCS Output Voltage (LV)", f"{ac_sample.lv_voltage_v} V"),
-                ("Transformer Rating", f"{ac_sample.transformer_kva:.2f} kVA"),
-                ("PCS Modules per Block", str(ac_sample.num_pcs)),
-                ("PCS Module Power", f"{ac_sample.pcs_power_kw:.2f} kW"),
-                ("AC Block Power Rating", f"{ac_sample.pcs_power_kw * ac_sample.num_pcs / 1000:.2f} MW"),
-                ("Total AC Blocks", str(total_ac_blocks))
-            ]
-            
-            for k, v in ac_specs:
-                row = table.add_row().cells
-                row[0].text = k
-                row[1].text = v
-                
-            # 3.2 Topology Description
-            doc.add_paragraph("\n")
-            doc.add_heading('3.2 System Topology & Combination', level=2)
-            
-            dc_per_ac = 0
-            if ac_sample.dc_blocks_connected:
-                dc_per_ac = ac_sample.dc_blocks_connected[0].count
-                
-            topo_text = (
-                f"The system consists of {total_ac_blocks} independent AC Blocks. "
-                f"Each AC Block is connected to {dc_per_ac} Battery Container(s) via the DC Busbar. "
-                f"The Power Conversion System (PCS) performs bi-directional DC/AC conversion, "
-                f"and the MV Transformer steps up the voltage to {ac_sample.mv_voltage_kv} kV for grid interconnection."
-            )
-            doc.add_paragraph(topo_text)
-
-    # --- 4. Technical Drawings ---
-    if report_type == "combined":
-        doc.add_page_break() # 【已修复】这里使用了正确的 add_page_break()
-        
-        doc.add_heading('4. Single Line Diagram (SLD)', level=1)
-        doc.add_paragraph("[SLD Placeholder - Please insert the exported SLD image here]")
-        # 预留大片空白
-        doc.add_paragraph("\n" * 10)
-        
-        doc.add_page_break() # 【已修复】换页
-        
-        doc.add_heading('5. General Layout', level=1)
-        doc.add_paragraph("[Layout Placeholder - Please insert the site layout drawing here]")
-
-    # 保存
-    f = BytesIO()
-    doc.save(f)
-    f.seek(0)
-    return f
+    doc.add_paragraph("\n"*3)
+    kpi_data = [
+        ("Parameter", "Value"),
+        ("POI Power", f"{data.system_power_mw:.2f} MW"),
+        ("POI Capacity", f"{data.system_capacity_mwh:.2f} MWh"),
+        ("DC Blocks", f"{data.total_dc_blocks}"),
+        ("AC Blocks", f"{len(data.ac_blocks)}")
+    ]
+    _add_table(doc, kpi_data[1:], kpi_data[0], col_widths=[3,3])
+    doc.add_page_break()
+    
+    # ================= B. EXECUTIVE SUMMARY =================
+    doc.add_heading("1. Executive Summary", 1)
+    
+    # Logic for System Voltages
+    dc_v = f"{dc_spec_raw.get('System_Voltage_V', 1200):.0f}" if dc_spec_raw else "1200"
+    ac_mv = f"{data.ac_blocks[0].mv_voltage_kv}" if data.ac_blocks else "33"
+    
+    summary_bullets = [
+        f"POI Power Capacity: {data.
