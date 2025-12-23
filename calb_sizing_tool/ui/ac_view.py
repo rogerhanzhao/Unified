@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-from calb_sizing_tool.reporting.export_docx import create_combined_report
+import math
+from calb_sizing_tool.reporting.export_docx import create_ac_report, create_combined_report, make_report_filename
 from calb_sizing_tool.models import ProjectSizingResult, ACBlockResult, DCBlockResult
 
 def _reconstruct_degradation_table(target_mwh, years=20):
@@ -32,17 +33,46 @@ def show():
         st.stop()
         
     dc_data = st.session_state['dc_result_summary']
-    # 获取 DC 计算的目标值，安全转换为 float
-    target_mw = float(dc_data.get('target_mw', 10.0))
-    target_mwh = float(dc_data.get('mwh', 0.0))
     
+    # 获取 DC 计算的目标值，安全转换为 float
+    # 注意：dc_data 里的键名可能因 dc_view 版本略有不同，这里做兼容处理
+    target_mw = float(dc_data.get('target_mw', dc_data.get('poi_power_req_mw', 10.0)))
+    target_mwh = float(dc_data.get('mwh', dc_data.get('poi_energy_req_mwh', 0.0)))
+    
+    # Retrieve DC model info
+    # 如果 dc_view 里存的是 'dc_model' (Pydantic对象)，直接用
+    # 如果存的是 'dc_block'，也兼容
+    dc_model = dc_data.get('dc_model', dc_data.get('dc_block'))
+    
+    if not dc_model:
+         # Fallback creation if object missing
+         dc_model = DCBlockResult(
+            block_id="DC-Gen", 
+            capacity_mwh=5.015, 
+            count=int(dc_data.get('container_count', 0)),
+            voltage_v=1200
+        )
+    
+    # Display Context
+    st.info(f"Basis: DC System has {dc_model.count} x {dc_model.container_model} ({dc_model.capacity_mwh:.3f} MWh each).")
+
     # 2. AC 输入参数
     st.subheader("AC Parameters")
     
     with st.form("ac_sizing_form"):
         c1, c2 = st.columns(2)
-        grid_kv = c1.number_input("Grid Voltage (kV)", min_value=1.0, value=33.0, step=0.1, format="%.1f")
-        lv_voltage = c2.number_input("PCS AC Output Voltage (LV bus, V)", min_value=100.0, value=800.0, step=10.0, help="Line-to-Line RMS")
+        
+        grid_kv = c1.number_input(
+            "Grid Voltage (kV)", 
+            min_value=1.0, value=33.0, step=0.1, format="%.1f",
+            help="Medium Voltage (MV) at the collection bus / POI."
+        )
+        
+        pcs_lv = c2.number_input(
+            "PCS AC Output Voltage (LV bus, V)", 
+            min_value=100.0, value=800.0, step=10.0, 
+            help="Line-to-Line RMS voltage at PCS output."
+        )
         
         ac_block_size = st.selectbox("Standard Block Size (MW)", [2.5, 3.44, 5.0, 6.88])
         
@@ -50,28 +80,14 @@ def show():
 
     if submitted:
         # 3. Calculation Logic (Precision Fixes)
-        num_blocks = int(target_mw / ac_block_size)
-        if target_mw % ac_block_size > 0.01: # 浮点数容错，如有余数则加1
-            num_blocks += 1
-            
+        num_blocks = math.ceil(target_mw / ac_block_size)
         total_ac_capacity = num_blocks * ac_block_size
         overhead_mw = total_ac_capacity - target_mw
         
         # 4. Construct Full Sizing Result (Merging DC + AC)
         
-        # Retrieve DC block info
-        dc_template = dc_data.get('dc_block')
-        if not dc_template:
-             # Fallback creation if object missing
-             dc_template = DCBlockResult(
-                block_id="DC-Gen", 
-                capacity_mwh=5.015, 
-                count=dc_data.get('container_count', 0),
-                voltage_v=1200
-            )
-        
         # Distribute DC blocks among AC blocks
-        total_dc_count = dc_template.count
+        total_dc_count = dc_model.count
         dc_per_ac = 0
         if num_blocks > 0:
             dc_per_ac = max(1, total_dc_count // num_blocks)
@@ -79,65 +95,79 @@ def show():
         ac_blocks_list = []
         for i in range(num_blocks):
             # Create a copy of the DC block structure for this AC block
-            dc_copy = dc_template.model_copy()
+            dc_copy = dc_model.model_copy()
             dc_copy.count = dc_per_ac
             
             ac_blocks_list.append(ACBlockResult(
                 block_id=f"Block-{i+1}",
                 transformer_kva=ac_block_size * 1000 / 0.9, # Assuming 0.9 PF
                 mv_voltage_kv=grid_kv,
-                lv_voltage_v=lv_voltage,
+                lv_voltage_v=pcs_lv,
                 pcs_power_kw=ac_block_size * 1000 / 2, # Assume 2 PCS modules per block (simplified)
                 num_pcs=2,
                 dc_blocks_connected=[dc_copy]
             ))
 
         full_result = ProjectSizingResult(
-            project_name="CALB ESS Project",
+            project_name=dc_data.get('project_name', "CALB ESS Project"),
             system_power_mw=target_mw,
             system_capacity_mwh=target_mwh,
             ac_blocks=ac_blocks_list
         )
         
-        # Save to Session State (for SLD view)
-        st.session_state['full_sizing_result'] = full_result
+        # Save to Session State (for SLD view & Downloads)
+        st.session_state['ac_result_summary'] = {
+            "result_object": full_result,
+            "grid_kv": grid_kv,
+            "block_size": ac_block_size
+        }
         
-        # 5. Display Results (Precision Display)
+        st.success("AC Sizing Complete.")
+
+    # 5. Display Results (Only if available)
+    if 'ac_result_summary' in st.session_state:
+        res_summary = st.session_state['ac_result_summary']
+        full_result = res_summary['result_object']
+        
+        # Re-calc metrics for display
+        num_blocks = len(full_result.ac_blocks)
+        block_size = res_summary['block_size']
+        total_ac = num_blocks * block_size
+        overhead = total_ac - full_result.system_power_mw
+        
         st.divider()
         st.subheader("Sizing Results")
         
         k1, k2, k3 = st.columns(3)
-        k1.metric("AC Block Configuration", f"{num_blocks} x {ac_block_size:.2f} MW")
-        k2.metric("Total AC Capacity", f"{total_ac_capacity:.2f} MW")
-        k3.metric("Overhead Power", f"{overhead_mw:.2f} MW")
+        k1.metric("AC Block Configuration", f"{num_blocks} x {block_size:.2f} MW")
+        k2.metric("Total AC Capacity", f"{total_ac:.2f} MW")
+        k3.metric("Overhead Power", f"{overhead:.2f} MW")
         
-        st.info(f"Topology: Each {ac_block_size}MW AC Block connects to {dc_per_ac} DC Battery Containers.")
+        # Topology info
+        dc_per_ac = 0
+        if full_result.ac_blocks and full_result.ac_blocks[0].dc_blocks_connected:
+            dc_per_ac = full_result.ac_blocks[0].dc_blocks_connected[0].count
+            
+        st.info(f"Topology: Each {block_size}MW AC Block connects to {dc_per_ac} DC Battery Containers.")
         
         # 6. Prepare Report Context
-        # 尝试从 Session State 获取真实的年度数据表 (由 DC View 计算生成)
-        # 如果没有，则调用辅助函数重建，保证报告不报错
-        deg_table = None
-        if "stage13_output" in st.session_state:
-            # 这里需要一点技巧从 stage13_output 还原 dataframe，或者直接使用通用重建
-            # 简单起见，如果 dc_result_summary 里没存 table，我们就重建
-            pass
+        # Try to get degradation table from DC session data
+        deg_table = dc_data.get('stage3_df')
+        if deg_table is None or deg_table.empty:
+             deg_table = _reconstruct_degradation_table(full_result.system_capacity_mwh)
         
-        # 既然 session state 比较复杂，我们直接使用重建函数作为稳健的兜底
-        # 真实项目中应该在 DC View 把 dataframe 存入 session_state['dc_degradation_table']
-        deg_table = _reconstruct_degradation_table(target_mwh)
-        
-        input_assumptions = {
-            "Target Power": f"{target_mw:.2f} MW",
-            "Target Capacity": f"{target_mwh:.2f} MWh",
-            "Grid Voltage": f"{grid_kv:.1f} kV",
-            "PCS LV Voltage": f"{lv_voltage:.0f} V",
-            "AC Block Size": f"{ac_block_size:.2f} MW",
-            "Design Life": "20 Years"
-        }
+        # Merge inputs
+        input_assumptions = dc_data.get('inputs', {}).copy()
+        input_assumptions.update({
+            "AC Grid Voltage": f"{res_summary['grid_kv']:.1f} kV",
+            "AC Block Size": f"{block_size:.2f} MW",
+            "AC Overhead": f"{overhead:.2f} MW"
+        })
         
         report_context = {
             "degradation_table": deg_table,
-            "inputs": input_assumptions
+            "inputs": input_assumptions,
+            "dc_spec_raw": dc_data.get('raw_spec', {}) # Pass raw excel spec
         }
 
         # 7. Export Buttons
@@ -146,11 +176,7 @@ def show():
         c_btn1, c_btn2 = st.columns(2)
         
         with c_btn1:
-            ac_report_bytes = create_combined_report(
-                full_result, 
-                report_type="ac",
-                extra_context=report_context
-            )
+            ac_report_bytes = create_ac_report(full_result, report_context)
             st.download_button(
                 "📄 Download AC Technical Report (DOCX)", 
                 data=ac_report_bytes, 
@@ -169,5 +195,5 @@ def show():
                 data=combined_report_bytes, 
                 file_name="Technical_Proposal_Combined.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                type="primary" # Highlight this button
+                type="primary" 
             )
