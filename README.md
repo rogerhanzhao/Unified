@@ -27,3 +27,18 @@ Execute the test suite with:
 ```bash
 pytest -q
 ```
+感谢您使用和关注本项目！
+本项目基于开源生态构建，参考并使用了社区中多种优秀技术与工具。我们尊重开源许可证并在此明确致谢：
+
+This project is built upon and inspired by the open source community. We acknowledge and appreciate the many frameworks, libraries, tools, and resources that make this work possible. Users are encouraged to review and comply with the respective licenses of third‑party components used herein.
+
+如您在使用本项目过程中引用或修改了本仓库的代码，请保留本说明及相关开源许可证信息，并在发布成果时注明来源。
+If you redistribute or build upon this project, please retain this notice, and clearly credit the original source.
+
+📬 联系方式 / Contact
+
+如需技术沟通、反馈建议或商业合作，请通过以下方式联系我：
+For technical questions, feedback, or business inquiries, feel free to reach out via:
+
+微信 WeChat: +14015927928
+WhatsApp: +14015927928
