@@ -40,6 +40,10 @@ If you redistribute or build upon this project, please retain this notice, and c
 如需技术沟通、反馈建议或商业合作，请通过以下方式联系我：
 For technical questions, feedback, or business inquiries, feel free to reach out via:
 
-微信 WeChat: +14015927928 /n
-WhatsApp: +14015927928   /n
+微信 WeChat: +14015927928 
+
+
+WhatsApp: +14015927928 
+
+
 https://www.linkedin.com/in/alex-zhaoyutao
