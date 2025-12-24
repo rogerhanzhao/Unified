@@ -1,18 +1,18 @@
-import copy
-import datetime
+﻿import datetime
 import io
 from pathlib import Path
 
 import pandas as pd
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.opc.constants import RELATIONSHIP_TYPE as RT
-from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 
-from calb_sizing_tool.config import DC_DATA_PATH
+from calb_sizing_tool.config import AC_DATA_PATH, DC_DATA_PATH, PROJECT_ROOT
 
-# --- Document Helpers ---
+# ----------------------------------------
+# Shared DOCX helpers (match DC report style)
+# ----------------------------------------
+
 
 def _find_logo_for_report():
     try:
@@ -34,8 +34,7 @@ def _setup_margins(doc: Document):
     section.bottom_margin = Inches(0.8)
 
 
-def _setup_header(doc: Document, title: str):
-    """Adds standard header with logo and report title."""
+def _setup_header(doc: Document, title: str = "Confidential Sizing Report"):
     section = doc.sections[0]
     header = section.header
     header.is_linked_to_previous = False
@@ -90,12 +89,82 @@ def _add_table(doc: Document, rows, headers):
             rc[j].text = "" if val is None else str(val)
 
 
-def make_report_filename(proj_name, suffix="Report"):
-    safe = "".join(c if c.isalnum() else "_" for c in proj_name)
-    return f"{safe}_{suffix}.docx"
+def _doc_to_bytes(doc: Document) -> bytes:
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
 
 
-# --- Dictionary Extraction ---
+# ----------------------------------------
+# Cover + Appendix helpers
+# ----------------------------------------
+
+
+def _get_commit_hash():
+    try:
+        head_path = PROJECT_ROOT / ".git" / "HEAD"
+        if not head_path.exists():
+            return "unknown"
+        head = head_path.read_text(encoding="utf-8").strip()
+        if head.startswith("ref:"):
+            ref_path = head.split(" ", 1)[1].strip()
+            ref_file = PROJECT_ROOT / ".git" / ref_path
+            if ref_file.exists():
+                return ref_file.read_text(encoding="utf-8").strip()[:7]
+        return head[:7]
+    except Exception:
+        return "unknown"
+
+
+def _resolve_tool_version(ctx: dict):
+    if ctx and ctx.get("tool_version"):
+        return str(ctx.get("tool_version"))
+    return "V1.0"
+
+
+def _add_cover_page(doc: Document, title: str, project_name: str, ctx: dict):
+    tool_version = _resolve_tool_version(ctx)
+    commit_hash = ctx.get("commit_hash") if ctx else None
+    if not commit_hash:
+        commit_hash = _get_commit_hash()
+
+    doc.add_paragraph("")
+    heading = doc.add_heading(title, level=1)
+    heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p = doc.add_paragraph(
+        f"Project: {project_name}\n"
+        f"Date: {datetime.datetime.now().strftime('%Y-%m-%d')}\n"
+        f"Tool Version: {tool_version}\n"
+        f"Commit: {commit_hash}"
+    )
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    doc.add_page_break()
+
+
+def _add_appendix(doc: Document, ctx: dict):
+    doc.add_heading("Appendix", level=2)
+    dictionary_version = ""
+    input_file_version = ""
+    if ctx:
+        dictionary_version = ctx.get("dictionary_version", "")
+        input_file_version = ctx.get("input_file_version", "")
+    if not dictionary_version:
+        dictionary_version = Path(AC_DATA_PATH).name
+    if not input_file_version:
+        input_file_version = Path(DC_DATA_PATH).name
+
+    rows = [
+        ("Dictionary Version", dictionary_version),
+        ("Input File Version", input_file_version),
+    ]
+    _add_table(doc, rows, ["Item", "Value"])
+
+
+# ----------------------------------------
+# DC dictionary extraction
+# ----------------------------------------
+
 
 def _match_pack_from_block_name(packs: pd.DataFrame, block_name: str, block_code: str):
     if packs is None or packs.empty:
@@ -254,138 +323,25 @@ def extract_dc_equipment_spec(block_code=None, block_name=None, data_path=None):
     }
 
 
-# --- AC Report Builders ---
-
-def _write_report_title(doc: Document, title: str, project_name: str, poi_power, poi_energy):
-    doc.add_heading(title, level=1)
-    doc.add_paragraph(f"Project: {project_name}")
-    if poi_power is not None and poi_energy is not None:
-        doc.add_paragraph(f"POI Requirement: {poi_power:.2f} MW / {poi_energy:.2f} MWh")
-    elif poi_power is not None:
-        doc.add_paragraph(f"POI Requirement: {poi_power:.2f} MW")
-    doc.add_paragraph("")
+# ----------------------------------------
+# DC report helper (reuse DC content)
+# ----------------------------------------
 
 
-def _write_exec_summary(doc: Document, ac_output: dict, heading: str):
-    doc.add_heading(heading, level=2)
-
-    poi_power = ac_output.get("poi_power_mw")
-    poi_energy = ac_output.get("poi_energy_mwh")
-    total_blocks = ac_output.get("num_blocks")
-    total_pcs = ac_output.get("total_pcs")
-    transformer_count = ac_output.get("transformer_count")
-    mv_level = ac_output.get("mv_level_kv") or ac_output.get("grid_kv")
-
-    p = doc.add_paragraph()
-    if poi_power is not None:
-        p.add_run(f"POI Power: {poi_power:.2f} MW\n")
-    if poi_energy is not None:
-        p.add_run(f"POI Energy: {poi_energy:.2f} MWh\n")
-    if total_blocks is not None:
-        p.add_run(f"Total AC Blocks: {int(total_blocks)}\n")
-    if total_pcs is not None:
-        p.add_run(f"Total PCS Modules: {int(total_pcs)}\n")
-    if transformer_count is not None:
-        p.add_run(f"Transformer Count: {int(transformer_count)}\n")
-    if mv_level is not None:
-        p.add_run(f"MV Level: {mv_level} kV")
-
-
-def _build_ac_inputs_rows(ac_output: dict):
-    rows = []
-    rows.append(("Grid Voltage (kV)", _format_float(ac_output.get("grid_kv"), 1)))
-    rows.append(("PCS AC Output Voltage (V_LL,rms)", _format_float(ac_output.get("inverter_lv_v"), 0)))
-    rows.append(("Standard AC Block Size (MW)", _format_float(ac_output.get("block_size_mw"), 2)))
-    return rows
-
-
-def _build_ac_results_rows(ac_output: dict):
-    rows = []
-    rows.append(("AC Blocks", _format_float(ac_output.get("num_blocks"), 0)))
-    rows.append(("Total AC Power (MW)", _format_float(ac_output.get("total_ac_mw"), 2)))
-    rows.append(("Overhead Margin (MW)", _format_float(ac_output.get("overhead_mw"), 2)))
-    rows.append(("Total PCS Modules", _format_float(ac_output.get("total_pcs"), 0)))
-    rows.append(("Transformer Count", _format_float(ac_output.get("transformer_count"), 0)))
-    dc_per_ac = ac_output.get("dc_blocks_per_ac")
-    if dc_per_ac is not None:
-        rows.append(("DC Blocks per AC Block", _format_float(dc_per_ac, 0)))
-    return rows
-
-
-def _build_ac_equipment_rows(ac_output: dict):
-    rows = []
-    rows.append(("Standard AC Block Size (MW)", _format_float(ac_output.get("block_size_mw"), 3)))
-    rows.append(("PCS Rating (kW)", _format_float(ac_output.get("pcs_power_kw"), 0)))
-    rows.append(("PCS per AC Block", _format_float(ac_output.get("pcs_per_block"), 0)))
-    rows.append(("Transformer Rating (kVA)", _format_float(ac_output.get("transformer_kva"), 0)))
-    rows.append(("MV Voltage Level (kV)", _format_float(ac_output.get("grid_kv"), 1)))
-    rows.append(("LV Voltage Level (V)", _format_float(ac_output.get("inverter_lv_v"), 0)))
-    return rows
-
-
-def _write_ac_section(doc: Document, ac_output: dict, report_context: dict):
-    _write_exec_summary(doc, ac_output, "1. Executive Summary")
-
-    doc.add_heading("2. AC Sizing Inputs", level=2)
-    input_rows = _build_ac_inputs_rows(ac_output)
-    extra_inputs = report_context.get("inputs", {}) if report_context else {}
-    for key, value in extra_inputs.items():
-        if key not in {row[0] for row in input_rows}:
-            input_rows.append((key, value))
-    _add_table(doc, input_rows, ["Parameter", "Value"])
-    doc.add_paragraph("")
-
-    doc.add_heading("3. AC Sizing Results Summary", level=2)
-    _add_table(doc, _build_ac_results_rows(ac_output), ["Metric", "Value"])
-    doc.add_paragraph("")
-
-    doc.add_heading("4. AC Equipment Specification", level=2)
-    _add_table(doc, _build_ac_equipment_rows(ac_output), ["Item", "Specification"])
-
-
-def _doc_to_bytes(doc: Document) -> bytes:
-    buf = io.BytesIO()
-    doc.save(buf)
-    buf.seek(0)
-    return buf.getvalue()
-
-
-# --- DC Merge Helpers ---
-
-def _replace_image_rel_ids(element, src_doc: Document, dest_doc: Document):
-    for node in element.iter():
-        embed = node.attrib.get(qn("r:embed"))
-        if not embed:
-            continue
-        rel = src_doc.part.rels.get(embed)
-        if rel is None or rel.reltype != RT.IMAGE:
-            continue
-        image_part = rel.target_part
-        new_rid, _ = dest_doc.part.get_or_add_image(io.BytesIO(image_part.blob))
-        node.attrib[qn("r:embed")] = new_rid
-
-
-def _append_doc_body(dest_doc: Document, src_doc: Document):
-    for element in src_doc.element.body:
-        if element.tag == qn("w:sectPr"):
-            continue
-        new_element = copy.deepcopy(element)
-        _replace_image_rel_ids(new_element, src_doc, dest_doc)
-        dest_doc.element.body.append(new_element)
-
-
-def _build_dc_report_doc(dc_output: dict):
+def _resolve_dc_report_data(dc_output: dict):
     try:
         from calb_sizing_tool.ui import dc_view
     except Exception:
-        return None
+        return None, None, None
 
     stage1 = dc_output.get("stage1", {}) if dc_output else {}
     if not stage1:
-        return None
+        return None, None, None
+
+    if "results_dict" in dc_output and "report_order" in dc_output:
+        return stage1, dc_output.get("results_dict"), dc_output.get("report_order")
 
     selected = dc_output.get("selected_scenario", stage1.get("selected_scenario", "container_only"))
-
     try:
         _, df_blocks, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve = dc_view.load_data(DC_DATA_PATH)
         s2, s3_df, s3_meta, iter_count, poi_g, converged = dc_view.size_with_guarantee(
@@ -399,76 +355,323 @@ def _build_dc_report_doc(dc_output: dict):
             k_max=dc_view.K_MAX_FIXED,
         )
     except Exception:
-        return None
+        return stage1, None, None
 
-    results = {
+    results_dict = {
         selected: (s2, s3_df, s3_meta, iter_count, poi_g, converged)
     }
     report_order = [(selected, selected.replace("_", " ").title())]
-
-    dc_bytes = dc_view.build_report_bytes(stage1, results, report_order)
-    if not dc_bytes:
-        return None
-    return Document(dc_bytes)
+    return stage1, results_dict, report_order
 
 
-# --- Public Report Generators ---
+def _dc_section_heading(chapter_prefix: str, index: int, title: str):
+    if str(chapter_prefix) == "1":
+        return f"{index}. {title}"
+    return f"{chapter_prefix}.{index} {title}"
 
-def create_ac_report(ac_output: dict, report_context: dict) -> bytes:
-    doc = Document()
-    _setup_margins(doc)
-    _setup_header(doc, "Confidential AC Sizing Report")
 
-    project_name = ac_output.get("project_name") or (report_context or {}).get("project_name") or "CALB ESS Project"
-    _write_report_title(
-        doc,
-        "CALB Utility-Scale ESS AC Sizing Report",
-        project_name,
-        ac_output.get("poi_power_mw"),
-        ac_output.get("poi_energy_mwh"),
+def _append_dc_report_sections(doc: Document, dc_output: dict, ctx: dict, chapter_prefix: str = "3"):
+    stage1, results_dict, report_order = _resolve_dc_report_data(dc_output or {})
+    if stage1 is None or results_dict is None or report_order is None:
+        doc.add_paragraph("DC report section unavailable.")
+        return False
+
+    try:
+        from calb_sizing_tool.ui import dc_view
+    except Exception:
+        doc.add_paragraph("DC report section unavailable.")
+        return False
+
+    heading_level = 2 if str(chapter_prefix) == "1" else 3
+
+    doc.add_heading(
+        _dc_section_heading(chapter_prefix, 1, "Project Summary"),
+        level=heading_level,
+    )
+    p = doc.add_paragraph()
+    p.add_run(f"Project life: {int(stage1['project_life_years'])} years\n")
+    p.add_run(f"POI guarantee year: {int(stage1.get('poi_guarantee_year', 0))}\n")
+    p.add_run(f"Cycles per year (assumed): {int(stage1['cycles_per_year'])}\n")
+    p.add_run(
+        f"S&C time from FAT to COD: {int(round(stage1.get('sc_time_months', 0)))} months\n"
+    )
+    p.add_run(
+        f"DC\u2192POI efficiency chain (one-way): {stage1.get('eff_dc_to_poi_frac', 0.0)*100:.2f}%\n"
+    )
+    p.add_run(f"POI\u2192DC equivalent power: {stage1.get('dc_power_required_mw', 0.0):.2f} MW")
+
+    doc.add_paragraph(
+        "This sizing report is based on the 314 Ah cell database and the internal "
+        "CALB SOH/RTE profiles for the selected operating conditions."
     )
 
-    _write_ac_section(doc, ac_output, report_context or {})
+    doc.add_heading(
+        _dc_section_heading(chapter_prefix, 2, "Equipment Summary (DC Blocks)"),
+        level=heading_level,
+    )
+
+    for key, title in report_order:
+        if key not in results_dict:
+            continue
+        s2, _, _, iter_count, poi_g, converged = results_dict[key]
+        doc.add_paragraph(title, style=None)
+        dc_view._docx_add_config_table(doc, s2.get("block_config_table"))
+        doc.add_paragraph(f"Iterations: {iter_count} | Guarantee met: {bool(converged)}")
+        if poi_g is not None:
+            doc.add_paragraph(f"POI usable energy @ guarantee year: {poi_g:.2f} MWh")
+        doc.add_paragraph("")
+
+    doc.add_heading(
+        _dc_section_heading(
+            chapter_prefix,
+            3,
+            "Lifetime POI Usable Energy & SOH (Per Configuration)",
+        ),
+        level=heading_level,
+    )
+
+    poi_target = float(stage1["poi_energy_req_mwh"])
+    guarantee_year = int(stage1.get("poi_guarantee_year", 0))
+
+    for key, title in report_order:
+        if key not in results_dict:
+            continue
+        _, s3_df, s3_meta, _, _, _ = results_dict[key]
+
+        doc.add_paragraph(title, style=None)
+        doc.add_paragraph(
+            f"POI Power = {s3_meta.get('poi_power_mw', 0.0):.2f} MW | "
+            f"DC-equivalent Power = {s3_meta.get('dc_power_mw', 0.0):.2f} MW | "
+            f"Effective C-rate (DC-side) = {s3_meta.get('effective_c_rate', 0.0):.3f} C"
+        )
+        doc.add_paragraph(
+            f"SOH profile ID = {s3_meta.get('soh_profile_id')} "
+            f"(C-rate \u2248 {s3_meta.get('chosen_soh_c_rate')}, cycles/year = {s3_meta.get('chosen_soh_cycles_per_year')}); "
+            f"RTE profile ID = {s3_meta.get('rte_profile_id')} (C-rate \u2248 {s3_meta.get('chosen_rte_c_rate')})."
+        )
+        doc.add_paragraph(
+            f"Guarantee Year (from COD) = {guarantee_year} | POI Energy Target = {poi_target:.2f} MWh"
+        )
+
+        if dc_view.MATPLOTLIB_AVAILABLE:
+            try:
+                png = dc_view._plot_poi_usable_png(
+                    s3_df=s3_df,
+                    poi_target=poi_target,
+                    title=f"POI Usable Energy vs Year \u2013 {key}",
+                )
+                doc.add_picture(png, width=Inches(6.7))
+            except Exception:
+                doc.add_paragraph("Chart export skipped due to plotting error.")
+        else:
+            doc.add_paragraph("Chart export skipped (matplotlib not available).")
+
+        dc_view._docx_add_lifetime_table(doc, s3_df)
+        doc.add_paragraph("")
+
+    p_final = doc.add_paragraph()
+    p_fmt = p_final.paragraph_format
+    p_fmt.space_before = Pt(0)
+    p_fmt.space_after = Pt(0)
+    p_fmt.line_spacing = Pt(0)
+    run_final = p_final.add_run()
+    run_final.font.size = Pt(1)
+    return True
+
+
+# ----------------------------------------
+# AC report helpers
+# ----------------------------------------
+
+
+def _ac_section_heading(chapter_prefix: str, index: int, title: str):
+    if str(chapter_prefix) == "1":
+        return f"{index}. {title}"
+    return f"{chapter_prefix}.{index} {title}"
+
+
+def _build_ac_exec_summary_rows(ac_output: dict):
+    rows = [
+        ("POI Power (MW)", _format_float(ac_output.get("poi_power_mw"), 2)),
+    ]
+    if ac_output.get("poi_energy_mwh") is not None:
+        rows.append(("POI Energy (MWh)", _format_float(ac_output.get("poi_energy_mwh"), 2)))
+    rows.extend(
+        [
+            ("Total AC Blocks", _format_float(ac_output.get("num_blocks"), 0)),
+            ("Total PCS Modules", _format_float(ac_output.get("total_pcs"), 0)),
+            ("Transformer Count", _format_float(ac_output.get("transformer_count"), 0)),
+            ("MV Level (kV)", _format_float(ac_output.get("grid_kv"), 1)),
+        ]
+    )
+    return rows
+
+
+def _build_ac_inputs_rows(ac_output: dict, ctx: dict):
+    rows = []
+    if ctx and ctx.get("inputs"):
+        for key, value in ctx.get("inputs").items():
+            rows.append((key, value))
+    else:
+        rows = [
+            ("Project Name", ac_output.get("project_name", "")),
+            ("POI Power Requirement (MW)", _format_float(ac_output.get("poi_power_mw"), 2)),
+            ("POI Energy Requirement (MWh)", _format_float(ac_output.get("poi_energy_mwh"), 2)),
+            ("Grid Voltage (kV)", _format_float(ac_output.get("grid_kv"), 1)),
+            ("PCS AC Output Voltage (V_LL,rms)", _format_float(ac_output.get("inverter_lv_v"), 0)),
+            ("Standard AC Block Size (MW)", _format_float(ac_output.get("block_size_mw"), 2)),
+        ]
+    return rows
+
+
+def _build_ac_results_rows(ac_output: dict):
+    rows = [
+        ("AC Blocks", _format_float(ac_output.get("num_blocks"), 0)),
+        ("Total AC Power (MW)", _format_float(ac_output.get("total_ac_mw"), 2)),
+        ("Overhead Margin (MW)", _format_float(ac_output.get("overhead_mw"), 2)),
+        ("Total PCS Modules", _format_float(ac_output.get("total_pcs"), 0)),
+        ("Transformer Count", _format_float(ac_output.get("transformer_count"), 0)),
+    ]
+    if ac_output.get("dc_blocks_per_ac") is not None:
+        rows.append(("DC Blocks per AC Block", _format_float(ac_output.get("dc_blocks_per_ac"), 0)))
+    return rows
+
+
+def _build_ac_equipment_rows(ac_output: dict):
+    return [
+        ("Standard AC Block Size (MW)", _format_float(ac_output.get("block_size_mw"), 3)),
+        ("PCS Rating (kW)", _format_float(ac_output.get("pcs_power_kw"), 0)),
+        ("PCS per AC Block", _format_float(ac_output.get("pcs_per_block"), 0)),
+        ("Transformer Rating (kVA)", _format_float(ac_output.get("transformer_kva"), 0)),
+        ("MV Voltage Level (kV)", _format_float(ac_output.get("grid_kv"), 1)),
+        ("LV Voltage Level (V)", _format_float(ac_output.get("inverter_lv_v"), 0)),
+    ]
+
+
+def _append_ac_report_sections(doc: Document, ac_output: dict, ctx: dict, chapter_prefix: str = "1"):
+    heading_level = 2 if str(chapter_prefix) == "1" else 3
+
+    doc.add_heading(
+        _ac_section_heading(chapter_prefix, 1, "Executive Summary"),
+        level=heading_level,
+    )
+    _add_table(doc, _build_ac_exec_summary_rows(ac_output), ["Metric", "Value"])
+    doc.add_paragraph("")
+
+    doc.add_heading(
+        _ac_section_heading(chapter_prefix, 2, "Project Inputs & Assumptions"),
+        level=heading_level,
+    )
+    _add_table(doc, _build_ac_inputs_rows(ac_output, ctx), ["Parameter", "Value"])
+    doc.add_paragraph("")
+
+    doc.add_heading(
+        _ac_section_heading(chapter_prefix, 3, "AC Sizing Results"),
+        level=heading_level,
+    )
+    _add_table(doc, _build_ac_results_rows(ac_output), ["Metric", "Value"])
+    doc.add_paragraph("")
+
+    doc.add_heading(
+        _ac_section_heading(chapter_prefix, 4, "AC Equipment Specification"),
+        level=heading_level,
+    )
+    _add_table(doc, _build_ac_equipment_rows(ac_output), ["Item", "Specification"])
+
+
+# ----------------------------------------
+# Public report generators
+# ----------------------------------------
+
+
+def make_report_filename(proj_name, suffix="Report"):
+    safe = "".join(c if c.isalnum() else "_" for c in proj_name)
+    return f"{safe}_{suffix}.docx"
+
+
+def create_dc_report(dc_output: dict, ctx: dict) -> bytes:
+    """Internal DC-only generator for regression testing against dc_view."""
+    doc = Document()
+    _setup_margins(doc)
+    _setup_header(doc)
+
+    stage1 = dc_output.get("stage1", {}) if dc_output else {}
+    project_name = stage1.get("project_name", "CALB ESS Project")
+
+    doc.add_heading("CALB Utility-Scale ESS Sizing Report", level=1)
+    doc.add_paragraph(f"Project: {project_name}")
+    doc.add_paragraph(
+        f"POI Requirement: {stage1['poi_power_req_mw']:.2f} MW / "
+        f"{stage1['poi_energy_req_mwh']:.2f} MWh"
+    )
+    doc.add_paragraph("")
+
+    _append_dc_report_sections(doc, dc_output, ctx, chapter_prefix="1")
+    return _doc_to_bytes(doc)
+
+
+def create_ac_report(ac_output: dict, ctx: dict) -> bytes:
+    doc = Document()
+    _setup_margins(doc)
+    _setup_header(doc)
+
+    project_name = ac_output.get("project_name") or (ctx or {}).get("project_name") or "CALB ESS Project"
+    _add_cover_page(doc, "CALB Utility-Scale ESS AC Sizing Report", project_name, ctx or {})
+
+    _append_ac_report_sections(doc, ac_output, ctx or {}, chapter_prefix="1")
+    _add_appendix(doc, ctx or {})
 
     return _doc_to_bytes(doc)
 
 
-def create_combined_report(dc_output: dict, ac_output: dict, report_context: dict) -> bytes:
+def create_combined_report(dc_output: dict, ac_output: dict, ctx: dict) -> bytes:
     doc = Document()
     _setup_margins(doc)
-    _setup_header(doc, "Confidential Combined Sizing Report")
+    _setup_header(doc)
 
-    project_name = ac_output.get("project_name") or (report_context or {}).get("project_name") or "CALB ESS Project"
+    project_name = ac_output.get("project_name") or (ctx or {}).get("project_name") or "CALB ESS Project"
+    _add_cover_page(doc, "CALB Utility-Scale ESS Combined Sizing Report", project_name, ctx or {})
 
-    title = doc.add_heading("CALB Utility-Scale ESS Combined Sizing Report", level=1)
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p = doc.add_paragraph(
-        f"Project: {project_name}\nDate: {datetime.datetime.now().strftime('%Y-%m-%d')}"
+    doc.add_heading("1. Executive Summary", level=2)
+    dc_block_count = dc_output.get("dc_block_total_qty")
+    if dc_block_count is None:
+        dc_block_count = dc_output.get("container_count")
+    combined_rows = [
+        ("POI Power (MW)", _format_float(ac_output.get("poi_power_mw"), 2)),
+    ]
+    if ac_output.get("poi_energy_mwh") is not None:
+        combined_rows.append(("POI Energy (MWh)", _format_float(ac_output.get("poi_energy_mwh"), 2)))
+    combined_rows.extend(
+        [
+            ("DC Blocks", _format_float(dc_block_count, 0)),
+            ("AC Blocks", _format_float(ac_output.get("num_blocks"), 0)),
+            ("Total PCS Modules", _format_float(ac_output.get("total_pcs"), 0)),
+            ("Transformer Count", _format_float(ac_output.get("transformer_count"), 0)),
+            ("MV Level (kV)", _format_float(ac_output.get("grid_kv"), 1)),
+        ]
     )
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    doc.add_page_break()
-
-    _write_exec_summary(doc, ac_output, "1. Executive Summary")
+    _add_table(doc, combined_rows, ["Metric", "Value"])
     doc.add_paragraph("")
 
-    doc.add_heading("2. Inputs", level=2)
-    inputs = (report_context or {}).get("inputs", {})
-    input_rows = [(k, v) for k, v in inputs.items()]
+    doc.add_heading("2. Project Inputs & Assumptions", level=2)
+    input_rows = []
+    if ctx and ctx.get("inputs"):
+        for key, value in ctx.get("inputs").items():
+            input_rows.append((key, value))
+    if not input_rows:
+        input_rows = _build_ac_inputs_rows(ac_output, ctx)
     _add_table(doc, input_rows, ["Parameter", "Value"])
-    doc.add_page_break()
+    doc.add_paragraph("")
 
-    dc_doc = _build_dc_report_doc(dc_output or {})
-    if dc_doc is not None:
-        _append_doc_body(doc, dc_doc)
-    else:
-        doc.add_heading("DC Sizing Results", level=2)
-        doc.add_paragraph("DC report section unavailable.")
+    doc.add_heading("3. DC Sizing Results", level=2)
+    _append_dc_report_sections(doc, dc_output or {}, ctx or {}, chapter_prefix="3")
+    doc.add_paragraph("")
 
-    doc.add_page_break()
-    _write_ac_section(doc, ac_output, report_context or {})
-    doc.add_page_break()
+    doc.add_heading("4. AC Sizing Results", level=2)
+    _append_ac_report_sections(doc, ac_output, ctx or {}, chapter_prefix="4")
+    doc.add_paragraph("")
 
-    doc.add_heading("5. Combined Configuration", level=2)
+    doc.add_heading("5. Combined Configuration Summary", level=2)
     dc_spec = extract_dc_equipment_spec(
         block_code=dc_output.get("block_code") if dc_output else None,
         block_name=dc_output.get("block_name") if dc_output else None,
@@ -488,7 +691,7 @@ def create_combined_report(dc_output: dict, ac_output: dict, report_context: dic
     if not dc_voltage and dc_spec.get("nominal_voltage_v") is not None:
         dc_voltage = f"{dc_spec.get('nominal_voltage_v'):.0f} V DC"
 
-    rows = [
+    combined_config_rows = [
         ("DC Container Model", dc_spec.get("container_model", ""), ""),
         ("DC Configuration", dc_spec.get("configuration", ""), ""),
         ("DC Unit Capacity (MWh)", _format_float(dc_unit, 3), ""),
@@ -502,10 +705,12 @@ def create_combined_report(dc_output: dict, ac_output: dict, report_context: dic
         ("Transformer Rating (kVA)", "", _format_float(ac_output.get("transformer_kva"), 0)),
         ("MV Level (kV)", "", _format_float(ac_output.get("grid_kv"), 1)),
     ]
-    _add_table(doc, rows, ["Metric", "DC", "AC"])
-
+    _add_table(doc, combined_config_rows, ["Metric", "DC", "AC"])
     doc.add_paragraph("")
+
     doc.add_heading("6. Single Line Diagram", level=2)
     doc.add_paragraph("SLD placeholder - to be provided.")
+    doc.add_paragraph("")
 
+    _add_appendix(doc, ctx or {})
     return _doc_to_bytes(doc)

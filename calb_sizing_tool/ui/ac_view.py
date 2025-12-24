@@ -1,8 +1,9 @@
-import math
+﻿import math
 
 import pandas as pd
 import streamlit as st
 
+from calb_sizing_tool.config import AC_DATA_PATH, DC_DATA_PATH
 from calb_sizing_tool.models import DCBlockResult
 from calb_sizing_tool.reporting.export_docx import (
     create_ac_report,
@@ -157,6 +158,9 @@ def show():
         report_context = {
             "project_name": project_name,
             "inputs": inputs,
+            "dictionary_version": AC_DATA_PATH.name,
+            "input_file_version": DC_DATA_PATH.name,
+            "tool_version": "V1.0",
         }
 
         st.subheader("Downloads")
