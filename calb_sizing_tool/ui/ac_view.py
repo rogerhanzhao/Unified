@@ -10,6 +10,8 @@ from calb_sizing_tool.reporting.export_docx import (
     create_combined_report,
     make_report_filename,
 )
+from calb_sizing_tool.reporting.report_context import build_report_context
+from calb_sizing_tool.reporting.report_v2 import export_report_v2
 
 
 def _extract_block_identity(stage2_raw):
@@ -164,6 +166,12 @@ def show():
         }
 
         st.subheader("Downloads")
+        report_template = st.selectbox(
+            "Report Template",
+            ["V1 (Stable)", "V2 (Beta)"],
+            index=0,
+            help="Default uses stable V1; V2 is beta and uses the new report structure.",
+        )
         c_d1, c_d2 = st.columns(2)
 
         with c_d1:
@@ -192,12 +200,25 @@ def show():
                     "block_name": block_name,
                 }
 
-                comb_bytes = create_combined_report(dc_output, ac_output, report_context)
+                if report_template.startswith("V2"):
+                    ctx = build_report_context(
+                        session_state=st.session_state,
+                        stage_outputs={"stage13_output": stage13_output, "ac_output": ac_output},
+                        project_inputs={"poi_energy_guarantee_mwh": stage13_output.get("poi_energy_req_mwh")},
+                        scenario_ids=stage13_output.get("selected_scenario"),
+                    )
+                    comb_bytes = export_report_v2(ctx)
+                    file_suffix = "Combined_V2_Beta"
+                    button_label = "Download Combined Report V2 (Beta)"
+                else:
+                    comb_bytes = create_combined_report(dc_output, ac_output, report_context)
+                    file_suffix = "Combined"
+                    button_label = "Download Combined Report (DC+AC)"
 
                 st.download_button(
-                    "Download Combined Report (DC+AC)",
+                    button_label,
                     comb_bytes,
-                    make_report_filename(project_name, "Combined"),
+                    make_report_filename(project_name, file_suffix),
                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     type="primary",
                 )

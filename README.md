@@ -20,6 +20,19 @@ streamlit run app.py
 
 Ensure the Excel data files (for example, `ess_sizing_data_dictionary_v13_dc_autofit.xlsx`) are present in the same directory before running.
 
+## Report V2 (Beta) usage
+
+1. Run DC sizing and AC sizing as usual.
+2. In the AC Sizing downloads area, select `Report Template: V2 (Beta)`.
+3. Download the Combined report. V1 remains the default and unchanged.
+
+## SLD Generator usage (PowSyBl)
+
+1. Install dependencies: `pip install pypowsybl`.
+2. Run DC sizing and AC sizing.
+3. Open the `SLD Generator (PowSyBl)` page (beta).
+4. Click **Generate SLD Snapshot + SVG**, then download `snapshot.json`, `sld.svg`, `sld_metadata.json`, and `sld_final.svg`.
+
 ## Run tests
 
 Execute the test suite with:

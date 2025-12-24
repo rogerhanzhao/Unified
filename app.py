@@ -27,8 +27,14 @@ with st.sidebar:
     
     # 导航菜单
     nav = st.radio(
-        "Go to", 
-        ["Dashboard", "DC Sizing", "AC Sizing", "Single Line Diagram"]
+        "Go to",
+        [
+            "Dashboard",
+            "DC Sizing",
+            "AC Sizing",
+            "Single Line Diagram",
+            "SLD Generator (PowSyBl)",
+        ],
     )
     
     st.markdown("---")
@@ -62,4 +68,8 @@ elif nav == "AC Sizing":
 
 elif nav == "Single Line Diagram":
     from calb_sizing_tool.ui.sld_view import show
+    show()
+
+elif nav == "SLD Generator (PowSyBl)":
+    from calb_sizing_tool.ui.sld_generator_view import show
     show()
