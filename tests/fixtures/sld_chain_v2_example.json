@@ -1,0 +1,67 @@
+{
+  "schema_version": "sld_chain_v2",
+  "snapshot_id": "SLD-Pro-Example-001",
+  "generated_at": "2025-12-25T02:00:00",
+  "project": {
+    "name": "SLD Pro Fixture Project",
+    "hz": 50.0,
+    "scenario_id": "container_only"
+  },
+  "mv": {
+    "kv": 20.0,
+    "node_id": "MV_NODE_01",
+    "labels": {
+      "to_switchgear": "To 20kV Switchgear",
+      "to_other_rmu": "To Other RMU"
+    }
+  },
+  "rmu": {
+    "rated_voltage_kv": 24.0,
+    "rated_current_a": 630,
+    "short_circuit_ka_3s": 25.0,
+    "ct_ratio": "200/1",
+    "ct_class": "5P20",
+    "ct_burden_va": 10.0
+  },
+  "transformer": {
+    "rated_kva": 5000.0,
+    "rated_mva": 5.0,
+    "hv_kv": 20.0,
+    "lv_v": 800.0,
+    "vector_group": "Dyn11",
+    "impedance_percent": 6.0,
+    "tap_range": "+/-2x2.5%",
+    "cooling": "ONAN"
+  },
+  "ac_block": {
+    "template_id": "4x1250kw",
+    "feeders_per_block": 4,
+    "pcs_rating_each": 1250.0
+  },
+  "feeders": [
+    {"feeder_id": "FDR-01", "pcs_id": "PCS-01", "pcs_rating": 1250.0},
+    {"feeder_id": "FDR-02", "pcs_id": "PCS-02", "pcs_rating": 1250.0},
+    {"feeder_id": "FDR-03", "pcs_id": "PCS-03", "pcs_rating": 1250.0},
+    {"feeder_id": "FDR-04", "pcs_id": "PCS-04", "pcs_rating": 1250.0}
+  ],
+  "dc_blocks_by_feeder": [
+    {"feeder_id": "FDR-01", "dc_block_count": 5, "dc_block_energy_mwh": 25.0},
+    {"feeder_id": "FDR-02", "dc_block_count": 5, "dc_block_energy_mwh": 25.0},
+    {"feeder_id": "FDR-03", "dc_block_count": 5, "dc_block_energy_mwh": 25.0},
+    {"feeder_id": "FDR-04", "dc_block_count": 5, "dc_block_energy_mwh": 25.0}
+  ],
+  "lv_busbar": {
+    "rated_current_a": 2500.0,
+    "short_circuit_ka": 25.0
+  },
+  "feeder_breaker": {
+    "rated_current_a": 1600.0,
+    "short_circuit_ka": 25.0
+  },
+  "cables": {
+    "mv_cable_spec": "3x1C-240mm2",
+    "lv_cable_spec": "3x1C-400mm2",
+    "dc_cable_spec": "1x1C-300mm2",
+    "dc_fuse_spec": "TBD"
+  }
+}

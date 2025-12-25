@@ -24,3 +24,21 @@ def render_sld_svg(
         parameters=parameters,
         sld_profile=sld_profile,
     )
+
+
+def render_pow_sybl_svg(
+    network,
+    container_id: str,
+    out_svg: Path,
+    out_metadata: Optional[Path] = None,
+    parameters: Optional[dict] = None,
+    sld_profile: Optional[Any] = None,
+) -> None:
+    render_sld_svg(
+        network,
+        container_id,
+        out_svg,
+        out_metadata=out_metadata,
+        parameters=parameters,
+        sld_profile=sld_profile,
+    )

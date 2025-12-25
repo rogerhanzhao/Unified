@@ -33,6 +33,14 @@ Ensure the Excel data files (for example, `ess_sizing_data_dictionary_v13_dc_aut
 3. Open the `SLD Generator (PowSyBl)` page (beta).
 4. Click **Generate SLD Snapshot + SVG**, then download `snapshot.json`, `sld.svg`, `sld_metadata.json`, and `sld_final.svg`.
 
+## SLD Generator Pro usage (engineering style)
+
+1. Install dependencies: `pip install pypowsybl`.
+2. Run DC sizing and AC sizing.
+3. Open the `SLD Generator Pro` page.
+4. Fill Electrical SLD Inputs (RMU/TR/Busbar/Cables), then click **Generate SLD Pro**.
+5. Download `sld_pro.svg` alongside the raw SVG, metadata, and snapshot.
+
 ## Run tests
 
 Execute the test suite with:
