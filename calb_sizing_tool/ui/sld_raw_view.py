@@ -133,6 +133,7 @@ def show():
         "pcs_rating_each_kva": pcs_rating_each_kva,
         "dc_block_energy_mwh": dc_block_energy_mwh,
         "dc_blocks_by_feeder": dc_blocks_by_feeder,
+        "diagram_scope": "one_ac_block_group",
         **electrical_inputs,
     }
     st.session_state["sld_raw_inputs"] = sld_inputs

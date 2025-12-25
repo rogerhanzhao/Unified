@@ -2,6 +2,10 @@
   "schema_version": "sld_single_unit_v0_5",
   "snapshot_id": "SLD-Raw-Example-001",
   "generated_at": "2025-12-25T02:00:00",
+  "diagram_scope": "one_ac_block_group",
+  "site_ac_block_total": 4,
+  "site_dc_block_total": 16,
+  "dc_blocks_for_one_ac_block_group": 4,
   "project": {
     "name": "SLD Raw Fixture Project",
     "scenario_id": "container_only",

@@ -56,7 +56,7 @@ def _allocate_dc_blocks(
     return allocations
 
 
-def _compute_chain_dc_blocks(stage13_output: dict, dc_summary: dict) -> int:
+def _compute_site_dc_blocks(stage13_output: dict, dc_summary: dict) -> int:
     total_dc_blocks = _safe_int(stage13_output.get("dc_block_total_qty") or 0)
     if total_dc_blocks <= 0:
         total_dc_blocks = _safe_int(stage13_output.get("container_count") or 0) + _safe_int(
@@ -67,6 +67,10 @@ def _compute_chain_dc_blocks(stage13_output: dict, dc_summary: dict) -> int:
         if dc_block is not None:
             total_dc_blocks = _safe_int(getattr(dc_block, "count", 0))
     return total_dc_blocks
+
+
+def _compute_site_ac_blocks(ac_output: dict) -> int:
+    return _safe_int(ac_output.get("num_blocks") or ac_output.get("ac_blocks_total") or 0)
 
 
 def build_single_unit_snapshot(
@@ -135,19 +139,39 @@ def build_single_unit_snapshot(
     if not isinstance(feeders, list) or len(feeders) != 4:
         feeders = _build_feeders(pcs_rating_each_kva)
 
+    site_ac_block_total = _safe_int(
+        sld_inputs.get("site_ac_block_total") or _compute_site_ac_blocks(ac_output)
+    )
+    site_dc_block_total = _safe_int(
+        sld_inputs.get("site_dc_block_total") or _compute_site_dc_blocks(stage13_output, dc_summary)
+    )
+    ratio_default = 0
+    if site_ac_block_total > 0 and site_dc_block_total > 0:
+        ratio_default = max(1, int(round(site_dc_block_total / site_ac_block_total)))
+
     dc_blocks_by_feeder = sld_inputs.get("dc_blocks_by_feeder")
+    dc_blocks_for_one_ac_block_group = _safe_int(
+        sld_inputs.get("dc_blocks_for_one_ac_block_group"), 0
+    )
+
     if not isinstance(dc_blocks_by_feeder, list) or not dc_blocks_by_feeder:
-        total_dc_blocks = _compute_chain_dc_blocks(stage13_output, dc_summary)
-        if total_dc_blocks <= 0:
-            total_dc_blocks = 4
-        dc_blocks_by_feeder = _allocate_dc_blocks(total_dc_blocks, dc_block_unit_mwh)
+        if dc_blocks_for_one_ac_block_group <= 0:
+            if sld_inputs.get("use_site_ratio"):
+                dc_blocks_for_one_ac_block_group = ratio_default or 4
+            else:
+                dc_blocks_for_one_ac_block_group = 4
+        dc_blocks_by_feeder = _allocate_dc_blocks(
+            dc_blocks_for_one_ac_block_group, dc_block_unit_mwh
+        )
     else:
         normalized = []
+        total_count = 0
         for entry in dc_blocks_by_feeder:
             if not isinstance(entry, dict):
                 continue
             feeder_id = entry.get("feeder_id")
             count = _safe_int(entry.get("dc_block_count"), 0)
+            total_count += count
             energy = entry.get("dc_block_energy_mwh")
             if energy is None and dc_block_unit_mwh:
                 energy = count * dc_block_unit_mwh
@@ -159,13 +183,22 @@ def build_single_unit_snapshot(
                 }
             )
         dc_blocks_by_feeder = normalized
+        if total_count > 0:
+            dc_blocks_for_one_ac_block_group = total_count
+        elif dc_blocks_for_one_ac_block_group <= 0:
+            dc_blocks_for_one_ac_block_group = 4
 
     labels = sld_inputs.get("mv_labels") if isinstance(sld_inputs.get("mv_labels"), dict) else {}
+    diagram_scope = sld_inputs.get("diagram_scope") or "one_ac_block_group"
 
     snapshot = {
         "schema_version": "sld_single_unit_v0_5",
         "snapshot_id": f"SLD-Raw-{project_name}-{scenario_id}-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
         "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "diagram_scope": diagram_scope,
+        "site_ac_block_total": site_ac_block_total,
+        "site_dc_block_total": site_dc_block_total,
+        "dc_blocks_for_one_ac_block_group": dc_blocks_for_one_ac_block_group,
         "project": {"name": project_name, "scenario_id": scenario_id, "hz": project_hz},
         "mv": {
             "kv": mv_kv,

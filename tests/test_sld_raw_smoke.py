@@ -24,3 +24,4 @@ def test_sld_raw_smoke(tmp_path: Path):
     svg_text = svg_path.read_text(encoding="utf-8")
     assert svg_text.strip()
     assert "PCS-01" in svg_text
+    assert "LV Bus" in svg_text

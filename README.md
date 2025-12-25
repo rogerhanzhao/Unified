@@ -46,7 +46,8 @@ Ensure the Excel data files (for example, `ess_sizing_data_dictionary_v13_dc_aut
 1. Run DC sizing and AC sizing.
 2. Open the `SLD Pro JP Style` page.
 3. Fill the chain parameters and Electrical SLD Inputs, then click **Generate JP Pro SLD**.
-4. Download `sld_pro_en.svg` and `snapshot.json`.
+4. Default scope is `one_ac_block_group` with representative Battery Unit + DC Block allocation note.
+5. Download `sld_pro_en.svg` and `snapshot.json`.
 
 ## SLD Generator Pro usage (engineering style)
 

@@ -282,9 +282,9 @@ def build_network_for_single_unit(snapshot: dict) -> "pp.network.Network":
         high_voltage_limit=pcs_lv_kv * 1.1,
     )
 
-    net.create_buses(id=bus_mv_main_id, voltage_level_id=vl_mv_id)
-    net.create_buses(id=bus_mv_rmu_id, voltage_level_id=vl_mv_id)
-    net.create_buses(id=bus_lv_main_id, voltage_level_id=vl_lv_id)
+    net.create_buses(id=bus_mv_main_id, voltage_level_id=vl_mv_id, name="MV Bus")
+    net.create_buses(id=bus_mv_rmu_id, voltage_level_id=vl_mv_id, name="RMU Bus")
+    net.create_buses(id=bus_lv_main_id, voltage_level_id=vl_lv_id, name="LV Bus")
 
     net.create_switches(
         id="RMU_01",
