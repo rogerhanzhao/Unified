@@ -33,6 +33,21 @@ Ensure the Excel data files (for example, `ess_sizing_data_dictionary_v13_dc_aut
 3. Open the `SLD Generator (PowSyBl)` page (beta).
 4. Click **Generate SLD Snapshot + SVG**, then download `snapshot.json`, `sld.svg`, `sld_metadata.json`, and `sld_final.svg`.
 
+## SLD Raw V0.5 usage (PowSyBl, single unit chain)
+
+1. Install dependencies: `pip install pypowsybl`.
+2. Run DC sizing and AC sizing.
+3. Open the `SLD Raw V0.5` page.
+4. Fill the chain parameters and Electrical SLD Inputs, then click **Generate Raw SLD**.
+5. Download `raw.svg`, `raw_metadata.json`, and `snapshot.json`.
+
+## SLD Pro English JP Style usage (deterministic SVG)
+
+1. Run DC sizing and AC sizing.
+2. Open the `SLD Pro JP Style` page.
+3. Fill the chain parameters and Electrical SLD Inputs, then click **Generate JP Pro SLD**.
+4. Download `sld_pro_en.svg` and `snapshot.json`.
+
 ## SLD Generator Pro usage (engineering style)
 
 1. Install dependencies: `pip install pypowsybl`.
