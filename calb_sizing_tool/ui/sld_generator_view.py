@@ -95,20 +95,21 @@ def show():
                 svg_path = tmp_path / "sld.svg"
                 metadata_path = tmp_path / "sld_metadata.json"
                 final_svg_path = tmp_path / "sld_final.svg"
-
-            network = build_iidm_network_from_snapshot(snapshot)
-            render_sld_svg(
-                network,
-                container_id="SUB_MV_NODE_01",
-                out_svg=svg_path,
-                out_metadata=metadata_path,
-            )
+                network = build_iidm_network_from_snapshot(snapshot)
+                render_sld_svg(
+                    network,
+                    container_id="SUB_MV_NODE_01",
+                    out_svg=svg_path,
+                    out_metadata=metadata_path,
+                )
 
                 metadata = None
                 if metadata_path.exists():
                     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
 
-                append_dc_block_function_blocks(svg_path, final_svg_path, snapshot, metadata)
+                append_dc_block_function_blocks(
+                    svg_path, final_svg_path, snapshot, metadata
+                )
 
                 st.session_state["sld_svg_bytes"] = svg_path.read_bytes()
                 st.session_state["sld_final_svg_bytes"] = final_svg_path.read_bytes()
