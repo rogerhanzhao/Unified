@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from calb_sizing_tool.config import AC_DATA_PATH, DC_DATA_PATH
+from calb_sizing_tool.common.allocation import evenly_distribute
 from calb_sizing_tool.models import DCBlockResult
 from calb_sizing_tool.reporting.export_docx import (
     create_ac_report,
@@ -103,6 +104,14 @@ def show():
         transformer_kva = block_size * 1000 / 0.9
         total_pcs = num_blocks * pcs_per_block
 
+        pcs_count_by_block = evenly_distribute(total_pcs, num_blocks)
+        dc_blocks_total = int(getattr(dc_model, "count", 0) or 0)
+        dc_blocks_total_by_block = evenly_distribute(dc_blocks_total, num_blocks)
+        dc_blocks_per_feeder_by_block = []
+        for idx, block_pcs in enumerate(pcs_count_by_block):
+            block_dc_total = dc_blocks_total_by_block[idx] if idx < len(dc_blocks_total_by_block) else 0
+            dc_blocks_per_feeder_by_block.append(evenly_distribute(block_dc_total, block_pcs))
+
         ac_output = {
             "project_name": project_name,
             "poi_power_mw": target_mw,
@@ -115,10 +124,13 @@ def show():
             "overhead_mw": overhead,
             "pcs_power_kw": pcs_power_kw,
             "pcs_per_block": pcs_per_block,
+            "pcs_count_by_block": pcs_count_by_block,
             "total_pcs": total_pcs,
             "transformer_kva": transformer_kva,
             "transformer_count": num_blocks,
             "dc_blocks_per_ac": dc_per_ac,
+            "dc_blocks_total_by_block": dc_blocks_total_by_block,
+            "dc_blocks_per_feeder_by_block": dc_blocks_per_feeder_by_block,
             "mv_level_kv": grid_kv,
         }
 

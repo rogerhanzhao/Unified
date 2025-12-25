@@ -33,7 +33,8 @@ with st.sidebar:
             "DC Sizing",
             "AC Sizing",
             "Single Line Diagram",
-            "SLD Generator (PowSyBl)",
+            "Site Layout",
+            "Report Export",
         ],
     )
     
@@ -67,9 +68,13 @@ elif nav == "AC Sizing":
     show()
 
 elif nav == "Single Line Diagram":
-    from calb_sizing_tool.ui.sld_view import show
+    from calb_sizing_tool.ui.single_line_diagram_view import show
     show()
 
-elif nav == "SLD Generator (PowSyBl)":
-    from calb_sizing_tool.ui.sld_generator_view import show
+elif nav == "Site Layout":
+    from calb_sizing_tool.ui.site_layout_view import show
+    show()
+
+elif nav == "Report Export":
+    from calb_sizing_tool.ui.report_export_view import show
     show()

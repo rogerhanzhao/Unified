@@ -8,7 +8,8 @@ def pack_stage13_output(
     stage3: Dict[str, Any],
     dc_block_total_qty: int,
     selected_scenario: str,
-    poi_nominal_voltage_kv: float
+    poi_nominal_voltage_kv: float,
+    poi_frequency_hz: Any = None,
 ) -> Dict[str, Any]:
     """
     Helper to package Stage 1-3 results into a standardized dictionary
@@ -25,6 +26,7 @@ def pack_stage13_output(
         "cabinet_count": int(stage2.get("cabinet_count", 0)),
         "selected_scenario": selected_scenario,
         "poi_nominal_voltage_kv": poi_nominal_voltage_kv,
+        "poi_frequency_hz": poi_frequency_hz,
         # Pass through the raw Stage 2 configuration table if needed
         "stage2_raw": stage2,
         # Pass through Stage 3 meta data if needed

@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from calb_sizing_tool.common.allocation import evenly_distribute
 from calb_sizing_tool.sld.iidm_builder import build_network_for_single_unit
 from calb_sizing_tool.sld.renderer import render_raw_svg
 from calb_sizing_tool.sld.snapshot_single_unit import (
@@ -30,9 +31,24 @@ def _safe_float(value, default=0.0):
         return default
 
 
+def _resolve_pcs_count_by_block(ac_output: dict) -> list[int]:
+    pcs_counts = ac_output.get("pcs_count_by_block")
+    if isinstance(pcs_counts, list) and pcs_counts:
+        return [int(_safe_float(v, 0.0)) for v in pcs_counts]
+
+    num_blocks = int(ac_output.get("num_blocks") or 0)
+    total_pcs = int(ac_output.get("total_pcs") or 0)
+    pcs_per_block = int(ac_output.get("pcs_per_block") or 0)
+    if num_blocks > 0 and total_pcs > 0:
+        return evenly_distribute(total_pcs, num_blocks)
+    if num_blocks > 0 and pcs_per_block > 0:
+        return [pcs_per_block for _ in range(num_blocks)]
+    return [4]
+
+
 def show():
     st.header("SLD Raw V0.5")
-    st.caption("Raw PowSyBl SLD with a single LV busbar and 4 feeder injections.")
+    st.caption("Raw PowSyBl SLD with a single LV busbar and PCS feeders from AC sizing.")
 
     if not POWSYBL_AVAILABLE:
         st.warning("pypowsybl is not installed. Install it to enable SLD raw generation.")
@@ -47,6 +63,22 @@ def show():
     scenario_id = st.text_input("Scenario ID", value=scenario_default)
 
     stored_inputs = st.session_state.get("sld_raw_inputs", {}) or {}
+
+    pcs_count_by_block = _resolve_pcs_count_by_block(ac_output)
+    ac_blocks_total = max(len(pcs_count_by_block), int(ac_output.get("num_blocks") or 0), 1)
+    group_default = int(stored_inputs.get("group_index") or 1)
+    if group_default < 1:
+        group_default = 1
+    if group_default > ac_blocks_total:
+        group_default = ac_blocks_total
+    group_index = st.selectbox(
+        "AC Block Group",
+        list(range(1, ac_blocks_total + 1)),
+        index=group_default - 1,
+        help="Select which AC block group to render in the SLD.",
+    )
+    pcs_count = pcs_count_by_block[group_index - 1] if pcs_count_by_block else 4
+    st.caption(f"Selected group PCS count: {pcs_count}")
 
     st.subheader("Chain Parameters")
     c1, c2, c3 = st.columns(3)
@@ -82,8 +114,8 @@ def show():
 
     d1, d2 = st.columns(2)
     pcs_rating_default = _safe_float(stored_inputs.get("pcs_rating_each_kva"), 0.0)
-    if pcs_rating_default <= 0 and _safe_float(ac_output.get("block_size_mw"), 0.0) > 0:
-        pcs_rating_default = _safe_float(ac_output.get("block_size_mw"), 5.0) * 1000 / 4
+    if pcs_rating_default <= 0 and _safe_float(ac_output.get("block_size_mw"), 0.0) > 0 and pcs_count > 0:
+        pcs_rating_default = _safe_float(ac_output.get("block_size_mw"), 5.0) * 1000 / pcs_count
     pcs_rating_each_kva = d1.number_input(
         "PCS rating each (kVA)",
         min_value=0.0,
@@ -107,6 +139,7 @@ def show():
         ac_output,
         dc_summary,
         {
+            "group_index": group_index,
             "mv_nominal_kv_ac": mv_kv,
             "pcs_lv_voltage_v_ll": pcs_lv_v,
             "transformer_rating_mva": transformer_rating_mva,
@@ -127,6 +160,7 @@ def show():
     generate = st.button("Generate Raw SLD")
 
     sld_inputs = {
+        "group_index": group_index,
         "mv_nominal_kv_ac": mv_kv,
         "pcs_lv_voltage_v_ll": pcs_lv_v,
         "transformer_rating_mva": transformer_rating_mva,
@@ -144,6 +178,7 @@ def show():
                 stage13_output, ac_output, dc_summary, sld_inputs, scenario_id
             )
             validate_single_unit_snapshot(snapshot)
+            st.session_state["sld_snapshot"] = snapshot
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 tmp_path = Path(tmpdir)

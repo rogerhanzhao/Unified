@@ -939,6 +939,21 @@ def show():
                 step=0.1
             )
 
+            freq_options = ["TBD", 50.0, 60.0]
+            freq_default = st.session_state.get("poi_frequency_hz")
+            if freq_default in (50, 50.0):
+                freq_index = 1
+            elif freq_default in (60, 60.0):
+                freq_index = 2
+            else:
+                freq_index = 0
+            poi_frequency = st.selectbox(
+                "POI Frequency (Hz)",
+                freq_options,
+                index=freq_index,
+                help="Optional; used for reporting only.",
+            )
+
             c4, c5, c6 = st.columns(3)
             cycles_year = int(c4.number_input("Cycles Per Year", value=int(get_default_numeric("cycles_per_year", 365))))
             guarantee_year = int(c5.number_input("POI Guarantee Year", value=0))
@@ -975,6 +990,8 @@ def show():
     # --- Logic Execution ---
     if run_btn:
         st.session_state["poi_nominal_voltage_kv"] = float(poi_nominal_voltage_kv)
+        poi_frequency_hz = None if poi_frequency == "TBD" else float(poi_frequency)
+        st.session_state["poi_frequency_hz"] = poi_frequency_hz
         
         if poi_is_dc_side:
             eff_dc_cables = eff_pcs = eff_mvt = eff_ac_sw = eff_hvt = 100.0
@@ -1124,7 +1141,8 @@ def show():
                             s1, s2, s3_meta, 
                             dc_block_total_qty=int(s2.get('container_count', 0)),
                             selected_scenario=mode,
-                            poi_nominal_voltage_kv=poi_nominal_voltage_kv
+                            poi_nominal_voltage_kv=poi_nominal_voltage_kv,
+                            poi_frequency_hz=poi_frequency_hz,
                         )
 
                 else:

@@ -45,6 +45,10 @@ class ReportContext:
     sld_snapshot_id: Optional[str]
     sld_snapshot_hash: Optional[str]
     sld_generated_at: Optional[str]
+    sld_group_index: Optional[int]
+    sld_preview_svg_bytes: Optional[bytes]
+    sld_pro_png_bytes: Optional[bytes]
+    layout_png_bytes: Optional[bytes]
     stage1: Dict[str, Any] = field(default_factory=dict)
     stage2: Dict[str, Any] = field(default_factory=dict)
     stage3_df: Any = None
@@ -56,6 +60,13 @@ class ReportContext:
 def _snapshot_hash(snapshot: dict) -> str:
     payload = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+
+
+def _safe_int(value, default=0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
 
 
 def _parse_template_count(template_id: Optional[str]) -> Optional[int]:
@@ -144,6 +155,10 @@ def build_report_context(
         or (project_inputs or {}).get("project_name")
         or "CALB ESS Project"
     )
+    if project_inputs is None:
+        project_inputs = {}
+    if project_inputs.get("poi_frequency_hz") is None and stage1.get("poi_frequency_hz") is not None:
+        project_inputs["poi_frequency_hz"] = stage1.get("poi_frequency_hz")
 
     scenario_id = _pick_scenario_id(stage13_output, scenario_ids)
 
@@ -253,10 +268,29 @@ def build_report_context(
     sld_snapshot_id = None
     sld_snapshot_hash = None
     sld_generated_at = None
+    sld_group_index = None
     if isinstance(sld_snapshot, dict):
         sld_snapshot_id = sld_snapshot.get("snapshot_id")
         sld_generated_at = sld_snapshot.get("generated_at")
         sld_snapshot_hash = sld_snapshot.get("snapshot_hash") or _snapshot_hash(sld_snapshot)
+        sld_group_index = _safe_int(
+            sld_snapshot.get("group_index") or sld_snapshot.get("ac_block", {}).get("group_index"),
+            0,
+        )
+        if sld_group_index <= 0:
+            sld_group_index = None
+
+    sld_preview_svg_bytes = None
+    sld_pro_png_bytes = None
+    layout_png_bytes = None
+    if isinstance(state, dict):
+        for key in ("sld_pro_jp_svg_bytes", "sld_raw_svg_bytes"):
+            value = state.get(key)
+            if value:
+                sld_preview_svg_bytes = value
+                break
+        sld_pro_png_bytes = state.get("sld_pro_png_bytes")
+        layout_png_bytes = state.get("layout_png_bytes")
 
     return ReportContext(
         project_name=project_name,
@@ -292,6 +326,10 @@ def build_report_context(
         sld_snapshot_id=sld_snapshot_id,
         sld_snapshot_hash=sld_snapshot_hash,
         sld_generated_at=sld_generated_at,
+        sld_group_index=sld_group_index,
+        sld_preview_svg_bytes=sld_preview_svg_bytes,
+        sld_pro_png_bytes=sld_pro_png_bytes,
+        layout_png_bytes=layout_png_bytes,
         stage1=stage1,
         stage2=stage2,
         stage3_df=stage3_df,

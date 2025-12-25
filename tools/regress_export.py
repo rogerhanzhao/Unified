@@ -8,6 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from calb_sizing_tool.common.allocation import evenly_distribute
 from calb_sizing_tool.config import AC_DATA_PATH, DC_DATA_PATH
 from calb_sizing_tool.reporting import export_docx
 from calb_sizing_tool.ui import dc_view
@@ -121,6 +122,13 @@ def run_ac_sizing(fixture: dict, stage1: dict, stage2: dict) -> dict:
     pcs_power_kw = block_size * 1000 / pcs_per_block if pcs_per_block else 0.0
     transformer_kva = block_size * 1000 / 0.9
     total_pcs = num_blocks * pcs_per_block
+    pcs_count_by_block = evenly_distribute(total_pcs, num_blocks)
+    dc_blocks_total = int(stage2.get("container_count", 0)) + int(stage2.get("cabinet_count", 0))
+    dc_blocks_total_by_block = evenly_distribute(dc_blocks_total, num_blocks)
+    dc_blocks_per_feeder_by_block = []
+    for idx, block_pcs in enumerate(pcs_count_by_block):
+        block_dc_total = dc_blocks_total_by_block[idx] if idx < len(dc_blocks_total_by_block) else 0
+        dc_blocks_per_feeder_by_block.append(evenly_distribute(block_dc_total, block_pcs))
 
     return {
         "project_name": stage1.get("project_name", "CALB ESS Project"),
@@ -134,10 +142,13 @@ def run_ac_sizing(fixture: dict, stage1: dict, stage2: dict) -> dict:
         "overhead_mw": overhead,
         "pcs_power_kw": pcs_power_kw,
         "pcs_per_block": pcs_per_block,
+        "pcs_count_by_block": pcs_count_by_block,
         "total_pcs": total_pcs,
         "transformer_kva": transformer_kva,
         "transformer_count": num_blocks,
         "dc_blocks_per_ac": dc_per_ac,
+        "dc_blocks_total_by_block": dc_blocks_total_by_block,
+        "dc_blocks_per_feeder_by_block": dc_blocks_per_feeder_by_block,
         "mv_level_kv": grid_kv,
     }
 

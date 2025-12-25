@@ -61,11 +61,18 @@ def _per_block_energy(snapshot: dict) -> float:
 
 
 def _allocation_counts(snapshot: dict) -> Tuple[List[int], int]:
-    counts = []
     entries = snapshot.get("dc_blocks_by_feeder", []) or []
     by_id = {entry.get("feeder_id"): entry for entry in entries if isinstance(entry, dict)}
-    for idx in range(1, 5):
-        feeder_id = f"FDR-{idx:02d}"
+    feeders = snapshot.get("feeders", []) or []
+    pcs_count = _safe_float(snapshot.get("ac_block", {}).get("pcs_count"), 0.0)
+    count = len(feeders) if feeders else int(pcs_count)
+    counts = []
+    for idx in range(count):
+        feeder_id = (
+            feeders[idx].get("feeder_id")
+            if idx < len(feeders) and isinstance(feeders[idx], dict)
+            else f"FDR-{idx + 1:02d}"
+        )
         entry = by_id.get(feeder_id, {})
         counts.append(int(_safe_float(entry.get("dc_block_count"), 0.0)))
     return counts, sum(counts)
@@ -253,7 +260,7 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
         "text",
         attrib={"x": str(skid_x + 8), "y": str(skid_y + 18), "class": "label title"},
     )
-    skid_label.text = "PCS&MV Skid (AC Block)"
+    skid_label.text = "PCS&MV SKID (AC Block)"
 
     rmu_label = ET.SubElement(
         root,
@@ -327,21 +334,47 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
     )
     bus_text.text = "LV Bus"
 
-    pcs_count = 4
-    pcs_box_w = 150
+    ac_block = snapshot.get("ac_block", {}) or {}
+    feeders = snapshot.get("feeders", []) or []
+    pcs_count = int(_safe_float(ac_block.get("pcs_count"), 0.0))
+    if pcs_count <= 0:
+        pcs_count = len(feeders) if feeders else 1
+
+    pcs_rating_list = ac_block.get("pcs_rating_kva_list")
+    if not isinstance(pcs_rating_list, list) or len(pcs_rating_list) != pcs_count:
+        if feeders:
+            pcs_rating_list = [
+                _safe_float(entry.get("pcs_rating_kva"), 0.0)
+                for entry in feeders
+                if isinstance(entry, dict)
+            ]
+        else:
+            pcs_rating_each = _safe_float(ac_block.get("pcs_rating_each_kva"), 0.0)
+            pcs_rating_list = [pcs_rating_each for _ in range(pcs_count)]
+    if len(pcs_rating_list) < pcs_count:
+        pad = pcs_count - len(pcs_rating_list)
+        pcs_rating_list.extend([pcs_rating_list[-1] if pcs_rating_list else 0.0] * pad)
+
     pcs_box_h = 52
-    pcs_gap = 24
-    pcs_total = pcs_count * pcs_box_w + (pcs_count - 1) * pcs_gap
-    pcs_start_x = skid_x + (skid_w - pcs_total) / 2
+    pcs_pad = 60
+    available = max(200.0, skid_w - pcs_pad * 2)
+    slot_w = available / pcs_count if pcs_count else available
+    pcs_box_w = min(160.0, max(110.0, slot_w - 10.0))
+    pcs_start_x = skid_x + pcs_pad + (slot_w - pcs_box_w) / 2
     pcs_y = bus_y + 25
-    pcs_rating = _safe_float(snapshot.get("ac_block", {}).get("pcs_rating_each_kva"), 0.0)
 
     for idx in range(pcs_count):
-        x = pcs_start_x + idx * (pcs_box_w + pcs_gap)
+        x = pcs_start_x + idx * slot_w
         ET.SubElement(
             root,
             "rect",
-            attrib={"x": str(x), "y": str(pcs_y), "width": str(pcs_box_w), "height": str(pcs_box_h), "class": "outline"},
+            attrib={
+                "x": str(x),
+                "y": str(pcs_y),
+                "width": str(pcs_box_w),
+                "height": str(pcs_box_h),
+                "class": "outline",
+            },
         )
         pcs_label = ET.SubElement(
             root,
@@ -354,117 +387,93 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
             "text",
             attrib={"x": str(x + 8), "y": str(pcs_y + 38), "class": "label"},
         )
+        pcs_rating = pcs_rating_list[idx] if idx < len(pcs_rating_list) else 0.0
         pcs_rating_text.text = f"{pcs_rating:.0f} kVA" if pcs_rating else "TBD"
 
         ET.SubElement(
             root,
             "line",
-            attrib={"x1": str(x + pcs_box_w / 2), "y1": str(bus_y), "x2": str(x + pcs_box_w / 2), "y2": str(pcs_y), "class": "thin"},
+            attrib={
+                "x1": str(x + pcs_box_w / 2),
+                "y1": str(bus_y),
+                "x2": str(x + pcs_box_w / 2),
+                "y2": str(pcs_y),
+                "class": "thin",
+            },
         )
 
-    diagram_scope = snapshot.get("diagram_scope") or "one_ac_block_group"
     battery_energy = _per_block_energy(snapshot)
     battery_energy_text = format_mwh(battery_energy)
 
-    battery_box_w = 260
-    battery_box_h = 60
-    battery_box_x = skid_x + (skid_w - battery_box_w) / 2
-    battery_box_y = skid_y + skid_h + 40
+    counts, total_counts = _allocation_counts(snapshot)
+    if len(counts) < pcs_count:
+        counts.extend([0 for _ in range(pcs_count - len(counts))])
+    total_override = int(_safe_float(snapshot.get("dc_blocks_for_one_ac_block_group"), 0.0))
+    if total_override > 0:
+        total_counts = total_override
 
-    if diagram_scope == "one_ac_block_group":
+    dc_box_h = 54
+    dc_box_y = skid_y + skid_h + 40
+    for idx in range(pcs_count):
+        x = pcs_start_x + idx * slot_w
         ET.SubElement(
             root,
             "rect",
             attrib={
-                "x": str(battery_box_x),
-                "y": str(battery_box_y),
-                "width": str(battery_box_w),
-                "height": str(battery_box_h),
+                "x": str(x),
+                "y": str(dc_box_y),
+                "width": str(pcs_box_w),
+                "height": str(dc_box_h),
                 "class": "outline",
             },
         )
-        bu_label = ET.SubElement(
+        dc_label = ET.SubElement(
             root,
             "text",
-            attrib={"x": str(battery_box_x + 10), "y": str(battery_box_y + 24), "class": "label"},
+            attrib={"x": str(x + 6), "y": str(dc_box_y + 24), "class": "label"},
         )
-        bu_label.text = "Battery Unit (Representative)"
-        bu_energy = ET.SubElement(
+        dc_label.text = f"DC Block ({battery_energy_text} each) x {counts[idx]}"
+
+    alloc_parts = [f"F{idx + 1}={counts[idx]}" for idx in range(pcs_count)]
+    allocation_text = "Allocation by feeder: " + ", ".join(alloc_parts)
+
+    group_index = int(_safe_float(snapshot.get("group_index") or ac_block.get("group_index"), 1.0))
+    if group_index < 1:
+        group_index = 1
+
+    note_w = 420
+    note_h = 150
+    note_x = diagram_right - note_w
+    note_y = dc_box_y + dc_box_h + 30
+    ET.SubElement(
+        root,
+        "rect",
+        attrib={
+            "x": str(note_x),
+            "y": str(note_y),
+            "width": str(note_w),
+            "height": str(note_h),
+            "class": "outline",
+        },
+    )
+    lines = [
+        "DC Block Allocation (for this AC Block group)",
+        f"Group Summary: AC Block Group {group_index}: PCS = {pcs_count}, DC Blocks Total = {total_counts}",
+        f"DC Block ({battery_energy_text} each)",
+        allocation_text,
+        "Counts indicate allocation for sizing/configuration; detailed DC wiring is not represented.",
+    ]
+    for idx, line in enumerate(lines):
+        text = ET.SubElement(
             root,
             "text",
-            attrib={"x": str(battery_box_x + 10), "y": str(battery_box_y + 44), "class": "label"},
-        )
-        bu_energy.text = battery_energy_text
-    else:
-        for idx in range(pcs_count):
-            x = pcs_start_x + idx * (pcs_box_w + pcs_gap)
-            y = battery_box_y
-            ET.SubElement(
-                root,
-                "rect",
-                attrib={
-                    "x": str(x),
-                    "y": str(y),
-                    "width": str(pcs_box_w),
-                    "height": str(pcs_box_h),
-                    "class": "outline",
-                },
-            )
-            bu_label = ET.SubElement(
-                root,
-                "text",
-                attrib={"x": str(x + 8), "y": str(y + 24), "class": "label"},
-            )
-            bu_label.text = "Battery Unit"
-            bu_energy = ET.SubElement(
-                root,
-                "text",
-                attrib={"x": str(x + 8), "y": str(y + 44), "class": "label"},
-            )
-            bu_energy.text = battery_energy_text
-
-    if diagram_scope == "one_ac_block_group":
-        counts, total_counts = _allocation_counts(snapshot)
-        total_override = int(_safe_float(snapshot.get("dc_blocks_for_one_ac_block_group"), 0.0))
-        if total_override > 0:
-            total_counts = total_override
-        allocation_text = (
-            f"Allocation by feeder: F1={counts[0]}, F2={counts[1]}, "
-            f"F3={counts[2]}, F4={counts[3]}"
-        )
-
-        note_w = 360
-        note_h = 120
-        note_x = diagram_right - note_w
-        note_y = battery_box_y + battery_box_h + 30
-        ET.SubElement(
-            root,
-            "rect",
             attrib={
-                "x": str(note_x),
-                "y": str(note_y),
-                "width": str(note_w),
-                "height": str(note_h),
-                "class": "outline",
+                "x": str(note_x + 8),
+                "y": str(note_y + 20 + idx * 18),
+                "class": "label",
             },
         )
-        lines = [
-            "DC Block Allocation (for this AC Block group)",
-            f"DC Block ({battery_energy_text} each): total = {total_counts}",
-            allocation_text,
-            "Note: Counts indicate configuration allocation, not series/daisy-chain wiring.",
-        ]
-        for idx, line in enumerate(lines):
-            text = ET.SubElement(
-                root,
-                "text",
-                attrib={
-                    "x": str(note_x + 8),
-                    "y": str(note_y + 20 + idx * 18),
-                    "class": "label",
-                },
-            )
-            text.text = line
+        text.text = line
 
     out_svg.parent.mkdir(parents=True, exist_ok=True)
     tree = ET.ElementTree(root)

@@ -3,6 +3,9 @@ import hashlib
 import json
 from typing import Dict, List, Optional
 
+from calb_sizing_tool.common.allocation import evenly_distribute
+from calb_sizing_tool.sld.ac_block_group import build_ac_block_group_spec
+
 
 def _snapshot_hash(snapshot: dict) -> str:
     payload = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
@@ -23,35 +26,31 @@ def _safe_float(value, default=0.0):
         return default
 
 
-def _build_feeders(pcs_rating_each_kva: float) -> List[Dict]:
+def _build_feeders(pcs_rating_kva_list: List[float]) -> List[Dict]:
     feeders = []
-    for idx in range(1, 5):
+    for idx, rating in enumerate(pcs_rating_kva_list, start=1):
         feeders.append(
             {
                 "feeder_id": f"FDR-{idx:02d}",
                 "pcs_id": f"PCS-{idx:02d}",
-                "pcs_rating_kva": pcs_rating_each_kva,
+                "pcs_rating_kva": rating,
             }
         )
     return feeders
 
 
-def _allocate_dc_blocks(
-    dc_blocks_total: int, dc_block_unit_mwh: Optional[float]
+def _build_dc_blocks_by_feeder(
+    dc_blocks_per_feeder: List[int], dc_block_unit_mwh: Optional[float]
 ) -> List[Dict]:
     allocations = []
-    base = dc_blocks_total // 4
-    remainder = dc_blocks_total % 4
-
-    for idx in range(4):
-        count = base + (1 if idx < remainder else 0)
+    for idx, count in enumerate(dc_blocks_per_feeder, start=1):
         entry = {
-            "feeder_id": f"FDR-{idx+1:02d}",
-            "dc_block_count": count,
+            "feeder_id": f"FDR-{idx:02d}",
+            "dc_block_count": int(count),
             "dc_block_energy_mwh": None,
         }
         if dc_block_unit_mwh:
-            entry["dc_block_energy_mwh"] = count * dc_block_unit_mwh
+            entry["dc_block_energy_mwh"] = int(count) * dc_block_unit_mwh
         allocations.append(entry)
     return allocations
 
@@ -92,52 +91,10 @@ def build_single_unit_snapshot(
     )
     project_hz = _safe_float(stage13_output.get("poi_frequency_hz"), 60.0)
 
-    mv_kv = _safe_float(
-        sld_inputs.get("mv_nominal_kv_ac")
-        or ac_output.get("grid_kv")
-        or stage13_output.get("poi_nominal_voltage_kv"),
-        33.0,
+    group_index = _safe_int(sld_inputs.get("group_index"), 1)
+    group_spec = build_ac_block_group_spec(
+        stage13_output, ac_output, dc_summary, sld_inputs, group_index
     )
-    pcs_lv_v = _safe_float(
-        sld_inputs.get("pcs_lv_voltage_v_ll")
-        or ac_output.get("inverter_lv_v"),
-        690.0,
-    )
-
-    block_size_mw = _safe_float(ac_output.get("block_size_mw"), 5.0)
-
-    transformer_rating_mva = _safe_float(
-        sld_inputs.get("transformer_rating_mva"), 0.0
-    )
-    if transformer_rating_mva <= 0:
-        transformer_kva = _safe_float(
-            sld_inputs.get("transformer_rating_kva") or ac_output.get("transformer_kva"),
-            0.0,
-        )
-        if transformer_kva > 0:
-            transformer_rating_mva = transformer_kva / 1000.0
-        elif block_size_mw > 0:
-            transformer_rating_mva = block_size_mw / 0.9
-    transformer_rating_mva = transformer_rating_mva or 5.0
-    transformer_rating_kva = transformer_rating_mva * 1000.0
-
-    pcs_rating_each_kva = _safe_float(sld_inputs.get("pcs_rating_each_kva"), 0.0)
-    if pcs_rating_each_kva <= 0 and block_size_mw > 0:
-        pcs_rating_each_kva = block_size_mw * 1000 / 4
-    if pcs_rating_each_kva <= 0:
-        pcs_rating_each_kva = _safe_float(ac_output.get("pcs_power_kw"), 0.0)
-    pcs_rating_each_kva = pcs_rating_each_kva or 1250.0
-
-    dc_block_unit_mwh = _safe_float(sld_inputs.get("dc_block_energy_mwh"), 0.0)
-    if dc_block_unit_mwh <= 0:
-        dc_block = dc_summary.get("dc_block") if isinstance(dc_summary, dict) else None
-        if dc_block is not None:
-            dc_block_unit_mwh = _safe_float(getattr(dc_block, "capacity_mwh", 0.0))
-    dc_block_unit_mwh = dc_block_unit_mwh or 5.106
-
-    feeders = sld_inputs.get("feeders")
-    if not isinstance(feeders, list) or len(feeders) != 4:
-        feeders = _build_feeders(pcs_rating_each_kva)
 
     site_ac_block_total = _safe_int(
         sld_inputs.get("site_ac_block_total") or _compute_site_ac_blocks(ac_output)
@@ -149,32 +106,45 @@ def build_single_unit_snapshot(
     if site_ac_block_total > 0 and site_dc_block_total > 0:
         ratio_default = max(1, int(round(site_dc_block_total / site_ac_block_total)))
 
+    feeders = sld_inputs.get("feeders")
+    if not isinstance(feeders, list) or len(feeders) != group_spec.pcs_count:
+        feeders = _build_feeders(group_spec.pcs_rating_kva_list)
+    else:
+        normalized_feed = []
+        for idx, entry in enumerate(feeders, start=1):
+            if not isinstance(entry, dict):
+                continue
+            pcs_rating = entry.get("pcs_rating_kva")
+            if pcs_rating is None and idx - 1 < len(group_spec.pcs_rating_kva_list):
+                pcs_rating = group_spec.pcs_rating_kva_list[idx - 1]
+            normalized_feed.append(
+                {
+                    "feeder_id": entry.get("feeder_id") or f"FDR-{idx:02d}",
+                    "pcs_id": entry.get("pcs_id") or f"PCS-{idx:02d}",
+                    "pcs_rating_kva": pcs_rating,
+                }
+            )
+        feeders = normalized_feed if len(normalized_feed) == group_spec.pcs_count else _build_feeders(
+            group_spec.pcs_rating_kva_list
+        )
+
     dc_blocks_by_feeder = sld_inputs.get("dc_blocks_by_feeder")
     dc_blocks_for_one_ac_block_group = _safe_int(
         sld_inputs.get("dc_blocks_for_one_ac_block_group"), 0
     )
 
-    if not isinstance(dc_blocks_by_feeder, list) or not dc_blocks_by_feeder:
-        if dc_blocks_for_one_ac_block_group <= 0:
-            if sld_inputs.get("use_site_ratio"):
-                dc_blocks_for_one_ac_block_group = ratio_default or 4
-            else:
-                dc_blocks_for_one_ac_block_group = 4
-        dc_blocks_by_feeder = _allocate_dc_blocks(
-            dc_blocks_for_one_ac_block_group, dc_block_unit_mwh
-        )
-    else:
+    if isinstance(dc_blocks_by_feeder, list) and len(dc_blocks_by_feeder) == group_spec.pcs_count:
         normalized = []
         total_count = 0
-        for entry in dc_blocks_by_feeder:
+        for idx, entry in enumerate(dc_blocks_by_feeder, start=1):
             if not isinstance(entry, dict):
                 continue
-            feeder_id = entry.get("feeder_id")
+            feeder_id = entry.get("feeder_id") or f"FDR-{idx:02d}"
             count = _safe_int(entry.get("dc_block_count"), 0)
             total_count += count
             energy = entry.get("dc_block_energy_mwh")
-            if energy is None and dc_block_unit_mwh:
-                energy = count * dc_block_unit_mwh
+            if energy is None and group_spec.dc_block_energy_mwh:
+                energy = count * group_spec.dc_block_energy_mwh
             normalized.append(
                 {
                     "feeder_id": feeder_id,
@@ -185,8 +155,20 @@ def build_single_unit_snapshot(
         dc_blocks_by_feeder = normalized
         if total_count > 0:
             dc_blocks_for_one_ac_block_group = total_count
-        elif dc_blocks_for_one_ac_block_group <= 0:
-            dc_blocks_for_one_ac_block_group = 4
+    else:
+        if dc_blocks_for_one_ac_block_group <= 0:
+            if sld_inputs.get("use_site_ratio"):
+                dc_blocks_for_one_ac_block_group = ratio_default or group_spec.dc_blocks_total_in_group
+            else:
+                dc_blocks_for_one_ac_block_group = group_spec.dc_blocks_total_in_group
+        if dc_blocks_for_one_ac_block_group <= 0:
+            dc_blocks_for_one_ac_block_group = group_spec.pcs_count
+        dc_blocks_per_feeder = evenly_distribute(
+            dc_blocks_for_one_ac_block_group, group_spec.pcs_count
+        )
+        dc_blocks_by_feeder = _build_dc_blocks_by_feeder(
+            dc_blocks_per_feeder, group_spec.dc_block_energy_mwh
+        )
 
     labels = sld_inputs.get("mv_labels") if isinstance(sld_inputs.get("mv_labels"), dict) else {}
     diagram_scope = sld_inputs.get("diagram_scope") or "one_ac_block_group"
@@ -196,12 +178,13 @@ def build_single_unit_snapshot(
         "snapshot_id": f"SLD-Raw-{project_name}-{scenario_id}-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}",
         "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
         "diagram_scope": diagram_scope,
+        "group_index": group_spec.group_index,
         "site_ac_block_total": site_ac_block_total,
         "site_dc_block_total": site_dc_block_total,
         "dc_blocks_for_one_ac_block_group": dc_blocks_for_one_ac_block_group,
         "project": {"name": project_name, "scenario_id": scenario_id, "hz": project_hz},
         "mv": {
-            "kv": mv_kv,
+            "kv": group_spec.mv_voltage_kv,
             "node_id": "MV_NODE_01",
             "labels": {
                 "to_switchgear": labels.get("to_switchgear") or "To Switchgear",
@@ -209,22 +192,26 @@ def build_single_unit_snapshot(
             },
         },
         "transformer": {
-            "rated_mva": transformer_rating_mva,
-            "rated_kva": transformer_rating_kva,
-            "hv_kv": mv_kv,
-            "lv_v": pcs_lv_v,
+            "rated_mva": group_spec.transformer_rating_mva,
+            "rated_kva": group_spec.transformer_rating_mva * 1000.0,
+            "hv_kv": group_spec.mv_voltage_kv,
+            "lv_v": group_spec.lv_voltage_v_ll,
             "vector_group": sld_inputs.get("transformer", {}).get("vector_group"),
             "uk_percent": sld_inputs.get("transformer", {}).get("uk_percent"),
             "tap_range": sld_inputs.get("transformer", {}).get("tap_range"),
             "cooling": sld_inputs.get("transformer", {}).get("cooling"),
         },
         "ac_block": {
-            "pcs_count": 4,
-            "pcs_rating_each_kva": pcs_rating_each_kva,
-            "pcs_lv_voltage_v_ll": pcs_lv_v,
+            "group_index": group_spec.group_index,
+            "pcs_count": group_spec.pcs_count,
+            "pcs_rating_each_kva": group_spec.pcs_rating_kva_list[0]
+            if group_spec.pcs_rating_kva_list
+            else None,
+            "pcs_rating_kva_list": group_spec.pcs_rating_kva_list,
+            "pcs_lv_voltage_v_ll": group_spec.lv_voltage_v_ll,
         },
         "feeders": feeders,
-        "dc_block_energy_mwh": dc_block_unit_mwh,
+        "dc_block_energy_mwh": group_spec.dc_block_energy_mwh,
         "dc_blocks_by_feeder": dc_blocks_by_feeder,
         "electrical_inputs": {
             "rmu": sld_inputs.get("rmu", {}) or {},
@@ -275,8 +262,11 @@ def validate_single_unit_snapshot(snapshot: dict) -> None:
             raise ValueError(f"Missing '{key}' in ac_block.")
 
     feeders = snapshot.get("feeders")
-    if not isinstance(feeders, list) or len(feeders) != 4:
-        raise ValueError("Snapshot 'feeders' must be a list of 4 feeders.")
+    pcs_count = _safe_int(ac_block.get("pcs_count"), 0)
+    if not isinstance(feeders, list) or not feeders:
+        raise ValueError("Snapshot 'feeders' must be a non-empty list.")
+    if pcs_count > 0 and len(feeders) != pcs_count:
+        raise ValueError("Snapshot 'feeders' count must match ac_block.pcs_count.")
     for feeder in feeders:
         if not isinstance(feeder, dict):
             raise ValueError("Each feeder entry must be a dict.")
@@ -285,5 +275,5 @@ def validate_single_unit_snapshot(snapshot: dict) -> None:
                 raise ValueError(f"Missing '{key}' in feeders[].")
 
     dc_blocks_by_feeder = snapshot.get("dc_blocks_by_feeder")
-    if not isinstance(dc_blocks_by_feeder, list) or len(dc_blocks_by_feeder) != 4:
-        raise ValueError("Snapshot 'dc_blocks_by_feeder' must be a list of 4 entries.")
+    if not isinstance(dc_blocks_by_feeder, list) or len(dc_blocks_by_feeder) != len(feeders):
+        raise ValueError("Snapshot 'dc_blocks_by_feeder' must match feeder count.")

@@ -33,21 +33,21 @@ Ensure the Excel data files (for example, `ess_sizing_data_dictionary_v13_dc_aut
 3. Open the `SLD Generator (PowSyBl)` page (beta).
 4. Click **Generate SLD Snapshot + SVG**, then download `snapshot.json`, `sld.svg`, `sld_metadata.json`, and `sld_final.svg`.
 
-## SLD Raw V0.5 usage (PowSyBl, single unit chain)
+## Single Line Diagram usage (Pro + Raw)
 
-1. Install dependencies: `pip install pypowsybl`.
+1. Install dependencies: `pip install pypowsybl svgwrite cairosvg`.
 2. Run DC sizing and AC sizing.
-3. Open the `SLD Raw V0.5` page.
-4. Fill the chain parameters and Electrical SLD Inputs, then click **Generate Raw SLD**.
-5. Download `raw.svg`, `raw_metadata.json`, and `snapshot.json`.
+3. Open the `Single Line Diagram` page and select the AC block group.
+4. Fill the chain parameters and Electrical SLD Inputs, then click **Generate SLD Pro**.
+5. Download `sld_pro.svg` and `sld_pro.png`.
+6. For Raw debug view, switch to the Raw tab and generate `raw.svg` + `raw_metadata.json`.
 
-## SLD Pro English JP Style usage (deterministic SVG)
+## Site Layout usage (template view)
 
 1. Run DC sizing and AC sizing.
-2. Open the `SLD Pro JP Style` page.
-3. Fill the chain parameters and Electrical SLD Inputs, then click **Generate JP Pro SLD**.
-4. Default scope is `one_ac_block_group` with representative Battery Unit + DC Block allocation note.
-5. Download `sld_pro_en.svg` and `snapshot.json`.
+2. Open the `Site Layout` page and choose block indices.
+3. Click **Generate Layout**.
+4. Download `layout_block.svg` and `layout_block.png`.
 
 ## SLD Generator Pro usage (engineering style)
 

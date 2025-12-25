@@ -18,6 +18,13 @@ try:
 except Exception:
     MATPLOTLIB_AVAILABLE = False
 
+try:
+    import cairosvg
+
+    CAIROSVG_AVAILABLE = True
+except Exception:
+    CAIROSVG_AVAILABLE = False
+
 
 def _format_percent_with_fraction(value, input_is_fraction=None, fraction_decimals=4) -> str:
     if value is None:
@@ -89,6 +96,40 @@ def _plot_poi_usable_png(df: pd.DataFrame, poi_target: float, title: str) -> Opt
         return None
 
 
+def _format_or_tbd(value, unit: str) -> str:
+    if value is None:
+        return "TBD"
+    try:
+        numeric = float(value)
+    except Exception:
+        return str(value) if value else "TBD"
+    if numeric <= 0:
+        return "TBD"
+    return format_value(numeric, unit)
+
+
+def _format_transformer_rating(value) -> str:
+    if value is None:
+        return "TBD"
+    try:
+        kva = float(value)
+    except Exception:
+        return "TBD"
+    if kva <= 0:
+        return "TBD"
+    mva = kva / 1000.0
+    return f"{mva:.2f} MVA ({kva:.0f} kVA)"
+
+
+def _svg_bytes_to_png(svg_bytes: bytes, width_px: int = 900) -> Optional[bytes]:
+    if not svg_bytes or not CAIROSVG_AVAILABLE:
+        return None
+    try:
+        return cairosvg.svg2png(bytestring=svg_bytes, output_width=width_px)
+    except Exception:
+        return None
+
+
 def export_report_v2_1(ctx: ReportContext) -> bytes:
     doc = Document()
     _setup_margins(doc)
@@ -121,7 +162,10 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
         ("AC Block Template", ctx.ac_block_template_id),
         ("AC Blocks Total", f"{ctx.ac_blocks_total:d}"),
         ("Total PCS Modules", f"{ctx.pcs_modules_total:d}"),
-        ("Transformer Rating (kVA)", format_value(ctx.transformer_rating_kva, "kVA")),
+        (
+            "Transformer Rating (MVA/kVA)",
+            _format_transformer_rating(ctx.transformer_rating_kva),
+        ),
         ("Avg DC Blocks per AC Block", f"{ctx.avg_dc_blocks_per_ac_block:.3f}" if ctx.avg_dc_blocks_per_ac_block is not None else ""),
     ]
     _add_table(doc, exec_rows, ["Metric", "Value"])
@@ -143,7 +187,7 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
         ("POI Energy Requirement (MWh)", format_value(ctx.poi_energy_requirement_mwh, "MWh")),
         ("POI Energy Guarantee (MWh)", format_value(ctx.poi_energy_guarantee_mwh, "MWh")),
         ("POI MV Voltage (kV)", format_value(ctx.grid_mv_voltage_kv_ac, "kV")),
-        ("POI Frequency (Hz)", format_value(ctx.project_inputs.get("poi_frequency_hz"), "Hz")),
+        ("POI Frequency (Hz)", _format_or_tbd(ctx.project_inputs.get("poi_frequency_hz"), "Hz")),
         ("Grid Power Factor (PF)", format_value(ctx.grid_power_factor, "PF")),
     ]
     _add_table(doc, site_rows, ["Parameter", "Value"])
@@ -236,6 +280,19 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
 
         s3_df = s3_df.copy()
         s3_df["Meets_Guarantee"] = s3_df["POI_Usable_Energy_MWh"] >= float(ctx.poi_energy_guarantee_mwh or 0.0)
+        doc.add_paragraph(
+            f"Guarantee Year = {ctx.poi_guarantee_year}; pass/fail is evaluated at year {ctx.poi_guarantee_year}."
+        )
+
+        try:
+            available_years = set(s3_df["Year_Index"].astype(int).tolist())
+        except Exception:
+            available_years = set()
+        key_years = sorted(set([0, ctx.poi_guarantee_year, 5, 10, 15, 20]))
+        selected_years = [year for year in key_years if year in available_years]
+        if selected_years:
+            s3_df = s3_df[s3_df["Year_Index"].isin(selected_years)].copy()
+
         s3_columns = [
             "Year_Index",
             "SOH_Absolute_Pct",
@@ -281,41 +338,70 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
             f"{format_value(ctx.ac_block_size_mw, 'MW')} / {format_value(ctx.grid_power_factor, 'PF')} = "
             f"{format_value(transformer_mva, 'MVA')}"
         )
+    pcs_count_by_block = ctx.ac_output.get("pcs_count_by_block") if isinstance(ctx.ac_output, dict) else None
+    pcs_by_block_text = ""
+    if isinstance(pcs_count_by_block, list) and pcs_count_by_block:
+        pcs_by_block_text = ", ".join(
+            f"B{idx + 1}={int(value)}" for idx, value in enumerate(pcs_count_by_block)
+        )
     s4_rows = [
         ("AC Block Template", ctx.ac_block_template_id),
         ("AC Block Size (MW)", format_value(ctx.ac_block_size_mw, "MW")),
         ("PCS per AC Block", f"{ctx.pcs_per_block:d}"),
         ("Feeders per AC Block", f"{ctx.feeders_per_block:d}"),
+        ("PCS LV Voltage (V_LL)", format_value(ctx.pcs_lv_voltage_v_ll_rms_ac, "V")),
         ("Total PCS Modules", f"{ctx.pcs_modules_total:d}"),
         ("Transformer Rating (kVA)", format_value(ctx.transformer_rating_kva, "kVA")),
         ("Transformer Formula (MVA)", transformer_formula),
     ]
+    if pcs_by_block_text:
+        s4_rows.insert(3, ("PCS per AC Block (by block)", pcs_by_block_text))
     _add_table(doc, s4_rows, ["Metric", "Value"])
     doc.add_paragraph("")
 
     doc.add_heading("Integrated Configuration Summary", level=2)
     combined_rows = [
         ("DC Blocks Total", f"{ctx.dc_blocks_total:d}", ""),
-        ("DC Unit Capacity (MWh)", format_value(ctx.dc_block_unit_mwh, "MWh") if ctx.dc_block_unit_mwh else "mixed", ""),
-        ("DC Total Energy (MWh)", format_value(ctx.dc_total_energy_mwh, "MWh"), ""),
-        ("AC Block Template", "", ctx.ac_block_template_id),
         ("AC Blocks Total", "", f"{ctx.ac_blocks_total:d}"),
         ("Total PCS Modules", "", f"{ctx.pcs_modules_total:d}"),
-        ("Transformer Rating (kVA)", "", format_value(ctx.transformer_rating_kva, "kVA")),
+        ("Transformer Rating (MVA/kVA)", "", _format_transformer_rating(ctx.transformer_rating_kva)),
         ("Grid MV Voltage (kV)", "", format_value(ctx.grid_mv_voltage_kv_ac, "kV")),
+        ("Guarantee Year (from COD)", f"{ctx.poi_guarantee_year:d}", ""),
     ]
     _add_table(doc, combined_rows, ["Metric", "DC", "AC"])
     doc.add_paragraph("")
 
-    doc.add_heading("Single Line Diagram (SLD)", level=2)
-    doc.add_paragraph("SLD output represents a single MV node chain (RMU -> TR -> 1 AC block with 4 feeders).")
+    doc.add_heading("Single Line Diagram (1 AC Block group)", level=2)
+    doc.add_paragraph("SLD output represents a single MV node chain (RMU -> TR -> 1 AC block group).")
     if ctx.sld_snapshot_hash:
         generated_at = ctx.sld_generated_at or "unknown time"
         doc.add_paragraph(
             f"SLD snapshot hash: {ctx.sld_snapshot_hash} (generated at {generated_at})."
         )
+        if ctx.sld_group_index:
+            doc.add_paragraph(f"SLD preview group index: {ctx.sld_group_index}.")
+    sld_embedded = False
+    if ctx.sld_pro_png_bytes:
+        doc.add_picture(io.BytesIO(ctx.sld_pro_png_bytes), width=Inches(6.7))
+        sld_embedded = True
+    elif ctx.sld_preview_svg_bytes:
+        png_bytes = _svg_bytes_to_png(ctx.sld_preview_svg_bytes)
+        if png_bytes:
+            doc.add_picture(io.BytesIO(png_bytes), width=Inches(6.7))
+            sld_embedded = True
+
+    if not sld_embedded:
+        if ctx.sld_snapshot_hash:
+            doc.add_paragraph("SLD PNG not available (generate in Single Line Diagram or install cairosvg).")
+        else:
+            doc.add_paragraph("Not generated (run diagram generation first).")
+    doc.add_paragraph("")
+
+    doc.add_heading("Block Layout (template view)", level=2)
+    if ctx.layout_png_bytes:
+        doc.add_picture(io.BytesIO(ctx.layout_png_bytes), width=Inches(6.7))
     else:
-        doc.add_paragraph("SLD not generated. Use the SLD Generator page to create a snapshot and SVG.")
+        doc.add_paragraph("Not generated (run layout generation first).")
     doc.add_paragraph("")
 
     qc_checks = list(ctx.qc_checks)

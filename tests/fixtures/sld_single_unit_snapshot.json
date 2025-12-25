@@ -3,9 +3,10 @@
   "snapshot_id": "SLD-Raw-Example-001",
   "generated_at": "2025-12-25T02:00:00",
   "diagram_scope": "one_ac_block_group",
-  "site_ac_block_total": 4,
-  "site_dc_block_total": 16,
-  "dc_blocks_for_one_ac_block_group": 4,
+  "group_index": 1,
+  "site_ac_block_total": 3,
+  "site_dc_block_total": 7,
+  "dc_blocks_for_one_ac_block_group": 3,
   "project": {
     "name": "SLD Raw Fixture Project",
     "scenario_id": "container_only",
@@ -30,22 +31,20 @@
     "cooling": "ONAN"
   },
   "ac_block": {
-    "pcs_count": 4,
-    "pcs_rating_each_kva": 1250.0,
+    "group_index": 1,
+    "pcs_count": 2,
+    "pcs_rating_each_kva": 2500.0,
+    "pcs_rating_kva_list": [2500.0, 2500.0],
     "pcs_lv_voltage_v_ll": 690.0
   },
   "feeders": [
-    {"feeder_id": "FDR-01", "pcs_id": "PCS-01", "pcs_rating_kva": 1250.0},
-    {"feeder_id": "FDR-02", "pcs_id": "PCS-02", "pcs_rating_kva": 1250.0},
-    {"feeder_id": "FDR-03", "pcs_id": "PCS-03", "pcs_rating_kva": 1250.0},
-    {"feeder_id": "FDR-04", "pcs_id": "PCS-04", "pcs_rating_kva": 1250.0}
+    {"feeder_id": "FDR-01", "pcs_id": "PCS-01", "pcs_rating_kva": 2500.0},
+    {"feeder_id": "FDR-02", "pcs_id": "PCS-02", "pcs_rating_kva": 2500.0}
   ],
   "dc_block_energy_mwh": 5.106,
   "dc_blocks_by_feeder": [
-    {"feeder_id": "FDR-01", "dc_block_count": 1, "dc_block_energy_mwh": 5.106},
-    {"feeder_id": "FDR-02", "dc_block_count": 1, "dc_block_energy_mwh": 5.106},
-    {"feeder_id": "FDR-03", "dc_block_count": 1, "dc_block_energy_mwh": 5.106},
-    {"feeder_id": "FDR-04", "dc_block_count": 1, "dc_block_energy_mwh": 5.106}
+    {"feeder_id": "FDR-01", "dc_block_count": 2, "dc_block_energy_mwh": 10.212},
+    {"feeder_id": "FDR-02", "dc_block_count": 1, "dc_block_energy_mwh": 5.106}
   ],
   "electrical_inputs": {
     "rmu": {
