@@ -1,0 +1,26 @@
+{
+  "fixture_id": "v1_case02_hybrid",
+  "project_name": "V1 Regression Case 02",
+  "scenario_id": "hybrid",
+  "poi_power_req_mw": 50.0,
+  "poi_energy_req_mwh": 200.0,
+  "poi_nominal_voltage_kv": 34.5,
+  "poi_frequency_hz": 50.0,
+  "project_life_years": 20,
+  "cycles_per_year": 330,
+  "poi_guarantee_year": 5,
+  "sc_time_months": 6,
+  "dod_pct": 95.0,
+  "dc_round_trip_efficiency_pct": 93.0,
+  "eff_dc_cables": 99.2,
+  "eff_pcs": 98.0,
+  "eff_mvt": 99.0,
+  "eff_ac_cables_sw_rmu": 99.0,
+  "eff_hvt_others": 100.0,
+  "ac_inputs": {
+    "grid_kv": 34.5,
+    "pcs_lv_v": 800.0,
+    "block_size_mw": 3.44,
+    "grid_power_factor": 0.95
+  }
+}

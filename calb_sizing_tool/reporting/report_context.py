@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -55,6 +56,18 @@ class ReportContext:
 def _snapshot_hash(snapshot: dict) -> str:
     payload = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+
+
+def _parse_template_count(template_id: Optional[str]) -> Optional[int]:
+    if not template_id:
+        return None
+    match = re.search(r"(\d+)\s*x", str(template_id).lower())
+    if match:
+        try:
+            return int(match.group(1))
+        except Exception:
+            return None
+    return None
 
 
 def _extract_dc_unit_mwh(stage2: dict) -> Optional[float]:
@@ -217,8 +230,24 @@ def build_report_context(
         qc_checks.append("Grid power factor is out of range (0, 1].")
     if not ac_block_template_id:
         qc_checks.append("AC block template ID could not be resolved.")
+    template_count = _parse_template_count(ac_block_template_id)
+    if template_count and pcs_per_block and template_count != pcs_per_block:
+        qc_checks.append(
+            f"AC block template indicates {template_count} PCS but sizing uses {pcs_per_block} PCS per block."
+        )
+    if template_count and feeders_per_block and template_count != feeders_per_block:
+        qc_checks.append(
+            f"AC block template indicates {template_count} feeders but sizing uses {feeders_per_block} feeders per block."
+        )
     if poi_usable_guarantee is None:
         qc_checks.append("POI usable energy at guarantee year could not be resolved.")
+    if poi_usable_guarantee is not None and poi_energy_guarantee_mwh is not None:
+        if poi_usable_guarantee + 1e-6 < poi_energy_guarantee_mwh:
+            qc_checks.append(
+                "POI usable energy at guarantee year is below the guarantee target."
+            )
+    if stage2.get("busbars_needed") is not None:
+        qc_checks.append("DC busbar grouping not implemented in V2.1 report; field omitted.")
 
     sld_snapshot = outputs.get("sld_snapshot") or state.get("sld_snapshot")
     sld_snapshot_id = None

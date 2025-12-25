@@ -1,0 +1,51 @@
+{
+  "schema_version": "sld_snapshot_v1",
+  "snapshot_id": "SLD-Example-001",
+  "snapshot_hash": "deadbeef1234",
+  "generated_at": "2025-12-25T02:00:00",
+  "project": {
+    "project_name": "SLD Fixture Project",
+    "scenario_id": "container_only",
+    "poi_power_requirement_mw": 100.0,
+    "poi_energy_requirement_mwh": 400.0,
+    "poi_energy_guarantee_mwh": 400.0,
+    "poi_frequency_hz": 60.0
+  },
+  "mv_node": {
+    "node_id": "MV_NODE_01",
+    "mv_kv_ac": 33.0
+  },
+  "rmu": {
+    "device_type": "RMU",
+    "present": true
+  },
+  "transformer": {
+    "id": "TR_01",
+    "rated_kva": 5555.0,
+    "rated_mva": 5.555,
+    "hv_kv": 33.0,
+    "lv_kv": 0.8
+  },
+  "ac_block": {
+    "template_id": "nr_4x1250kva",
+    "feeders_per_block": 4,
+    "pcs_per_block": 4
+  },
+  "dc_block_summary": {
+    "dc_blocks_total": 20,
+    "dc_block_unit_mwh": 5.0,
+    "dc_total_energy_mwh": 100.0
+  },
+  "feeders": [
+    {"feeder_id": "FDR-01", "pcs_id": "PCS-01", "pcs_kw": 1250.0, "breaker_present": true},
+    {"feeder_id": "FDR-02", "pcs_id": "PCS-02", "pcs_kw": 1250.0, "breaker_present": true},
+    {"feeder_id": "FDR-03", "pcs_id": "PCS-03", "pcs_kw": 1250.0, "breaker_present": true},
+    {"feeder_id": "FDR-04", "pcs_id": "PCS-04", "pcs_kw": 1250.0, "breaker_present": true}
+  ],
+  "dc_blocks_by_feeder": [
+    {"feeder_id": "FDR-01", "dc_blocks": 5, "dc_energy_mwh": 25.0},
+    {"feeder_id": "FDR-02", "dc_blocks": 5, "dc_energy_mwh": 25.0},
+    {"feeder_id": "FDR-03", "dc_blocks": 5, "dc_energy_mwh": 25.0},
+    {"feeder_id": "FDR-04", "dc_blocks": 5, "dc_energy_mwh": 25.0}
+  ]
+}

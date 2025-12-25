@@ -38,6 +38,7 @@ def _build_stage4_output(stage13_output: dict, ac_output: dict, dc_summary: dict
     output["dc_block_total_qty"] = stage13_output.get("dc_block_total_qty")
     output["container_count"] = stage13_output.get("container_count")
     output["cabinet_count"] = stage13_output.get("cabinet_count")
+    output["ac_blocks_total"] = ac_output.get("num_blocks") if ac_output else None
 
     dc_block = dc_summary.get("dc_block") if isinstance(dc_summary, dict) else None
     if dc_block is not None:
@@ -50,7 +51,7 @@ def _build_stage4_output(stage13_output: dict, ac_output: dict, dc_summary: dict
 
 def show():
     st.header("SLD Generator (PowSyBl)")
-    st.caption("Beta: generates professional AC-side SLD with DC block function blocks.")
+    st.caption("Beta: generates a single MV-node chain (RMU -> TR -> 1 AC block with 4 feeders).")
 
     if not POWSYBL_AVAILABLE:
         st.warning("pypowsybl is not installed. Install it to enable SLD generation.")
@@ -95,13 +96,13 @@ def show():
                 metadata_path = tmp_path / "sld_metadata.json"
                 final_svg_path = tmp_path / "sld_final.svg"
 
-                network = build_iidm_network_from_snapshot(snapshot)
-                render_sld_svg(
-                    network,
-                    container_id="SUB_BESS_01",
-                    out_svg=svg_path,
-                    out_metadata=metadata_path,
-                )
+            network = build_iidm_network_from_snapshot(snapshot)
+            render_sld_svg(
+                network,
+                container_id="SUB_MV_NODE_01",
+                out_svg=svg_path,
+                out_metadata=metadata_path,
+            )
 
                 metadata = None
                 if metadata_path.exists():

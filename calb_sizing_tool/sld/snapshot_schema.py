@@ -16,27 +16,33 @@ def validate_snapshot_v1(snapshot: dict) -> None:
     project = snapshot.get("project")
     if not isinstance(project, dict):
         raise ValueError("Snapshot 'project' must be a dict.")
-    for key in (
-        "project_name",
-        "scenario_id",
-        "poi_power_requirement_mw",
-        "poi_energy_requirement_mwh",
-        "poi_energy_guarantee_mwh",
-    ):
+    for key in ("project_name", "scenario_id", "poi_frequency_hz"):
         _require(project, key, "project")
 
-    ac_system = snapshot.get("ac_system")
-    if not isinstance(ac_system, dict):
-        raise ValueError("Snapshot 'ac_system' must be a dict.")
-    for key in (
-        "ac_block_template_id",
-        "ac_blocks_total",
-        "pcs_per_block",
-        "feeders_per_block",
-        "grid_mv_voltage_kv_ac",
-        "pcs_lv_voltage_v_ll_rms_ac",
-    ):
-        _require(ac_system, key, "ac_system")
+    mv_node = snapshot.get("mv_node")
+    if not isinstance(mv_node, dict):
+        raise ValueError("Snapshot 'mv_node' must be a dict.")
+    for key in ("node_id", "mv_kv_ac"):
+        _require(mv_node, key, "mv_node")
+
+    rmu = snapshot.get("rmu")
+    if not isinstance(rmu, dict):
+        raise ValueError("Snapshot 'rmu' must be a dict.")
+    _require(rmu, "device_type", "rmu")
+
+    transformer = snapshot.get("transformer")
+    if not isinstance(transformer, dict):
+        raise ValueError("Snapshot 'transformer' must be a dict.")
+    for key in ("id", "hv_kv", "lv_kv"):
+        _require(transformer, key, "transformer")
+    if transformer.get("rated_kva") is None and transformer.get("rated_mva") is None:
+        raise ValueError("Transformer rated_kva or rated_mva must be provided.")
+
+    ac_block = snapshot.get("ac_block")
+    if not isinstance(ac_block, dict):
+        raise ValueError("Snapshot 'ac_block' must be a dict.")
+    for key in ("template_id", "feeders_per_block", "pcs_per_block"):
+        _require(ac_block, key, "ac_block")
 
     feeders = snapshot.get("feeders")
     if not isinstance(feeders, list) or not feeders:
@@ -46,6 +52,7 @@ def validate_snapshot_v1(snapshot: dict) -> None:
             raise ValueError("Each feeder entry must be a dict.")
         _require(feeder, "feeder_id", "feeders[]")
         _require(feeder, "pcs_id", "feeders[]")
+        _require(feeder, "pcs_kw", "feeders[]")
 
     dc_blocks_by_feeder = snapshot.get("dc_blocks_by_feeder")
     if not isinstance(dc_blocks_by_feeder, list) or not dc_blocks_by_feeder:

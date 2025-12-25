@@ -225,45 +225,48 @@ def main():
     parser = argparse.ArgumentParser(description="Generate V1 report and summary from fixtures.")
     parser.add_argument("--fixture", type=Path, required=True, help="Path to fixture input JSON.")
     parser.add_argument("--summary-out", type=Path, required=True, help="Path to output summary JSON.")
-    parser.add_argument("--docx-out", type=Path, default=None, help="Optional path to write V1 DOCX report.")
+    parser.add_argument("--docx-out", type=Path, default=None, help="Path to write V1 DOCX report.")
     args = parser.parse_args()
 
     summary = build_summary_from_fixture_path(args.fixture)
     args.summary_out.parent.mkdir(parents=True, exist_ok=True)
     args.summary_out.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
 
-    if args.docx_out:
-        fixture = load_fixture(args.fixture)
-        dc_results = run_dc_sizing(fixture)
-        stage1 = dc_results["stage1"]
-        stage2 = dc_results["stage2"]
-        stage3_df = dc_results["stage3_df"]
-        scenario_id = dc_results["scenario_id"]
-        ac_output = run_ac_sizing(fixture, stage1, stage2)
-        block_code, block_name = _extract_block_identity(stage2)
+    docx_out = args.docx_out
+    if docx_out is None:
+        docx_out = args.summary_out.with_name("v1_report.docx")
 
-        dc_output = {
-            "stage1": stage1,
-            "selected_scenario": scenario_id,
-            "dc_block_total_qty": int(stage2.get("container_count", 0)) + int(stage2.get("cabinet_count", 0)),
-            "container_count": int(stage2.get("container_count", 0)),
-            "block_code": block_code,
-            "block_name": block_name,
-            "results_dict": {
-                scenario_id: (
-                    stage2,
-                    stage3_df,
-                    dc_results["stage3_meta"],
-                    dc_results["iter_count"],
-                    dc_results["poi_g"],
-                    dc_results["converged"],
-                )
-            },
-            "report_order": [(scenario_id, scenario_id.replace("_", " ").title())],
-        }
-        report_bytes = build_v1_report_bytes(dc_output, ac_output)
-        args.docx_out.parent.mkdir(parents=True, exist_ok=True)
-        args.docx_out.write_bytes(report_bytes)
+    fixture = load_fixture(args.fixture)
+    dc_results = run_dc_sizing(fixture)
+    stage1 = dc_results["stage1"]
+    stage2 = dc_results["stage2"]
+    stage3_df = dc_results["stage3_df"]
+    scenario_id = dc_results["scenario_id"]
+    ac_output = run_ac_sizing(fixture, stage1, stage2)
+    block_code, block_name = _extract_block_identity(stage2)
+
+    dc_output = {
+        "stage1": stage1,
+        "selected_scenario": scenario_id,
+        "dc_block_total_qty": int(stage2.get("container_count", 0)) + int(stage2.get("cabinet_count", 0)),
+        "container_count": int(stage2.get("container_count", 0)),
+        "block_code": block_code,
+        "block_name": block_name,
+        "results_dict": {
+            scenario_id: (
+                stage2,
+                stage3_df,
+                dc_results["stage3_meta"],
+                dc_results["iter_count"],
+                dc_results["poi_g"],
+                dc_results["converged"],
+            )
+        },
+        "report_order": [(scenario_id, scenario_id.replace("_", " ").title())],
+    }
+    report_bytes = build_v1_report_bytes(dc_output, ac_output)
+    docx_out.parent.mkdir(parents=True, exist_ok=True)
+    docx_out.write_bytes(report_bytes)
 
 
 if __name__ == "__main__":

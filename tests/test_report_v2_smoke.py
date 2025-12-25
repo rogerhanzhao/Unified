@@ -5,7 +5,7 @@ from pathlib import Path
 from docx import Document
 
 from calb_sizing_tool.reporting.report_context import build_report_context
-from calb_sizing_tool.reporting.report_v2 import export_report_v2
+from calb_sizing_tool.reporting.report_v2 import export_report_v2_1
 from tools.regress_export import run_ac_sizing, run_dc_sizing
 
 
@@ -29,11 +29,14 @@ def test_report_v2_smoke():
         scenario_ids=fixture["scenario_id"],
     )
 
-    report_bytes = export_report_v2(ctx)
+    report_bytes = export_report_v2_1(ctx)
     doc = Document(io.BytesIO(report_bytes))
     texts = [p.text for p in doc.paragraphs]
     joined = "\n".join(texts)
 
     assert texts.count("Executive Summary") == 1
-    assert "Inputs & Assumptions" in texts
+    assert texts.count("Inputs & Assumptions") == 1
+    assert "Conventions & Units" in texts
+    assert "Appendix" not in joined
+    assert ".xlsx" not in joined
     assert "314 Ah cell database" not in joined

@@ -11,7 +11,7 @@ from calb_sizing_tool.sld.snapshot_schema import validate_snapshot_v1
 
 
 def test_sld_smoke(tmp_path: Path):
-    fixture_path = Path(__file__).parent / "fixtures" / "sld_snapshot_v1_example.json"
+    fixture_path = Path(__file__).parent / "fixtures" / "sld_snapshot_v1_example_single_mv_node.json"
     snapshot = json.loads(fixture_path.read_text(encoding="utf-8"))
 
     validate_snapshot_v1(snapshot)
@@ -19,7 +19,7 @@ def test_sld_smoke(tmp_path: Path):
 
     svg_path = tmp_path / "sld.svg"
     metadata_path = tmp_path / "sld_metadata.json"
-    render_sld_svg(network, "SUB_BESS_01", svg_path, metadata_path)
+    render_sld_svg(network, "SUB_MV_NODE_01", svg_path, metadata_path)
 
     svg_text = svg_path.read_text(encoding="utf-8")
     assert svg_text.strip()

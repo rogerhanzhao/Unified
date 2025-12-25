@@ -1,19 +1,14 @@
 import datetime
 import io
+import re
 from typing import Optional
 
 import pandas as pd
 from docx import Document
 from docx.shared import Inches
 
-from calb_sizing_tool.reporting.export_docx import (
-    _add_appendix,
-    _add_cover_page,
-    _add_table,
-    _doc_to_bytes,
-    _setup_header,
-    _setup_margins,
-)
+from calb_sizing_tool.reporting.export_docx import _add_cover_page, _add_table, _doc_to_bytes, _setup_header, _setup_margins
+from calb_sizing_tool.reporting.formatter import format_percent, format_value
 from calb_sizing_tool.reporting.report_context import ReportContext
 
 try:
@@ -24,22 +19,22 @@ except Exception:
     MATPLOTLIB_AVAILABLE = False
 
 
-def _fmt(value, decimals=2, suffix=""):
+def _format_percent_with_fraction(value, input_is_fraction=None, fraction_decimals=4) -> str:
     if value is None:
         return ""
     try:
-        return f"{float(value):.{decimals}f}{suffix}"
+        numeric = float(value)
     except Exception:
         return str(value)
 
+    if input_is_fraction is None:
+        is_fraction = numeric <= 1.2
+    else:
+        is_fraction = bool(input_is_fraction)
 
-def _format_percent(value, decimals=1):
-    if value is None:
-        return ""
-    try:
-        return f"{float(value) * 100:.{decimals}f}%"
-    except Exception:
-        return str(value)
+    fraction = numeric if is_fraction else numeric / 100.0
+    percent_text = format_percent(numeric, input_is_fraction=is_fraction)
+    return f"{percent_text} ({fraction:.{fraction_decimals}f})"
 
 
 def _default_formatter(value):
@@ -94,145 +89,173 @@ def _plot_poi_usable_png(df: pd.DataFrame, poi_target: float, title: str) -> Opt
         return None
 
 
-def export_report_v2(ctx: ReportContext) -> bytes:
+def export_report_v2_1(ctx: ReportContext) -> bytes:
     doc = Document()
     _setup_margins(doc)
-    _setup_header(doc, title="Confidential Sizing Report (V2 Beta)")
+    _setup_header(doc, title="Confidential Sizing Report (V2.1 Beta)")
 
     _add_cover_page(
         doc,
-        "CALB Utility-Scale ESS Sizing Report (V2 Beta)",
+        "CALB Utility-Scale ESS Sizing Report (V2.1 Beta)",
         ctx.project_name,
-        {"tool_version": "V2 Beta"},
+        {"tool_version": "V2.1 Beta"},
     )
 
-    doc.add_heading("Front Matter", level=2)
-    front_rows = [
-        ("Report Version", "V2 Beta"),
-        ("Generated Date", datetime.datetime.now().strftime("%Y-%m-%d")),
-        ("DC Dictionary Version", ctx.dictionary_version_dc),
-        ("AC Dictionary Version", ctx.dictionary_version_ac),
-        ("Scenario ID", ctx.scenario_id),
-    ]
-    _add_table(doc, front_rows, ["Item", "Value"])
+    doc.add_heading("Conventions & Units", level=2)
+    doc.add_paragraph(
+        "All efficiencies, losses, DoD, and RTE values are displayed as percentages. "
+        "Fractions (0-1) appear only inside formula parentheses."
+    )
     doc.add_paragraph("")
 
     doc.add_heading("Executive Summary", level=2)
     exec_rows = [
-        ("POI Power Requirement (MW, POI AC)", _fmt(ctx.poi_power_requirement_mw, 2)),
-        ("POI Energy Requirement (MWh, POI AC)", _fmt(ctx.poi_energy_requirement_mwh, 2)),
-        ("POI Energy Guarantee (MWh, POI AC)", _fmt(ctx.poi_energy_guarantee_mwh, 2)),
-        ("POI Usable Energy @ Guarantee Year (MWh)", _fmt(ctx.poi_usable_energy_mwh_at_guarantee_year, 2)),
-        ("DC Blocks Total", _fmt(ctx.dc_blocks_total, 0)),
-        ("AC Blocks Total", _fmt(ctx.ac_blocks_total, 0)),
-        ("Total PCS Modules", _fmt(ctx.pcs_modules_total, 0)),
-        ("Transformer Rating per Block (kVA)", _fmt(ctx.transformer_rating_kva, 0)),
+        ("POI Power Requirement (MW)", format_value(ctx.poi_power_requirement_mw, "MW")),
+        ("POI Energy Requirement (MWh)", format_value(ctx.poi_energy_requirement_mwh, "MWh")),
+        ("POI Energy Guarantee (MWh)", format_value(ctx.poi_energy_guarantee_mwh, "MWh")),
+        ("Guarantee Year (from COD)", f"{ctx.poi_guarantee_year:d}"),
+        ("POI Usable @ Guarantee Year (MWh)", format_value(ctx.poi_usable_energy_mwh_at_guarantee_year, "MWh")),
+        ("DC Blocks Total", f"{ctx.dc_blocks_total:d}"),
+        ("DC Nameplate @BOL (MWh)", format_value(ctx.dc_total_energy_mwh, "MWh")),
+        ("DC Oversize Margin (MWh)", format_value(ctx.stage2.get("oversize_mwh"), "MWh")),
         ("AC Block Template", ctx.ac_block_template_id),
-        ("Avg DC Blocks per AC Block", _fmt(ctx.avg_dc_blocks_per_ac_block, 3)),
+        ("AC Blocks Total", f"{ctx.ac_blocks_total:d}"),
+        ("Total PCS Modules", f"{ctx.pcs_modules_total:d}"),
+        ("Transformer Rating (kVA)", format_value(ctx.transformer_rating_kva, "kVA")),
+        ("Avg DC Blocks per AC Block", f"{ctx.avg_dc_blocks_per_ac_block:.3f}" if ctx.avg_dc_blocks_per_ac_block is not None else ""),
     ]
     _add_table(doc, exec_rows, ["Metric", "Value"])
+
+    if ctx.dc_blocks_allocation:
+        doc.add_paragraph("")
+        doc.add_paragraph("DC Blocks per AC Block Allocation:")
+        alloc_rows = [
+            (entry.get("dc_blocks_per_ac_block"), entry.get("ac_blocks_count"))
+            for entry in ctx.dc_blocks_allocation
+        ]
+        _add_table(doc, alloc_rows, ["DC Blocks per AC Block", "Number of AC Blocks"])
     doc.add_paragraph("")
 
     doc.add_heading("Inputs & Assumptions", level=2)
-    input_rows = [
-        ("POI Power Requirement (MW, POI AC)", _fmt(ctx.poi_power_requirement_mw, 2)),
-        ("POI Energy Requirement (MWh, POI AC)", _fmt(ctx.poi_energy_requirement_mwh, 2)),
-        ("POI Energy Guarantee (MWh, POI AC)", _fmt(ctx.poi_energy_guarantee_mwh, 2)),
-        ("POI Guarantee Year (from COD)", _fmt(ctx.poi_guarantee_year, 0)),
-        ("Project Life (years)", _fmt(ctx.project_life_years, 0)),
-        ("Cycles per Year", _fmt(ctx.cycles_per_year, 0)),
-        ("Grid MV Voltage (kV, AC)", _fmt(ctx.grid_mv_voltage_kv_ac, 2)),
-        ("PCS LV Voltage (V_LL,rms, AC)", _fmt(ctx.pcs_lv_voltage_v_ll_rms_ac, 0)),
-        ("Grid Power Factor (PF)", _fmt(ctx.grid_power_factor, 3)),
-        ("DC Round Trip Efficiency (fraction)", _fmt(ctx.stage1.get("dc_round_trip_efficiency_frac"), 4)),
-        ("SC Loss (fraction)", _fmt(ctx.stage1.get("sc_loss_frac"), 4)),
-        ("DOD (fraction)", _fmt(ctx.stage1.get("dod_frac"), 4)),
-        ("Efficiency Chain (one-way, fraction)", _fmt(ctx.efficiency_chain_oneway_frac, 4)),
-        ("Efficiency DC Cables (fraction)", _fmt(ctx.efficiency_components_frac.get("eff_dc_cables_frac"), 4)),
-        ("Efficiency PCS (fraction)", _fmt(ctx.efficiency_components_frac.get("eff_pcs_frac"), 4)),
-        ("Efficiency MVT (fraction)", _fmt(ctx.efficiency_components_frac.get("eff_mvt_frac"), 4)),
-        ("Efficiency AC Cables/Switchgear/RMU (fraction)", _fmt(ctx.efficiency_components_frac.get("eff_ac_cables_sw_rmu_frac"), 4)),
-        ("Efficiency HVT/Others (fraction)", _fmt(ctx.efficiency_components_frac.get("eff_hvt_others_frac"), 4)),
+    doc.add_heading("Site / POI", level=3)
+    site_rows = [
+        ("POI Power Requirement (MW)", format_value(ctx.poi_power_requirement_mw, "MW")),
+        ("POI Energy Requirement (MWh)", format_value(ctx.poi_energy_requirement_mwh, "MWh")),
+        ("POI Energy Guarantee (MWh)", format_value(ctx.poi_energy_guarantee_mwh, "MWh")),
+        ("POI MV Voltage (kV)", format_value(ctx.grid_mv_voltage_kv_ac, "kV")),
+        ("POI Frequency (Hz)", format_value(ctx.project_inputs.get("poi_frequency_hz"), "Hz")),
+        ("Grid Power Factor (PF)", format_value(ctx.grid_power_factor, "PF")),
     ]
-    _add_table(doc, input_rows, ["Parameter", "Value"])
+    _add_table(doc, site_rows, ["Parameter", "Value"])
+
+    doc.add_heading("Battery & Degradation", level=3)
+    battery_rows = [
+        ("DoD", format_percent(ctx.stage1.get("dod_frac"), input_is_fraction=True)),
+        ("SC Loss", format_percent(ctx.stage1.get("sc_loss_frac"), input_is_fraction=True)),
+        ("Cycles per Year", f"{ctx.cycles_per_year:d}"),
+        ("Project Life (years)", f"{ctx.project_life_years:d}"),
+    ]
+    _add_table(doc, battery_rows, ["Parameter", "Value"])
+
+    doc.add_heading("Efficiency Chain (one-way)", level=3)
+    eff_rows = [
+        ("Total Efficiency (one-way)", format_percent(ctx.efficiency_chain_oneway_frac, input_is_fraction=True)),
+        ("DC Cables", format_percent(ctx.efficiency_components_frac.get("eff_dc_cables_frac"), input_is_fraction=True)),
+        ("PCS", format_percent(ctx.efficiency_components_frac.get("eff_pcs_frac"), input_is_fraction=True)),
+        ("Transformer", format_percent(ctx.efficiency_components_frac.get("eff_mvt_frac"), input_is_fraction=True)),
+        ("RMU / Switchgear / AC Cables", format_percent(ctx.efficiency_components_frac.get("eff_ac_cables_sw_rmu_frac"), input_is_fraction=True)),
+        ("HVT / Others", format_percent(ctx.efficiency_components_frac.get("eff_hvt_others_frac"), input_is_fraction=True)),
+    ]
+    _add_table(doc, eff_rows, ["Component", "Value"])
     doc.add_paragraph("")
 
     doc.add_heading("Stage 1: Energy Requirement", level=2)
     doc.add_paragraph(
         "DC energy capacity required (MWh) = POI energy requirement / "
-        "((1 - SC loss) * DOD * sqrt(DC RTE) * eta_chain_oneway)."
+        "((1 - SC loss) * DoD * sqrt(DC RTE) * eta_chain_oneway)."
     )
     doc.add_paragraph(
-        "POI-to-DC power requirement (MW) = POI power requirement / eta_chain_oneway."
+        f"eta_chain_oneway = {_format_percent_with_fraction(ctx.efficiency_chain_oneway_frac, input_is_fraction=True)}"
+    )
+    doc.add_paragraph(
+        f"SC loss = {_format_percent_with_fraction(ctx.stage1.get('sc_loss_frac'), input_is_fraction=True)}; "
+        f"DoD = {_format_percent_with_fraction(ctx.stage1.get('dod_frac'), input_is_fraction=True)}; "
+        f"DC RTE = {_format_percent_with_fraction(ctx.stage1.get('dc_round_trip_efficiency_frac'), input_is_fraction=True)}"
     )
     s1_rows = [
-        ("DC Energy Capacity Required (MWh)", _fmt(ctx.stage1.get("dc_energy_capacity_required_mwh"), 3)),
-        ("DC Power Required (MW)", _fmt(ctx.stage1.get("dc_power_required_mw"), 3)),
-        ("Efficiency Chain (one-way)", _format_percent(ctx.efficiency_chain_oneway_frac, 2)),
+        ("DC Energy Capacity Required (MWh)", format_value(ctx.stage1.get("dc_energy_capacity_required_mwh"), "MWh")),
+        ("DC Power Required (MW)", format_value(ctx.stage1.get("dc_power_required_mw"), "MW")),
     ]
     _add_table(doc, s1_rows, ["Metric", "Value"])
     doc.add_paragraph("")
 
-    doc.add_heading("Stage 2: DC Block Configuration", level=2)
-    doc.add_paragraph(
-        f"Based on sizing data dictionary {ctx.dictionary_version_dc} "
-        f"and AC dictionary {ctx.dictionary_version_ac}."
-    )
+    doc.add_heading("Stage 2: DC Configuration", level=2)
     dc_table = ctx.stage2.get("block_config_table") if isinstance(ctx.stage2, dict) else None
     if dc_table is not None and not dc_table.empty:
-        dc_columns = [c for c in dc_table.columns if c not in ("Config Adjustment (%)", "Oversize (MWh)")]
+        drop_cols = {"Config Adjustment (%)", "Oversize (MWh)", "Busbars Needed (K=10)", "Busbars Needed"}
+        dc_columns = [c for c in dc_table.columns if c not in drop_cols]
         headers_map = {c: c for c in dc_columns}
         formatters = {}
         for col in dc_columns:
             if col in ("Unit Capacity (MWh)", "Subtotal (MWh)", "Total DC Nameplate @BOL (MWh)"):
-                formatters[col] = lambda v, col=col: _fmt(v, 3)
+                formatters[col] = lambda v: format_value(v, "MWh")
             else:
                 formatters[col] = lambda v: "" if v is None else str(v)
         _add_dataframe_table(doc, dc_table, dc_columns, headers_map, formatters)
     else:
         doc.add_paragraph("DC block configuration table unavailable.")
     doc.add_paragraph(
-        f"DC total nameplate @BOL (MWh): {_fmt(ctx.dc_total_energy_mwh, 3)}; "
-        f"Oversize (MWh): {_fmt(ctx.stage2.get('oversize_mwh'), 3)}."
+        f"DC total nameplate @BOL (MWh): {format_value(ctx.dc_total_energy_mwh, 'MWh')}; "
+        f"Oversize margin (MWh): {format_value(ctx.stage2.get('oversize_mwh'), 'MWh')}."
     )
-    if ctx.stage2.get("busbars_needed") is not None:
-        doc.add_paragraph(f"DC busbars needed: {ctx.stage2.get('busbars_needed')}.")
     doc.add_paragraph("")
 
-    doc.add_heading("Stage 3: Degradation & POI Deliverable", level=2)
-    doc.add_paragraph(
-        "Definitions: DC RTE is DC-side round-trip efficiency. "
-        "System RTE = DC_RTE * (eta_chain_oneway)^2. "
-        "Guarantee check uses POI energy guarantee value."
-    )
+    doc.add_heading("Stage 3: Degradation & Deliverable at POI", level=2)
     s3_df = ctx.stage3_df
     if s3_df is not None and not s3_df.empty:
+        doc.add_paragraph("System RTE = DC RTE * (eta_chain_oneway)^2.")
+        rte_dc = s3_df["DC_RTE_Pct"].astype(float)
+        rte_sys = s3_df["System_RTE_Pct"].astype(float)
+        rte_dc_min, rte_dc_max = float(rte_dc.min()), float(rte_dc.max())
+        rte_sys_min, rte_sys_max = float(rte_sys.min()), float(rte_sys.max())
+
+        if abs(rte_dc_min - rte_dc_max) < 1e-6:
+            doc.add_paragraph(f"DC RTE: {format_percent(rte_dc_min, input_is_fraction=False)}")
+        else:
+            doc.add_paragraph(
+                f"DC RTE varies by year: {format_percent(rte_dc_min, input_is_fraction=False)} to "
+                f"{format_percent(rte_dc_max, input_is_fraction=False)}"
+            )
+        if abs(rte_sys_min - rte_sys_max) < 1e-6:
+            doc.add_paragraph(f"System RTE: {format_percent(rte_sys_min, input_is_fraction=False)}")
+        else:
+            doc.add_paragraph(
+                f"System RTE varies by year: {format_percent(rte_sys_min, input_is_fraction=False)} to "
+                f"{format_percent(rte_sys_max, input_is_fraction=False)}"
+            )
+
+        s3_df = s3_df.copy()
+        s3_df["Meets_Guarantee"] = s3_df["POI_Usable_Energy_MWh"] >= float(ctx.poi_energy_guarantee_mwh or 0.0)
         s3_columns = [
             "Year_Index",
-            "SOH_Display_Pct",
             "SOH_Absolute_Pct",
             "DC_Usable_MWh",
             "POI_Usable_Energy_MWh",
-            "DC_RTE_Pct",
-            "System_RTE_Pct",
+            "Meets_Guarantee",
         ]
         headers_map = {
-            "Year_Index": "Year (from COD)",
-            "SOH_Display_Pct": "SOH @ COD Baseline (%)",
-            "SOH_Absolute_Pct": "SOH vs FAT (%)",
+            "Year_Index": "Year",
+            "SOH_Absolute_Pct": "SOH (%)",
             "DC_Usable_MWh": "DC Usable (MWh)",
             "POI_Usable_Energy_MWh": "POI Usable (MWh)",
-            "DC_RTE_Pct": "DC RTE (%)",
-            "System_RTE_Pct": "System RTE (%)",
+            "Meets_Guarantee": "Meets POI Guarantee",
         }
         formatters = {
-            "Year_Index": lambda v: _fmt(v, 0),
-            "SOH_Display_Pct": lambda v: _fmt(v, 1),
-            "SOH_Absolute_Pct": lambda v: _fmt(v, 1),
-            "DC_Usable_MWh": lambda v: _fmt(v, 2),
-            "POI_Usable_Energy_MWh": lambda v: _fmt(v, 2),
-            "DC_RTE_Pct": lambda v: _fmt(v, 1),
-            "System_RTE_Pct": lambda v: _fmt(v, 1),
+            "Year_Index": lambda v: f"{int(v)}",
+            "SOH_Absolute_Pct": lambda v: format_percent(v, input_is_fraction=False),
+            "DC_Usable_MWh": lambda v: format_value(v, "MWh"),
+            "POI_Usable_Energy_MWh": lambda v: format_value(v, "MWh"),
+            "Meets_Guarantee": lambda v: "Yes" if bool(v) else "No",
         }
         _add_dataframe_table(doc, s3_df, s3_columns, headers_map, formatters)
 
@@ -244,8 +267,6 @@ def export_report_v2(ctx: ReportContext) -> bytes:
         if chart is not None:
             doc.add_paragraph("")
             doc.add_picture(chart, width=Inches(6.7))
-        else:
-            doc.add_paragraph("Chart export skipped (matplotlib not available).")
     else:
         doc.add_paragraph("Stage 3 data unavailable.")
     doc.add_paragraph("")
@@ -254,76 +275,79 @@ def export_report_v2(ctx: ReportContext) -> bytes:
     transformer_mva = None
     if ctx.grid_power_factor and ctx.grid_power_factor > 0 and ctx.ac_block_size_mw:
         transformer_mva = ctx.ac_block_size_mw / ctx.grid_power_factor
-    feeders_total = ctx.ac_blocks_total * ctx.feeders_per_block if ctx.ac_blocks_total else 0
+    transformer_formula = "n/a"
+    if transformer_mva is not None and ctx.ac_block_size_mw and ctx.grid_power_factor:
+        transformer_formula = (
+            f"{format_value(ctx.ac_block_size_mw, 'MW')} / {format_value(ctx.grid_power_factor, 'PF')} = "
+            f"{format_value(transformer_mva, 'MVA')}"
+        )
     s4_rows = [
         ("AC Block Template", ctx.ac_block_template_id),
-        ("AC Block Size (MW)", _fmt(ctx.ac_block_size_mw, 3)),
-        ("PCS per AC Block", _fmt(ctx.pcs_per_block, 0)),
-        ("Feeders per AC Block", _fmt(ctx.feeders_per_block, 0)),
-        ("Feeders Total", _fmt(feeders_total, 0)),
-        ("PCS LV Voltage (V_LL,rms, AC)", _fmt(ctx.pcs_lv_voltage_v_ll_rms_ac, 0)),
-        ("Grid MV Voltage (kV, AC)", _fmt(ctx.grid_mv_voltage_kv_ac, 2)),
-        ("Grid Power Factor (PF)", _fmt(ctx.grid_power_factor, 3)),
-        ("Transformer Rating (kVA)", _fmt(ctx.transformer_rating_kva, 0)),
-        ("Transformer Formula (MVA)", f"{_fmt(ctx.ac_block_size_mw, 3)} / {_fmt(ctx.grid_power_factor, 3)} = {_fmt(transformer_mva, 3)}"),
+        ("AC Block Size (MW)", format_value(ctx.ac_block_size_mw, "MW")),
+        ("PCS per AC Block", f"{ctx.pcs_per_block:d}"),
+        ("Feeders per AC Block", f"{ctx.feeders_per_block:d}"),
+        ("Total PCS Modules", f"{ctx.pcs_modules_total:d}"),
+        ("Transformer Rating (kVA)", format_value(ctx.transformer_rating_kva, "kVA")),
+        ("Transformer Formula (MVA)", transformer_formula),
     ]
     _add_table(doc, s4_rows, ["Metric", "Value"])
-
-    if ctx.ac_blocks_total > 0:
-        doc.add_paragraph("")
-        doc.add_paragraph("DC Blocks per AC Block Allocation:")
-        alloc_rows = []
-        for entry in ctx.dc_blocks_allocation:
-            alloc_rows.append(
-                (
-                    entry.get("dc_blocks_per_ac_block"),
-                    entry.get("ac_blocks_count"),
-                )
-            )
-        _add_table(doc, alloc_rows, ["DC Blocks per AC Block", "Number of AC Blocks"])
     doc.add_paragraph("")
 
     doc.add_heading("Integrated Configuration Summary", level=2)
     combined_rows = [
-        ("DC Blocks Total", _fmt(ctx.dc_blocks_total, 0), ""),
-        ("DC Unit Capacity (MWh)", _fmt(ctx.dc_block_unit_mwh, 3) if ctx.dc_block_unit_mwh else "mixed", ""),
-        ("DC Total Energy (MWh)", _fmt(ctx.dc_total_energy_mwh, 3), ""),
+        ("DC Blocks Total", f"{ctx.dc_blocks_total:d}", ""),
+        ("DC Unit Capacity (MWh)", format_value(ctx.dc_block_unit_mwh, "MWh") if ctx.dc_block_unit_mwh else "mixed", ""),
+        ("DC Total Energy (MWh)", format_value(ctx.dc_total_energy_mwh, "MWh"), ""),
         ("AC Block Template", "", ctx.ac_block_template_id),
-        ("AC Blocks Total", "", _fmt(ctx.ac_blocks_total, 0)),
-        ("Total PCS Modules", "", _fmt(ctx.pcs_modules_total, 0)),
-        ("Transformer Rating (kVA)", "", _fmt(ctx.transformer_rating_kva, 0)),
-        ("Grid MV Voltage (kV, AC)", "", _fmt(ctx.grid_mv_voltage_kv_ac, 2)),
+        ("AC Blocks Total", "", f"{ctx.ac_blocks_total:d}"),
+        ("Total PCS Modules", "", f"{ctx.pcs_modules_total:d}"),
+        ("Transformer Rating (kVA)", "", format_value(ctx.transformer_rating_kva, "kVA")),
+        ("Grid MV Voltage (kV)", "", format_value(ctx.grid_mv_voltage_kv_ac, "kV")),
     ]
     _add_table(doc, combined_rows, ["Metric", "DC", "AC"])
     doc.add_paragraph("")
 
     doc.add_heading("Single Line Diagram (SLD)", level=2)
+    doc.add_paragraph("SLD output represents a single MV node chain (RMU -> TR -> 1 AC block with 4 feeders).")
     if ctx.sld_snapshot_hash:
+        generated_at = ctx.sld_generated_at or "unknown time"
         doc.add_paragraph(
-            f"SLD snapshot hash: {ctx.sld_snapshot_hash} "
-            f"(snapshot id: {ctx.sld_snapshot_id or 'n/a'})."
+            f"SLD snapshot hash: {ctx.sld_snapshot_hash} (generated at {generated_at})."
         )
     else:
-        doc.add_paragraph("SLD placeholder - snapshot not generated.")
+        doc.add_paragraph("SLD not generated. Use the SLD Generator page to create a snapshot and SVG.")
     doc.add_paragraph("")
 
-    doc.add_heading("Layout", level=2)
-    doc.add_paragraph("Layout placeholder - to be provided.")
-    doc.add_paragraph("")
+    qc_checks = list(ctx.qc_checks)
+    percent_pairs = [
+        (ctx.efficiency_chain_oneway_frac, format_percent(ctx.efficiency_chain_oneway_frac, input_is_fraction=True)),
+        (ctx.stage1.get("dod_frac"), format_percent(ctx.stage1.get("dod_frac"), input_is_fraction=True)),
+        (ctx.stage1.get("sc_loss_frac"), format_percent(ctx.stage1.get("sc_loss_frac"), input_is_fraction=True)),
+        (
+            ctx.stage1.get("dc_round_trip_efficiency_frac"),
+            format_percent(ctx.stage1.get("dc_round_trip_efficiency_frac"), input_is_fraction=True),
+        ),
+    ]
+    for raw_value, text in percent_pairs:
+        if raw_value is None:
+            continue
+        try:
+            raw_value = float(raw_value)
+            displayed = float(text.replace("%", ""))
+        except Exception:
+            continue
+        if raw_value > 0.1 and displayed < 1.0:
+            qc_checks.append("Percent formatting appears to show a fraction (0.xxx%) instead of a percent.")
+            break
 
-    doc.add_heading("QC Checks", level=2)
-    if ctx.qc_checks:
-        for item in ctx.qc_checks:
+    doc.add_heading("QC / Warnings", level=2)
+    if qc_checks:
+        for item in qc_checks:
             doc.add_paragraph(f"- {item}")
     else:
         doc.add_paragraph("No QC warnings.")
 
-    _add_appendix(
-        doc,
-        {
-            "dictionary_version": ctx.dictionary_version_ac,
-            "input_file_version": ctx.dictionary_version_dc,
-        },
-    )
-
     return _doc_to_bytes(doc)
+
+
+export_report_v2 = export_report_v2_1

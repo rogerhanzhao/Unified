@@ -1,7 +1,6 @@
 import datetime
 import hashlib
 import json
-import re
 from typing import Dict, List, Optional
 
 from calb_sizing_tool.common.ac_block import derive_ac_template_fields
@@ -10,18 +9,6 @@ from calb_sizing_tool.common.ac_block import derive_ac_template_fields
 def _snapshot_hash(snapshot: dict) -> str:
     payload = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
-
-
-def _parse_feeders_per_block(template_id: Optional[str]) -> Optional[int]:
-    if not template_id:
-        return None
-    match = re.search(r"(\d+)\s*x", template_id.lower())
-    if match:
-        try:
-            return int(match.group(1))
-        except Exception:
-            return None
-    return None
 
 
 def _safe_int(value, default=0):
@@ -38,38 +25,53 @@ def _safe_float(value, default=0.0):
         return default
 
 
-def _build_feeders(ac_blocks_total: int, feeders_per_block: int, pcs_rating_kw: float) -> List[Dict]:
+def _build_feeders(pcs_kw: float) -> List[Dict]:
     feeders = []
-    feeder_count = ac_blocks_total * feeders_per_block if ac_blocks_total and feeders_per_block else 0
-    for idx in range(1, feeder_count + 1):
+    for idx in range(1, 5):
         feeders.append(
             {
-                "feeder_id": f"FDR_{idx:02d}",
-                "ac_block_index": (idx - 1) // feeders_per_block + 1 if feeders_per_block else 1,
+                "feeder_id": f"FDR-{idx:02d}",
                 "pcs_id": f"PCS-{idx:02d}",
-                "pcs_rating_kw": pcs_rating_kw,
+                "pcs_kw": pcs_kw,
+                "breaker_present": True,
             }
         )
     return feeders
 
 
 def _allocate_dc_blocks(
-    feeder_count: int, dc_blocks_total: int, dc_block_unit_mwh: Optional[float]
+    dc_blocks_total: int, dc_block_unit_mwh: Optional[float]
 ) -> List[Dict]:
     allocations = []
-    if feeder_count <= 0:
-        return allocations
+    base = dc_blocks_total // 4
+    remainder = dc_blocks_total % 4
 
-    base = dc_blocks_total // feeder_count if feeder_count else 0
-    remainder = dc_blocks_total % feeder_count if feeder_count else 0
-
-    for idx in range(feeder_count):
+    for idx in range(4):
         count = base + (1 if idx < remainder else 0)
-        entry = {"feeder_id": f"FDR_{idx+1:02d}", "dc_blocks": count}
+        entry = {"feeder_id": f"FDR-{idx+1:02d}", "dc_blocks": count}
         if dc_block_unit_mwh:
             entry["dc_energy_mwh"] = count * dc_block_unit_mwh
         allocations.append(entry)
     return allocations
+
+
+def _compute_chain_dc_blocks(stage4_output: dict) -> int:
+    ac_blocks_total = _safe_int(stage4_output.get("num_blocks") or stage4_output.get("ac_blocks_total") or 0)
+    if stage4_output.get("dc_blocks_total") is not None:
+        total_dc_blocks = _safe_int(stage4_output.get("dc_blocks_total"))
+    else:
+        base_dc_blocks = _safe_int(
+            stage4_output.get("dc_block_total_qty")
+            or stage4_output.get("container_count")
+            or 0
+        )
+        total_dc_blocks = base_dc_blocks + _safe_int(stage4_output.get("cabinet_count") or 0)
+
+    if ac_blocks_total <= 0:
+        return total_dc_blocks
+
+    avg_per_block = total_dc_blocks / ac_blocks_total
+    return max(0, int(round(avg_per_block)))
 
 
 def build_sld_snapshot_v1(stage4_output: dict, project_inputs: dict, scenario_id: str) -> dict:
@@ -77,44 +79,34 @@ def build_sld_snapshot_v1(stage4_output: dict, project_inputs: dict, scenario_id
     stage4_output = stage4_output or {}
 
     template_fields = derive_ac_template_fields(stage4_output)
-    ac_block_template_id = template_fields["ac_block_template_id"]
-    pcs_per_block = template_fields["pcs_per_block"]
-    feeders_per_block = template_fields["feeders_per_block"] or _parse_feeders_per_block(ac_block_template_id) or pcs_per_block
-    grid_power_factor = template_fields["grid_power_factor"]
+    ac_block_template_id = stage4_output.get("ac_block_template_id") or template_fields["ac_block_template_id"]
 
-    ac_blocks_total = _safe_int(stage4_output.get("num_blocks") or stage4_output.get("ac_blocks_total"))
-    pcs_rating_kw = _safe_float(stage4_output.get("pcs_power_kw"))
-    if not pcs_rating_kw and pcs_per_block:
-        pcs_rating_kw = _safe_float(stage4_output.get("block_size_mw")) * 1000 / pcs_per_block
+    pcs_per_block = 4
+    feeders_per_block = 4
 
-    if stage4_output.get("dc_blocks_total") is not None:
-        dc_blocks_total = _safe_int(stage4_output.get("dc_blocks_total"))
-    else:
-        base_dc_blocks = _safe_int(
-            stage4_output.get("dc_block_total_qty")
-            or stage4_output.get("container_count")
-            or 0
-        )
-        dc_blocks_total = base_dc_blocks + _safe_int(stage4_output.get("cabinet_count") or 0)
+    block_size_mw = _safe_float(stage4_output.get("block_size_mw"))
+    pcs_kw = block_size_mw * 1000 / pcs_per_block if block_size_mw and pcs_per_block else 0.0
+
+    mv_kv = _safe_float(stage4_output.get("grid_kv") or project_inputs.get("poi_nominal_voltage_kv"), 33.0)
+    lv_kv = _safe_float(stage4_output.get("inverter_lv_v"), 800.0) / 1000.0
+
+    grid_power_factor = template_fields.get("grid_power_factor") or 0.9
+    transformer_kva = stage4_output.get("transformer_kva")
+    if transformer_kva is None and block_size_mw:
+        transformer_kva = block_size_mw * 1000 / grid_power_factor if grid_power_factor else None
+    transformer_kva = _safe_float(transformer_kva, 0.0)
 
     dc_block_unit_mwh = stage4_output.get("dc_block_unit_mwh")
-    dc_total_energy_mwh = stage4_output.get("dc_total_energy_mwh")
+    dc_blocks_total_chain = _compute_chain_dc_blocks(stage4_output)
+    dc_total_energy_mwh = (
+        dc_blocks_total_chain * dc_block_unit_mwh if dc_block_unit_mwh else None
+    )
 
     project_name = project_inputs.get("project_name") or stage4_output.get("project_name") or "CALB ESS Project"
     poi_energy_guarantee_mwh = (
         project_inputs.get("poi_energy_guarantee_mwh")
         or project_inputs.get("poi_energy_requirement_mwh")
         or stage4_output.get("poi_energy_mwh")
-    )
-
-    feeders = _build_feeders(ac_blocks_total, feeders_per_block, pcs_rating_kw)
-    dc_blocks_by_feeder = _allocate_dc_blocks(len(feeders), dc_blocks_total, dc_block_unit_mwh)
-
-    poi_power_requirement_mw = (
-        project_inputs.get("poi_power_requirement_mw") or stage4_output.get("poi_power_mw")
-    )
-    poi_energy_requirement_mwh = (
-        project_inputs.get("poi_energy_requirement_mwh") or stage4_output.get("poi_energy_mwh")
     )
 
     snapshot = {
@@ -124,33 +116,38 @@ def build_sld_snapshot_v1(stage4_output: dict, project_inputs: dict, scenario_id
         "project": {
             "project_name": project_name,
             "scenario_id": scenario_id,
-            "poi_power_requirement_mw": poi_power_requirement_mw,
-            "poi_energy_requirement_mwh": poi_energy_requirement_mwh,
+            "poi_power_requirement_mw": project_inputs.get("poi_power_requirement_mw") or stage4_output.get("poi_power_mw"),
+            "poi_energy_requirement_mwh": project_inputs.get("poi_energy_requirement_mwh") or stage4_output.get("poi_energy_mwh"),
             "poi_energy_guarantee_mwh": poi_energy_guarantee_mwh,
-            "poi_nominal_voltage_kv": project_inputs.get("poi_nominal_voltage_kv"),
             "poi_frequency_hz": project_inputs.get("poi_frequency_hz"),
         },
-        "ac_system": {
-            "topology": "BUS_BREAKER",
-            "ac_block_template_id": ac_block_template_id,
-            "ac_blocks_total": ac_blocks_total,
-            "pcs_per_block": pcs_per_block,
-            "feeders_per_block": feeders_per_block,
-            "feeders_total": len(feeders),
-            "grid_mv_voltage_kv_ac": stage4_output.get("grid_kv"),
-            "pcs_lv_voltage_v_ll_rms_ac": stage4_output.get("inverter_lv_v"),
-            "grid_power_factor": grid_power_factor,
-            "transformer_rating_kva": stage4_output.get("transformer_kva"),
-            "ac_block_size_mw": stage4_output.get("block_size_mw"),
-            "pcs_rating_kw": pcs_rating_kw,
+        "mv_node": {
+            "node_id": "MV_NODE_01",
+            "mv_kv_ac": mv_kv,
         },
-        "dc_system": {
-            "dc_blocks_total": dc_blocks_total,
+        "rmu": {
+            "device_type": "RMU",
+            "present": True,
+        },
+        "transformer": {
+            "id": "TR_01",
+            "rated_kva": transformer_kva,
+            "rated_mva": transformer_kva / 1000.0 if transformer_kva else None,
+            "hv_kv": mv_kv,
+            "lv_kv": lv_kv,
+        },
+        "ac_block": {
+            "template_id": ac_block_template_id,
+            "feeders_per_block": feeders_per_block,
+            "pcs_per_block": pcs_per_block,
+        },
+        "dc_block_summary": {
+            "dc_blocks_total": dc_blocks_total_chain,
             "dc_block_unit_mwh": dc_block_unit_mwh,
             "dc_total_energy_mwh": dc_total_energy_mwh,
         },
-        "feeders": feeders,
-        "dc_blocks_by_feeder": dc_blocks_by_feeder,
+        "feeders": _build_feeders(pcs_kw),
+        "dc_blocks_by_feeder": _allocate_dc_blocks(dc_blocks_total_chain, dc_block_unit_mwh),
     }
 
     snapshot["snapshot_hash"] = _snapshot_hash(snapshot)

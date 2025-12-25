@@ -6,13 +6,17 @@ import pytest
 from tools.regress_export import build_summary_from_fixture_path
 
 
-FIXTURE_DIR = Path(__file__).parent / "fixtures"
+GOLDEN_DIR = Path(__file__).parent / "golden"
 
 
 def _fixture_pairs():
-    for fixture_path in sorted(FIXTURE_DIR.glob("*_input.json")):
-        summary_path = fixture_path.with_name(fixture_path.name.replace("_input.json", "_summary.json"))
-        yield fixture_path, summary_path
+    for case_dir in sorted(GOLDEN_DIR.iterdir()):
+        if not case_dir.is_dir():
+            continue
+        fixture_path = case_dir / "input.json"
+        summary_path = case_dir / "v1_summary.json"
+        if fixture_path.exists() and summary_path.exists():
+            yield fixture_path, summary_path
 
 
 @pytest.mark.parametrize("fixture_path, summary_path", list(_fixture_pairs()))

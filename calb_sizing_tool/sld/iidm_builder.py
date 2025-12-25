@@ -28,18 +28,20 @@ def build_iidm_network_from_snapshot(snapshot: dict) -> "pp.network.Network":
 
     validate_snapshot_v1(snapshot)
 
-    ac_system = snapshot["ac_system"]
+    mv_node = snapshot["mv_node"]
+    transformer = snapshot["transformer"]
     feeders = snapshot["feeders"]
 
-    substation_id = "SUB_BESS_01"
+    substation_id = "SUB_MV_NODE_01"
     vl_mv_id = "VL_MV_01"
     vl_lv_id = "VL_LV_01"
     bus_mv_id = "BBS_MV_01"
+    bus_rmu_id = "RMU_BUS_01"
     bus_lv_id = "BBS_LV_01"
 
-    grid_mv_kv = _safe_float(ac_system.get("grid_mv_voltage_kv_ac"), 33.0)
-    pcs_lv_kv = _safe_float(ac_system.get("pcs_lv_voltage_v_ll_rms_ac"), 800.0) / 1000.0
-    transformer_rating_kva = _safe_float(ac_system.get("transformer_rating_kva"), 5000.0)
+    grid_mv_kv = _safe_float(mv_node.get("mv_kv_ac"), 33.0)
+    pcs_lv_kv = _safe_float(transformer.get("lv_kv"), 0.8)
+    transformer_rating_kva = _safe_float(transformer.get("rated_kva"), 5000.0)
     transformer_rating_mva = transformer_rating_kva / 1000.0 if transformer_rating_kva else 5.0
 
     net = pp.network.create_empty()
@@ -63,12 +65,23 @@ def build_iidm_network_from_snapshot(snapshot: dict) -> "pp.network.Network":
     )
 
     net.create_buses(id=bus_mv_id, voltage_level_id=vl_mv_id)
+    net.create_buses(id=bus_rmu_id, voltage_level_id=vl_mv_id)
     net.create_buses(id=bus_lv_id, voltage_level_id=vl_lv_id)
+
+    net.create_switches(
+        id="RMU_01",
+        voltage_level_id=vl_mv_id,
+        bus1_id=bus_mv_id,
+        bus2_id=bus_rmu_id,
+        name="RMU",
+        kind="DISCONNECTOR",
+        open=False,
+    )
 
     net.create_2_windings_transformers(
         id="TR_01",
         voltage_level1_id=vl_mv_id,
-        bus1_id=bus_mv_id,
+        bus1_id=bus_rmu_id,
         voltage_level2_id=vl_lv_id,
         bus2_id=bus_lv_id,
         rated_u1=grid_mv_kv,
@@ -82,7 +95,7 @@ def build_iidm_network_from_snapshot(snapshot: dict) -> "pp.network.Network":
         feeder_bus_id = f"FDR_BUS_{idx:02d}"
         switch_id = f"BRK_FDR_{idx:02d}"
         pcs_id = feeder.get("pcs_id") or f"PCS-{idx:02d}"
-        pcs_rating_kw = _safe_float(feeder.get("pcs_rating_kw"), 0.0)
+        pcs_rating_kw = _safe_float(feeder.get("pcs_kw"), 0.0)
         pcs_rating_mw = pcs_rating_kw / 1000.0 if pcs_rating_kw else 0.1
 
         net.create_buses(id=feeder_bus_id, voltage_level_id=vl_lv_id)

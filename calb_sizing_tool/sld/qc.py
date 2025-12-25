@@ -9,31 +9,37 @@ def run_sld_qc(snapshot: dict) -> list[str]:
         warnings.append(str(exc))
         return warnings
 
-    ac_system = snapshot["ac_system"]
     feeders = snapshot["feeders"]
     dc_blocks_by_feeder = snapshot["dc_blocks_by_feeder"]
-
-    ac_blocks_total = int(ac_system.get("ac_blocks_total", 0))
-    feeders_per_block = int(ac_system.get("feeders_per_block", 0))
-    pcs_per_block = int(ac_system.get("pcs_per_block", 0))
-    expected_feeders = ac_blocks_total * feeders_per_block if ac_blocks_total and feeders_per_block else 0
-
-    if expected_feeders and len(feeders) != expected_feeders:
-        warnings.append(
-            f"Feeder count mismatch: expected {expected_feeders}, got {len(feeders)}."
-        )
-
-    expected_pcs = ac_blocks_total * pcs_per_block if ac_blocks_total and pcs_per_block else 0
-    pcs_ids = {f.get("pcs_id") for f in feeders if f.get("pcs_id")}
-    if expected_pcs and len(pcs_ids) != expected_pcs:
-        warnings.append(f"PCS count mismatch: expected {expected_pcs}, got {len(pcs_ids)}.")
+    if len(feeders) != 4:
+        warnings.append(f"Feeder count mismatch: expected 4, got {len(feeders)}.")
 
     if len(dc_blocks_by_feeder) != len(feeders):
         warnings.append(
             "dc_blocks_by_feeder entries do not match feeders count."
         )
 
-    dc_total = snapshot.get("dc_system", {}).get("dc_blocks_total")
+    ac_block = snapshot.get("ac_block", {})
+    if ac_block.get("feeders_per_block") not in (None, 4):
+        warnings.append("Snapshot feeders_per_block is not 4 for the single-chain SLD.")
+    if ac_block.get("pcs_per_block") not in (None, 4):
+        warnings.append("Snapshot pcs_per_block is not 4 for the single-chain SLD.")
+
+    mv_node = snapshot.get("mv_node", {})
+    transformer = snapshot.get("transformer", {})
+    if mv_node.get("mv_kv_ac") is None:
+        warnings.append("MV voltage (mv_kv_ac) is missing.")
+    if transformer.get("hv_kv") is None or transformer.get("lv_kv") is None:
+        warnings.append("Transformer HV/LV voltage is missing.")
+    if transformer.get("rated_kva") is None and transformer.get("rated_mva") is None:
+        warnings.append("Transformer rating is missing.")
+
+    for feeder in feeders:
+        if feeder.get("pcs_kw") is None:
+            warnings.append("PCS rating (pcs_kw) missing on one or more feeders.")
+            break
+
+    dc_total = snapshot.get("dc_block_summary", {}).get("dc_blocks_total")
     if dc_total is not None:
         try:
             dc_total = int(dc_total)
