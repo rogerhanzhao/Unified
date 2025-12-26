@@ -425,6 +425,8 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
     _add_table(doc, combined_rows, ["Metric", "DC", "AC"])
     doc.add_paragraph("")
 
+    figure_index = 1
+
     doc.add_heading("Single Line Diagram (1 AC Block group)", level=2)
     doc.add_paragraph("SLD output represents a single MV node chain (RMU -> TR -> 1 AC block group).")
     if ctx.sld_snapshot_hash:
@@ -437,22 +439,28 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
     sld_embedded = False
     if ctx.sld_pro_png_bytes:
         doc.add_picture(io.BytesIO(ctx.sld_pro_png_bytes), width=Inches(6.7))
+        doc.add_paragraph(f"Figure {figure_index} - Single Line Diagram (auto-generated)")
+        figure_index += 1
         sld_embedded = True
     elif ctx.sld_preview_svg_bytes:
         png_bytes = _svg_bytes_to_png(ctx.sld_preview_svg_bytes)
         if png_bytes:
             doc.add_picture(io.BytesIO(png_bytes), width=Inches(6.7))
+            doc.add_paragraph(f"Figure {figure_index} - Single Line Diagram (auto-generated)")
+            figure_index += 1
             sld_embedded = True
 
     if not sld_embedded:
-        doc.add_paragraph("Diagram not generated.")
+        doc.add_paragraph("SLD not generated. Please generate in Single Line Diagram page.")
     doc.add_paragraph("")
 
     doc.add_heading("Block Layout (template view)", level=2)
     if ctx.layout_png_bytes:
         doc.add_picture(io.BytesIO(ctx.layout_png_bytes), width=Inches(6.7))
+        doc.add_paragraph(f"Figure {figure_index} - Block Layout (auto-generated)")
+        figure_index += 1
     else:
-        doc.add_paragraph("Diagram not generated.")
+        doc.add_paragraph("Layout not generated. Please generate in Site Layout page.")
     doc.add_paragraph("")
 
     qc_checks = list(ctx.qc_checks)

@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 from pathlib import Path
@@ -16,8 +17,17 @@ def test_report_v2_smoke():
     dc_results = run_dc_sizing(fixture)
     ac_output = run_ac_sizing(fixture, dc_results["stage1"], dc_results["stage2"])
 
+    png_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
+    )
+
     ctx = build_report_context(
-        session_state={},
+        session_state={
+            "artifacts": {
+                "sld_png_bytes": png_bytes,
+                "layout_png_bytes": png_bytes,
+            }
+        },
         stage_outputs={
             "stage13_output": dc_results["stage1"],
             "stage2": dc_results["stage2"],
@@ -40,3 +50,4 @@ def test_report_v2_smoke():
     assert "Appendix" not in joined
     assert ".xlsx" not in joined
     assert "314 Ah cell database" not in joined
+    assert len(doc.inline_shapes) >= 2

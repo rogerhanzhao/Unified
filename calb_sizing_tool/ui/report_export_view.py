@@ -3,6 +3,7 @@ from calb_sizing_tool.reporting.export_docx import (
     create_ac_report,
     create_combined_report,
     make_report_filename,
+    make_proposal_filename,
 )
 from calb_sizing_tool.reporting.report_context import build_report_context
 from calb_sizing_tool.reporting.report_v2 import export_report_v2_1
@@ -22,12 +23,13 @@ def _extract_block_identity(stage2_raw):
 
 
 def show():
-    init_shared_state()
+    state = init_shared_state()
     init_project_state()
-    dc_results = st.session_state.get("dc_results", {}) or {}
-    ac_results = st.session_state.get("ac_results", {}) or {}
+    dc_results = state.dc_results or {}
+    ac_results = state.ac_results or {}
     diagram_results = st.session_state.get("diagram_results", {}) or {}
     layout_results = st.session_state.get("layout_results", {}) or {}
+    artifacts = state.artifacts
     sld_entry = None
     if isinstance(diagram_results, dict) and diagram_results:
         preferred = diagram_results.get("last_style")
@@ -39,8 +41,8 @@ def show():
                 if isinstance(entry, dict) and (entry.get("png") or entry.get("svg")):
                     sld_entry = entry
                     break
-    sld_png = sld_entry.get("png") if sld_entry else None
-    sld_svg = sld_entry.get("svg") if sld_entry else None
+    sld_png = artifacts.get("sld_png_bytes") or (sld_entry.get("png") if sld_entry else None)
+    sld_svg = artifacts.get("sld_svg_bytes") or (sld_entry.get("svg") if sld_entry else None)
     if sld_png is None:
         sld_png = st.session_state.get("sld_pro_png_bytes")
     if sld_svg is None:
@@ -60,8 +62,8 @@ def show():
                 if isinstance(entry, dict) and (entry.get("png") or entry.get("svg")):
                     layout_entry = entry
                     break
-    layout_png = layout_entry.get("png") if layout_entry else None
-    layout_svg = layout_entry.get("svg") if layout_entry else None
+    layout_png = artifacts.get("layout_png_bytes") or (layout_entry.get("png") if layout_entry else None)
+    layout_svg = artifacts.get("layout_svg_bytes") or (layout_entry.get("svg") if layout_entry else None)
     if layout_png is None:
         layout_png = st.session_state.get("layout_png_bytes")
     if layout_svg is None:
@@ -82,10 +84,12 @@ def show():
         return
 
     project_name = (
-        stage13_output.get("project_name")
+        st.session_state.get("project_name")
+        or stage13_output.get("project_name")
         or ac_output.get("project_name")
         or "CALB ESS Project"
     )
+    st.session_state["project_name"] = project_name
 
     inputs = {
         "Project Name": project_name,
@@ -156,10 +160,11 @@ def show():
             file_suffix = "Combined"
             button_label = "Download Combined Report (DC+AC)"
 
+        proposal_filename = make_proposal_filename(project_name)
         st.download_button(
             button_label,
             comb_bytes,
-            make_report_filename(project_name, file_suffix),
+            proposal_filename,
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             type="primary",
         )

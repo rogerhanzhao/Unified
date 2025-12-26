@@ -1,3 +1,4 @@
+import datetime
 import json
 import tempfile
 from dataclasses import asdict
@@ -27,7 +28,7 @@ def _safe_int(value, default=0):
 
 
 def show():
-    init_shared_state()
+    state = init_shared_state()
     init_project_state()
     st.header("Site Layout")
     st.caption("Template block layout (abstract engineering view).")
@@ -35,10 +36,12 @@ def show():
     deps = check_dependencies()
     svgwrite_ok = deps.get("svgwrite", False)
 
-    dc_results = st.session_state.get("dc_results", {}) or {}
-    ac_results = st.session_state.get("ac_results", {}) or {}
-    layout_inputs = st.session_state.get("layout_inputs", {}) or {}
-    layout_results = st.session_state.get("layout_results", {}) or {}
+    dc_results = state.dc_results or {}
+    ac_results = state.ac_results or {}
+    diagram_outputs = state.diagram_outputs
+    layout_inputs = st.session_state.setdefault("layout_inputs", {})
+    layout_results = st.session_state.setdefault("layout_results", {})
+    artifacts = state.artifacts
 
     stage13_output = st.session_state.get("stage13_output") or dc_results.get("stage13_output") or {}
     dc_summary = st.session_state.get("dc_result_summary") or dc_results.get("dc_result_summary") or {}
@@ -67,7 +70,7 @@ def show():
     c_status5.metric("AC Blocks", ac_output.get("num_blocks") or "TBD")
 
     if not svgwrite_ok:
-        st.error("Missing dependency: svgwrite. Pro renderer unavailable; using raw fallback.")
+        st.error("Missing dependency: svgwrite. Install with `pip install -r requirements.txt`.")
 
     def _init_input(field: str, default_value):
         key = f"layout_inputs.{field}"
@@ -307,29 +310,43 @@ def show():
                         if "cairosvg" in warning.lower():
                             st.code("pip install cairosvg")
 
-                    if svg_path.exists():
-                        svg_bytes = svg_path.read_bytes()
+                    svg_bytes = svg_path.read_bytes() if svg_path.exists() else None
+                    png_bytes = png_path.read_bytes() if png_path.exists() else None
+                    if svg_bytes or png_bytes:
+                        meta = {
+                            "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                            "style": style_id,
+                            "block_index": block_index,
+                            "dc_blocks_total": block_dc_count,
+                            "arrangement": layout_arrangement,
+                            "clearances_m": {
+                                "dc_to_dc": dc_to_dc_clearance,
+                                "dc_to_ac": dc_to_ac_clearance,
+                                "perimeter": perimeter_clearance,
+                            },
+                            "show_skid": show_skid,
+                            "mv_kv": mv_kv,
+                            "lv_v": lv_v,
+                            "transformer_mva": transformer_mva,
+                        }
                         layout_results[style_id] = {
                             "svg": svg_bytes,
-                            "png": None,
-                            "meta": {
-                                "generated_at": __import__("datetime")
-                                .datetime.now()
-                                .isoformat(timespec="seconds"),
-                                "style": style_id,
-                            },
+                            "png": png_bytes,
+                            "meta": meta,
                         }
-                        st.session_state["layout_results"] = layout_results
                         layout_results["last_style"] = style_id
-                        st.session_state["layout_svg_bytes"] = svg_bytes
-                    if png_path.exists():
-                        png_bytes = png_path.read_bytes()
-                        st.session_state["layout_png_bytes"] = png_bytes
-                        if style_id in layout_results:
-                            layout_results[style_id]["png"] = png_bytes
+                        st.session_state["layout_results"] = layout_results
+                        if svg_bytes:
+                            st.session_state["layout_svg_bytes"] = svg_bytes
+                            artifacts["layout_svg_bytes"] = svg_bytes
+                            diagram_outputs.layout_svg = svg_bytes
+                        if png_bytes:
+                            st.session_state["layout_png_bytes"] = png_bytes
+                            artifacts["layout_png_bytes"] = png_bytes
+                            diagram_outputs.layout_png = png_bytes
                             if isinstance(layout_results[style_id].get("meta"), dict):
                                 layout_results[style_id]["meta"]["hash"] = __import__("hashlib").sha256(png_bytes).hexdigest()[:12]
-                        st.session_state["layout_results"] = layout_results
+                        artifacts["layout_meta"] = meta
                     st.session_state["layout_spec_json"] = json.dumps(
                         asdict(spec), indent=2, sort_keys=True
                     )

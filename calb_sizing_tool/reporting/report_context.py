@@ -156,8 +156,12 @@ def build_report_context(
 
     ac_results = state.get("ac_results") if isinstance(state, dict) else {}
     ac_output = outputs.get("ac_output") or ac_results or state.get("ac_output") or {}
+    project_name = None
+    if isinstance(state, dict):
+        project_name = state.get("project_name")
     project_name = (
-        stage1.get("project_name")
+        project_name
+        or stage1.get("project_name")
         or ac_output.get("project_name")
         or (project_inputs or {}).get("project_name")
         or "CALB ESS Project"
@@ -291,6 +295,12 @@ def build_report_context(
     sld_pro_png_bytes = None
     layout_png_bytes = None
     if isinstance(state, dict):
+        artifacts = state.get("artifacts")
+        if isinstance(artifacts, dict):
+            sld_preview_svg_bytes = artifacts.get("sld_svg_bytes") or sld_preview_svg_bytes
+            sld_pro_png_bytes = artifacts.get("sld_png_bytes") or sld_pro_png_bytes
+            layout_png_bytes = artifacts.get("layout_png_bytes") or layout_png_bytes
+
         diagram_results = state.get("diagram_results")
         if isinstance(diagram_results, dict) and diagram_results:
             preferred = diagram_results.get("last_style")

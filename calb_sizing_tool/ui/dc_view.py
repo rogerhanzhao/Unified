@@ -940,10 +940,10 @@ def build_report_bytes(stage1: dict, results_dict: dict, report_order: list):
 # 6. MAIN VIEW FUNCTION
 # ==========================================
 def show():
-    init_shared_state()
+    state = init_shared_state()
     init_project_state()
-    dc_inputs = st.session_state.get("dc_inputs", {})
-    dc_results = st.session_state.get("dc_results", {})
+    dc_inputs = state.dc_inputs
+    dc_results = state.dc_results
 
     # Inject CSS
     inject_css()
@@ -991,11 +991,17 @@ def show():
         st.subheader("1 · Project Inputs")
 
         with st.form("main_form"):
+            project_name_default = (
+                dc_inputs.get("project_name")
+                or st.session_state.get("project_name")
+                or get_default_str("project_name", "CALB ESS Project")
+            )
             project_name = st.text_input(
                 "Project Name",
-                key=_init_input("project_name", get_default_str("project_name", "CALB ESS Project")),
+                key=_init_input("project_name", project_name_default),
             )
             dc_inputs["project_name"] = project_name
+            st.session_state["project_name"] = project_name
 
             c1, c2, c3 = st.columns(3)
             poi_power = c1.number_input(

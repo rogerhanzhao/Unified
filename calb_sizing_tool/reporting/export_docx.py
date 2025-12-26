@@ -1,5 +1,6 @@
 ﻿import datetime
 import io
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -622,6 +623,23 @@ def make_report_filename(proj_name, suffix="Report"):
     return f"{safe}_{suffix}.docx"
 
 
+def sanitize_filename(text: str, max_length: int = 80) -> str:
+    cleaned = re.sub(r'[\\/:*?\"<>|\x00-\x1f]', '', text or '')
+    cleaned = re.sub(r'\s+', '_', cleaned.strip())
+    cleaned = cleaned.strip('._')
+    if max_length and len(cleaned) > max_length:
+        cleaned = cleaned[:max_length].rstrip('_')
+    return cleaned
+
+
+def make_proposal_filename(project_name: str | None) -> str:
+    stamp = datetime.date.today().strftime('%Y%m%d')
+    safe_project = sanitize_filename(project_name or '')
+    if safe_project:
+        return f'CALB_BESS_Proposal_{safe_project}_{stamp}.docx'
+    return f'CALB_BESS_Proposal_{stamp}.docx'
+
+
 def create_dc_report(dc_output: dict, ctx: dict) -> bytes:
     """Internal DC-only generator for regression testing against dc_view."""
     doc = Document()
@@ -741,20 +759,26 @@ def create_combined_report(dc_output: dict, ac_output: dict, ctx: dict) -> bytes
     _add_table(doc, combined_config_rows, ["Metric", "DC", "AC"])
     doc.add_paragraph("")
 
+    figure_index = 1
+
     doc.add_heading("6. Single Line Diagram", level=2)
     sld_png = _resolve_diagram_bytes(ctx or {}, "sld_png_bytes", "sld_svg_bytes")
     if sld_png:
         doc.add_picture(io.BytesIO(sld_png), width=Inches(6.7))
+        doc.add_paragraph(f"Figure {figure_index} - Single Line Diagram (auto-generated)")
+        figure_index += 1
     else:
-        doc.add_paragraph("Diagram not generated.")
+        doc.add_paragraph("SLD not generated. Please generate in Single Line Diagram page.")
     doc.add_paragraph("")
 
     doc.add_heading("7. Site Layout", level=2)
     layout_png = _resolve_diagram_bytes(ctx or {}, "layout_png_bytes", "layout_svg_bytes")
     if layout_png:
         doc.add_picture(io.BytesIO(layout_png), width=Inches(6.7))
+        doc.add_paragraph(f"Figure {figure_index} - Block Layout (auto-generated)")
+        figure_index += 1
     else:
-        doc.add_paragraph("Diagram not generated.")
+        doc.add_paragraph("Layout not generated. Please generate in Site Layout page.")
     doc.add_paragraph("")
 
     _add_appendix(doc, ctx or {})

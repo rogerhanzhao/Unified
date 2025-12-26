@@ -128,7 +128,7 @@ def _resolve_dc_blocks_per_feeder(
 
 
 def show():
-    init_shared_state()
+    state = init_shared_state()
     init_project_state()
 
     st.header("Single Line Diagram")
@@ -139,14 +139,18 @@ def show():
     cairosvg_ok = deps.get("cairosvg", False)
     pypowsybl_ok = deps.get("pypowsybl", False)
 
-    dc_results = st.session_state.get("dc_results", {}) or {}
-    ac_results = st.session_state.get("ac_results", {}) or {}
-    diagram_inputs = st.session_state.get("diagram_inputs", {}) or {}
-    diagram_results = st.session_state.get("diagram_results", {}) or {}
+    dc_results = state.dc_results or {}
+    ac_results = state.ac_results or {}
+    diagram_outputs = state.diagram_outputs
+    diagram_inputs = st.session_state.setdefault("diagram_inputs", {})
+    diagram_results = st.session_state.setdefault("diagram_results", {})
+    artifacts = state.artifacts
 
     stage13_output = st.session_state.get("stage13_output") or dc_results.get("stage13_output") or {}
     dc_summary = st.session_state.get("dc_result_summary") or dc_results.get("dc_result_summary") or {}
     ac_output = st.session_state.get("ac_output") or ac_results or {}
+    if stage13_output.get("project_name"):
+        st.session_state["project_name"] = stage13_output.get("project_name")
 
     has_prereq = bool(stage13_output) and bool(ac_output)
 
@@ -171,7 +175,7 @@ def show():
     c_status5.metric("DC Blocks (group)", dc_blocks_status or "TBD")
 
     if not svgwrite_ok:
-        st.error("Missing dependency: svgwrite. Pro renderer disabled; raw fallback may be used.")
+        st.error("Missing dependency: svgwrite. Install with `pip install -r requirements.txt`.")
         if not pypowsybl_ok:
             st.error("Raw fallback also requires pypowsybl. Install with `pip install pypowsybl`.")
 
@@ -461,17 +465,34 @@ def show():
                             except Exception:
                                 png_bytes = None
 
-            if svg_bytes:
+            if svg_bytes or png_bytes:
+                dc_blocks_total = sum(dc_blocks_per_feeder) if dc_blocks_per_feeder else 0
+                meta = {
+                    "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                    "style": style_id,
+                    "group_index": group_index,
+                    "mv_kv": mv_kv,
+                    "lv_v": pcs_lv_v,
+                    "pcs_count": pcs_count,
+                    "dc_blocks_total": dc_blocks_total,
+                    "transformer_mva": transformer_rating_mva,
+                    "pcs_rating_kw_each": pcs_rating_each_kw,
+                    "dc_block_energy_mwh": dc_block_energy_mwh,
+                }
                 diagram_results[style_id] = {
                     "svg": svg_bytes,
                     "png": png_bytes,
-                    "meta": {
-                        "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
-                        "style": style_id,
-                    },
+                    "meta": meta,
                 }
-                st.session_state["diagram_results"] = diagram_results
                 diagram_results["last_style"] = style_id
+                st.session_state["diagram_results"] = diagram_results
+                if svg_bytes:
+                    artifacts["sld_svg_bytes"] = svg_bytes
+                    diagram_outputs.sld_svg = svg_bytes
+                if png_bytes:
+                    artifacts["sld_png_bytes"] = png_bytes
+                    diagram_outputs.sld_png = png_bytes
+                artifacts["sld_meta"] = meta
         except Exception as exc:
             st.error(f"SLD generation failed: {exc}")
 
