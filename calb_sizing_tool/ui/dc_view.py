@@ -8,10 +8,12 @@ import io
 from pathlib import Path
 
 # --- 适配新架构的引用 ---
-from calb_sizing_tool.config import DC_DATA_PATH
+from calb_sizing_tool.config import DC_DATA_PATH, PROJECT_ROOT
 from calb_sizing_tool.ui.stage4_interface import pack_stage13_output
 # 引入数据模型用于传递给 AC/SLD
 from calb_sizing_tool.models import DCBlockResult
+from calb_sizing_tool.state.project_state import bump_run_id_dc, init_project_state
+from calb_sizing_tool.state.session_state import init_shared_state, set_run_time
 
 # ==========================================
 # 0. SETUP & LIBRARY CHECK
@@ -631,6 +633,13 @@ def size_with_guarantee(stage1: dict,
 # ==========================================
 def find_logo_for_report():
     try:
+        candidates = [
+            PROJECT_ROOT / "calb_assets" / "logo" / "calb_logo.png",
+            PROJECT_ROOT / "calb_logo.png",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate)
         data_dir = os.path.dirname(os.path.abspath(DC_DATA_PATH))
         for fname in os.listdir(data_dir):
             lower = fname.lower()
@@ -715,6 +724,50 @@ def _plot_poi_usable_png(s3_df: pd.DataFrame, poi_target: float, title: str) -> 
     plt.close(fig)
     buf.seek(0)
     return buf
+
+
+def _plot_dc_capacity_bar_png(
+    s2: dict, s3_df: pd.DataFrame, guarantee_year: int, title: str
+) -> io.BytesIO | None:
+    if not MATPLOTLIB_AVAILABLE:
+        return None
+    try:
+        bol = None
+        if isinstance(s2, dict):
+            bol = s2.get("dc_nameplate_bol_mwh")
+        cod = None
+        yx = None
+        if s3_df is not None and not s3_df.empty:
+            year0 = s3_df[s3_df["Year_Index"] == 0]
+            if not year0.empty:
+                cod = float(year0["POI_Usable_Energy_MWh"].iloc[0])
+            g_row = s3_df[s3_df["Year_Index"] == int(guarantee_year)]
+            if not g_row.empty:
+                yx = float(g_row["POI_Usable_Energy_MWh"].iloc[0])
+
+        labels = ["BOL", "COD", f"Y{int(guarantee_year)}"]
+        values = [
+            float(bol) if bol is not None else 0.0,
+            float(cod) if cod is not None else 0.0,
+            float(yx) if yx is not None else 0.0,
+        ]
+
+        fig = plt.figure(figsize=(6.6, 3.0))
+        ax = fig.add_subplot(111)
+        ax.bar(labels, values, color=CALB_SKY_BLUE)
+        ax.set_title(title)
+        ax.set_xlabel("Stage")
+        ax.set_ylabel("Energy (MWh)")
+        ax.grid(True, axis="y", linestyle="--", alpha=0.35)
+
+        buf = io.BytesIO()
+        fig.tight_layout()
+        fig.savefig(buf, format="png", dpi=150)
+        plt.close(fig)
+        buf.seek(0)
+        return buf
+    except Exception:
+        return None
 
 def _docx_add_lifetime_table(doc: Document, s3_df: pd.DataFrame):
     cols = [
@@ -887,6 +940,11 @@ def build_report_bytes(stage1: dict, results_dict: dict, report_order: list):
 # 6. MAIN VIEW FUNCTION
 # ==========================================
 def show():
+    init_shared_state()
+    init_project_state()
+    dc_inputs = st.session_state.get("dc_inputs", {})
+    dc_results = st.session_state.get("dc_results", {})
+
     # Inject CSS
     inject_css()
     
@@ -919,28 +977,62 @@ def show():
          if raw <= 1.5 and raw > 0: return raw * 100.0
          return raw
 
+    def _init_input(field: str, default_value):
+        key = f"dc_inputs.{field}"
+        if key not in st.session_state:
+            st.session_state[key] = default_value
+        if field not in dc_inputs:
+            dc_inputs[field] = st.session_state[key]
+        return key
+
     # --- UI Form ---
     with st.container():
         st.markdown("<div class='calb-card'>", unsafe_allow_html=True)
         st.subheader("1 · Project Inputs")
 
         with st.form("main_form"):
-            project_name = st.text_input("Project Name", value=get_default_str("project_name", "CALB ESS Project"))
-            
-            c1, c2, c3 = st.columns(3)
-            poi_power = c1.number_input("POI Required Power (MW)", value=get_default_numeric("poi_power_req_mw", 100.0))
-            poi_energy = c2.number_input("POI Required Capacity (MWh)", value=get_default_numeric("poi_energy_req_mwh", 400.0))
-            project_life = int(c3.number_input("Project Life (Years)", value=int(get_default_numeric("project_life_years", 20))))
+            project_name = st.text_input(
+                "Project Name",
+                key=_init_input("project_name", get_default_str("project_name", "CALB ESS Project")),
+            )
+            dc_inputs["project_name"] = project_name
 
-            # [STAGE4]
+            c1, c2, c3 = st.columns(3)
+            poi_power = c1.number_input(
+                "POI Required Power (MW)",
+                key=_init_input("poi_power_req_mw", get_default_numeric("poi_power_req_mw", 100.0)),
+            )
+            dc_inputs["poi_power_req_mw"] = poi_power
+            poi_energy = c2.number_input(
+                "POI Required Capacity (MWh)",
+                key=_init_input("poi_energy_req_mwh", get_default_numeric("poi_energy_req_mwh", 400.0)),
+            )
+            dc_inputs["poi_energy_req_mwh"] = poi_energy
+            project_life = int(
+                c3.number_input(
+                    "Project Life (Years)",
+                    key=_init_input(
+                        "project_life_years",
+                        int(get_default_numeric("project_life_years", 20)),
+                    ),
+                )
+            )
+            dc_inputs["project_life_years"] = project_life
+
+            mv_default = dc_inputs.get("poi_nominal_voltage_kv")
+            if mv_default is None:
+                mv_default = st.session_state.get("poi_nominal_voltage_kv", 33.0)
             poi_nominal_voltage_kv = st.number_input(
                 "POI / MV Voltage (kV)",
-                value=float(st.session_state.get("poi_nominal_voltage_kv", 33.0)),
-                step=0.1
+                key=_init_input("poi_nominal_voltage_kv", float(mv_default)),
+                step=0.1,
             )
+            dc_inputs["poi_nominal_voltage_kv"] = poi_nominal_voltage_kv
 
             freq_options = ["TBD", 50.0, 60.0]
-            freq_default = st.session_state.get("poi_frequency_hz")
+            freq_default = dc_inputs.get("poi_frequency_option")
+            if freq_default is None:
+                freq_default = "TBD"
             if freq_default in (50, 50.0):
                 freq_index = 1
             elif freq_default in (60, 60.0):
@@ -951,36 +1043,103 @@ def show():
                 "POI Frequency (Hz)",
                 freq_options,
                 index=freq_index,
+                key=_init_input("poi_frequency_option", freq_default),
                 help="Optional; used for reporting only.",
             )
+            dc_inputs["poi_frequency_option"] = poi_frequency
 
             c4, c5, c6 = st.columns(3)
-            cycles_year = int(c4.number_input("Cycles Per Year", value=int(get_default_numeric("cycles_per_year", 365))))
-            guarantee_year = int(c5.number_input("POI Guarantee Year", value=0))
-            sc_time_months = int(c6.number_input("S&C Time (Months)", value=3))
+            cycles_year = int(
+                c4.number_input(
+                    "Cycles Per Year",
+                    key=_init_input(
+                        "cycles_per_year",
+                        int(get_default_numeric("cycles_per_year", 365)),
+                    ),
+                )
+            )
+            dc_inputs["cycles_per_year"] = cycles_year
+            guarantee_year = int(
+                c5.number_input(
+                    "POI Guarantee Year",
+                    key=_init_input("poi_guarantee_year", 0),
+                )
+            )
+            dc_inputs["poi_guarantee_year"] = guarantee_year
+            sc_time_months = int(
+                c6.number_input(
+                    "S&C Time (Months)",
+                    key=_init_input("sc_time_months", 3),
+                )
+            )
+            dc_inputs["sc_time_months"] = sc_time_months
 
             st.markdown("---")
             st.subheader("2 · DC Parameters")
             
             c7, c8 = st.columns(2)
-            dod_pct = c7.number_input("DOD (%)", value=97.0)
-            dc_rte_pct = c8.number_input("DC RTE (%)", value=94.0)
+            dod_pct = c7.number_input(
+                "DOD (%)",
+                key=_init_input("dod_pct", 97.0),
+            )
+            dc_inputs["dod_pct"] = dod_pct
+            dc_rte_pct = c8.number_input(
+                "DC RTE (%)",
+                key=_init_input("dc_round_trip_efficiency_pct", 94.0),
+            )
+            dc_inputs["dc_round_trip_efficiency_pct"] = dc_rte_pct
             
             st.info(f"Design Rule: Max 418kWh Cabinets per DC Busbar (K) = {K_MAX_FIXED} (fixed)")
 
             st.markdown("**3 · Configuration Options**")
             copt1, copt2, copt3 = st.columns([2, 2, 3])
-            enable_hybrid = copt1.checkbox("Enable Hybrid Mode", value=True)
-            enable_cabinet_only = copt2.checkbox("Enable Cabinet-Only Mode", value=True)
-            hybrid_disable_threshold = copt3.number_input("Disable Hybrid Threshold (MWh)", value=9999.0)
+            enable_hybrid = copt1.checkbox(
+                "Enable Hybrid Mode",
+                key=_init_input("enable_hybrid", True),
+            )
+            dc_inputs["enable_hybrid"] = enable_hybrid
+            enable_cabinet_only = copt2.checkbox(
+                "Enable Cabinet-Only Mode",
+                key=_init_input("enable_cabinet_only", True),
+            )
+            dc_inputs["enable_cabinet_only"] = enable_cabinet_only
+            hybrid_disable_threshold = copt3.number_input(
+                "Disable Hybrid Threshold (MWh)",
+                key=_init_input("hybrid_disable_threshold_mwh", 9999.0),
+            )
+            dc_inputs["hybrid_disable_threshold_mwh"] = hybrid_disable_threshold
 
             with st.expander("Advanced: Efficiency Chain"):
-                poi_is_dc_side = st.checkbox("POI Is Located At DC Side (Force 100%)")
-                eff_dc_cables = st.number_input("DC Cables (%)", value=99.5)
-                eff_pcs = st.number_input("PCS (%)", value=98.5)
-                eff_mvt = st.number_input("MV Transformer (%)", value=99.5)
-                eff_ac_sw = st.number_input("AC Cables + SW (%)", value=99.2)
-                eff_hvt = st.number_input("HVT (%)", value=100.0)
+                poi_is_dc_side = st.checkbox(
+                    "POI Is Located At DC Side (Force 100%)",
+                    key=_init_input("poi_is_dc_side", False),
+                )
+                dc_inputs["poi_is_dc_side"] = poi_is_dc_side
+                eff_dc_cables = st.number_input(
+                    "DC Cables (%)",
+                    key=_init_input("eff_dc_cables", 99.5),
+                )
+                dc_inputs["eff_dc_cables"] = eff_dc_cables
+                eff_pcs = st.number_input(
+                    "PCS (%)",
+                    key=_init_input("eff_pcs", 98.5),
+                )
+                dc_inputs["eff_pcs"] = eff_pcs
+                eff_mvt = st.number_input(
+                    "MV Transformer (%)",
+                    key=_init_input("eff_mvt", 99.5),
+                )
+                dc_inputs["eff_mvt"] = eff_mvt
+                eff_ac_sw = st.number_input(
+                    "AC Cables + SW (%)",
+                    key=_init_input("eff_ac_cables_sw_rmu", 99.2),
+                )
+                dc_inputs["eff_ac_cables_sw_rmu"] = eff_ac_sw
+                eff_hvt = st.number_input(
+                    "HVT (%)",
+                    key=_init_input("eff_hvt_others", 100.0),
+                )
+                dc_inputs["eff_hvt_others"] = eff_hvt
 
             st.markdown("---")
             run_btn = st.form_submit_button("🔄 Run Sizing")
@@ -989,9 +1148,15 @@ def show():
 
     # --- Logic Execution ---
     if run_btn:
+        bump_run_id_dc()
         st.session_state["poi_nominal_voltage_kv"] = float(poi_nominal_voltage_kv)
         poi_frequency_hz = None if poi_frequency == "TBD" else float(poi_frequency)
         st.session_state["poi_frequency_hz"] = poi_frequency_hz
+        dc_inputs["poi_frequency_hz"] = poi_frequency_hz
+        dc_inputs["poi_nominal_voltage_kv"] = float(poi_nominal_voltage_kv)
+        dc_inputs["project_name"] = project_name
+        dc_inputs["poi_power_req_mw"] = poi_power
+        dc_inputs["poi_energy_req_mwh"] = poi_energy
         
         if poi_is_dc_side:
             eff_dc_cables = eff_pcs = eff_mvt = eff_ac_sw = eff_hvt = 100.0
@@ -1046,6 +1211,15 @@ def show():
                 )
             except Exception as e:
                 results[mode] = ("ERROR", str(e))
+
+        ok_results = {
+            k: v for k, v in results.items() if isinstance(v, tuple) and v[0] != "ERROR"
+        }
+        report_order = [
+            (k, k.replace("_", " ").title()) for k in modes_to_run if k in ok_results
+        ]
+        dc_results["results_dict"] = ok_results
+        dc_results["report_order"] = report_order
 
         # Tabs Display
         st.markdown("<div class='calb-card'>", unsafe_allow_html=True)
@@ -1144,6 +1318,13 @@ def show():
                             poi_nominal_voltage_kv=poi_nominal_voltage_kv,
                             poi_frequency_hz=poi_frequency_hz,
                         )
+                        dc_results.update(
+                            {
+                                "stage13_output": st.session_state.get("stage13_output"),
+                                "dc_result_summary": st.session_state.get("dc_result_summary"),
+                            }
+                        )
+                        set_run_time("dc_results")
 
                 else:
                     st.error(f"Error: {res[1]}")

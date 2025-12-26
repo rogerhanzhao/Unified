@@ -44,7 +44,7 @@ def build_iidm_network_from_snapshot(snapshot: dict) -> "pp.network.Network":
     bus_lv_id = "BBS_LV_01"
 
     grid_mv_kv = _safe_float(mv_node.get("mv_kv_ac"), 33.0)
-    pcs_lv_kv = _safe_float(transformer.get("lv_kv"), 0.8)
+    pcs_lv_kv = _safe_float(transformer.get("lv_kv"), 0.0)
     transformer_rating_kva = _safe_float(transformer.get("rated_kva"), 5000.0)
     transformer_rating_mva = transformer_rating_kva / 1000.0 if transformer_rating_kva else 5.0
 
@@ -145,9 +145,9 @@ def build_iidm_network_from_chain_snapshot(snapshot: dict) -> "pp.network.Networ
     bus_lv_id = "BBS_LV_01"
 
     grid_mv_kv = _safe_float(mv.get("kv"), 33.0)
-    pcs_lv_v = _safe_float(transformer.get("lv_v"), 800.0)
+    pcs_lv_v = _safe_float(transformer.get("lv_v"), 0.0)
     pcs_lv_kv = pcs_lv_v / 1000.0 if pcs_lv_v > 20.0 else _safe_float(
-        transformer.get("lv_kv"), 0.8
+        transformer.get("lv_kv"), 0.0
     )
 
     transformer_rating_kva = _safe_float(transformer.get("rated_kva"), 0.0)

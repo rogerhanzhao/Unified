@@ -23,8 +23,7 @@ def format_kv(value) -> str:
     v = _safe_float(value, 0.0)
     if v <= 0:
         return "TBD"
-    text = f"{v:.2f}".rstrip("0").rstrip(".")
-    return f"{text} kV"
+    return f"{v:.1f} kV"
 
 
 def format_v(value) -> str:
@@ -133,6 +132,12 @@ def _build_equipment_list(snapshot: dict) -> List[Tuple[str, str]]:
     items.append(("LV Cable", cables.get("lv_cable_spec") or "TBD"))
     items.append(("DC Cable", cables.get("dc_cable_spec") or "TBD"))
     items.append(("DC Fuse", dc_fuse.get("fuse_spec") or "TBD"))
+
+    counts, total_counts = _allocation_counts(snapshot)
+    if counts:
+        allocation_parts = [f"F{idx + 1}={counts[idx]}" for idx in range(len(counts))]
+        items.append(("DC Block Allocation", ", ".join(allocation_parts)))
+        items.append(("DC Blocks Total (this group)", f"{total_counts}"))
 
     return items
 
@@ -260,7 +265,55 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
         "text",
         attrib={"x": str(skid_x + 8), "y": str(skid_y + 18), "class": "label title"},
     )
-    skid_label.text = "PCS&MV SKID (AC Block)"
+    skid_label.text = "PCS&MVT SKID (AC Block)"
+
+    mv_labels = snapshot.get("mv", {}).get("labels", {}) if isinstance(snapshot.get("mv"), dict) else {}
+    mv_kv = _safe_float(snapshot.get("mv", {}).get("kv"), 0.0)
+    to_switchgear = mv_labels.get("to_switchgear") or (
+        f"To {format_kv(mv_kv)} Switchgear" if mv_kv > 0 else "To Switchgear"
+    )
+    to_other_rmu = mv_labels.get("to_other_rmu") or "To Other RMU"
+
+    terminal_y = skid_y + 50
+    terminal_left_x = skid_x + 60
+    terminal_right_x = skid_x + skid_w - 60
+    ET.SubElement(
+        root,
+        "text",
+        attrib={"x": str(terminal_left_x - 10), "y": str(terminal_y - 10), "class": "label"},
+    ).text = to_switchgear
+    ET.SubElement(
+        root,
+        "text",
+        attrib={
+            "x": str(terminal_right_x + 10),
+            "y": str(terminal_y - 10),
+            "class": "label",
+            "text-anchor": "end",
+        },
+    ).text = to_other_rmu
+    ET.SubElement(
+        root,
+        "line",
+        attrib={
+            "x1": str(terminal_left_x),
+            "y1": str(terminal_y),
+            "x2": str(terminal_left_x),
+            "y2": str(terminal_y + 20),
+            "class": "thin",
+        },
+    )
+    ET.SubElement(
+        root,
+        "line",
+        attrib={
+            "x1": str(terminal_right_x),
+            "y1": str(terminal_y),
+            "x2": str(terminal_right_x),
+            "y2": str(terminal_y + 20),
+            "class": "thin",
+        },
+    )
 
     rmu_label = ET.SubElement(
         root,
@@ -332,7 +385,7 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
         "text",
         attrib={"x": str(bus_x1), "y": str(bus_y - 8), "class": "label"},
     )
-    bus_text.text = "LV Bus"
+    bus_text.text = "LV Busbar"
 
     ac_block = snapshot.get("ac_block", {}) or {}
     feeders = snapshot.get("feeders", []) or []
@@ -381,7 +434,7 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
             "text",
             attrib={"x": str(x + 8), "y": str(pcs_y + 20), "class": "label"},
         )
-        pcs_label.text = f"PCS{idx + 1}"
+        pcs_label.text = f"PCS-{idx + 1}"
         pcs_rating_text = ET.SubElement(
             root,
             "text",
@@ -412,10 +465,54 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
     if total_override > 0:
         total_counts = total_override
 
-    dc_box_h = 54
-    dc_box_y = skid_y + skid_h + 40
+    combiner_h = 22
+    combiner_w = pcs_box_w * 0.7
+    combiner_y = pcs_y + pcs_box_h + 10
+    dc_box_h = 52
+    dc_box_y = combiner_y + combiner_h + 18
     for idx in range(pcs_count):
         x = pcs_start_x + idx * slot_w
+        line_x = x + pcs_box_w / 2
+        combiner_x = x + (pcs_box_w - combiner_w) / 2
+        ET.SubElement(
+            root,
+            "line",
+            attrib={
+                "x1": str(line_x),
+                "y1": str(pcs_y + pcs_box_h),
+                "x2": str(line_x),
+                "y2": str(combiner_y),
+                "class": "thin",
+            },
+        )
+        ET.SubElement(
+            root,
+            "rect",
+            attrib={
+                "x": str(combiner_x),
+                "y": str(combiner_y),
+                "width": str(combiner_w),
+                "height": str(combiner_h),
+                "class": "outline",
+            },
+        )
+        combiner_label = ET.SubElement(
+            root,
+            "text",
+            attrib={"x": str(combiner_x + 4), "y": str(combiner_y + 15), "class": "label"},
+        )
+        combiner_label.text = "DC Combiner (simplified)"
+        ET.SubElement(
+            root,
+            "line",
+            attrib={
+                "x1": str(line_x),
+                "y1": str(combiner_y + combiner_h),
+                "x2": str(line_x),
+                "y2": str(dc_box_y),
+                "class": "thin",
+            },
+        )
         ET.SubElement(
             root,
             "rect",
@@ -432,10 +529,10 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
             "text",
             attrib={"x": str(x + 6), "y": str(dc_box_y + 24), "class": "label"},
         )
-        dc_label.text = f"DC Block ({battery_energy_text} each) x {counts[idx]}"
+        dc_label.text = f"DC Block Group ({battery_energy_text} each) x {counts[idx]}"
 
     alloc_parts = [f"F{idx + 1}={counts[idx]}" for idx in range(pcs_count)]
-    allocation_text = "Allocation by feeder: " + ", ".join(alloc_parts)
+    allocation_text = "DC Block Allocation: " + ", ".join(alloc_parts)
 
     group_index = int(_safe_float(snapshot.get("group_index") or ac_block.get("group_index"), 1.0))
     if group_index < 1:
@@ -459,7 +556,7 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
     lines = [
         "DC Block Allocation (for this AC Block group)",
         f"Group Summary: AC Block Group {group_index}: PCS = {pcs_count}, DC Blocks Total = {total_counts}",
-        f"DC Block ({battery_energy_text} each)",
+        f"DC Block Group ({battery_energy_text} each)",
         allocation_text,
         "Counts indicate allocation for sizing/configuration; detailed DC wiring is not represented.",
     ]

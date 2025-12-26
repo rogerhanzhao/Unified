@@ -96,6 +96,50 @@ def _plot_poi_usable_png(df: pd.DataFrame, poi_target: float, title: str) -> Opt
         return None
 
 
+def _plot_dc_capacity_bar_png(
+    bol_mwh: Optional[float],
+    s3_df: Optional[pd.DataFrame],
+    guarantee_year: int,
+    title: str,
+) -> Optional[io.BytesIO]:
+    if not MATPLOTLIB_AVAILABLE:
+        return None
+    try:
+        cod = None
+        yx = None
+        if s3_df is not None and not s3_df.empty:
+            year0 = s3_df[s3_df["Year_Index"] == 0]
+            if not year0.empty:
+                cod = float(year0["POI_Usable_Energy_MWh"].iloc[0])
+            g_row = s3_df[s3_df["Year_Index"] == int(guarantee_year)]
+            if not g_row.empty:
+                yx = float(g_row["POI_Usable_Energy_MWh"].iloc[0])
+
+        labels = ["BOL", "COD", f"Y{int(guarantee_year)}"]
+        values = [
+            float(bol_mwh) if bol_mwh is not None else 0.0,
+            float(cod) if cod is not None else 0.0,
+            float(yx) if yx is not None else 0.0,
+        ]
+
+        fig = plt.figure(figsize=(6.6, 3.0))
+        ax = fig.add_subplot(111)
+        ax.bar(labels, values, color="#5cc3e4")
+        ax.set_title(title)
+        ax.set_xlabel("Stage")
+        ax.set_ylabel("Energy (MWh)")
+        ax.grid(True, axis="y", linestyle="--", alpha=0.35)
+
+        buf = io.BytesIO()
+        fig.tight_layout()
+        fig.savefig(buf, format="png", dpi=150)
+        plt.close(fig)
+        buf.seek(0)
+        return buf
+    except Exception:
+        return None
+
+
 def _format_or_tbd(value, unit: str) -> str:
     if value is None:
         return "TBD"
@@ -316,12 +360,22 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
         }
         _add_dataframe_table(doc, s3_df, s3_columns, headers_map, formatters)
 
+        cap_chart = _plot_dc_capacity_bar_png(
+            bol_mwh=ctx.dc_total_energy_mwh,
+            s3_df=s3_df,
+            guarantee_year=ctx.poi_guarantee_year,
+            title="DC Block Energy (BOL/COD/Yx at POI)",
+        )
+        if cap_chart is not None and cap_chart.getbuffer().nbytes > 0:
+            doc.add_paragraph("")
+            doc.add_picture(cap_chart, width=Inches(6.7))
+
         chart = _plot_poi_usable_png(
             s3_df,
             poi_target=ctx.poi_energy_guarantee_mwh,
             title="POI Usable Energy vs Year",
         )
-        if chart is not None:
+        if chart is not None and chart.getbuffer().nbytes > 0:
             doc.add_paragraph("")
             doc.add_picture(chart, width=Inches(6.7))
     else:
@@ -391,17 +445,14 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
             sld_embedded = True
 
     if not sld_embedded:
-        if ctx.sld_snapshot_hash:
-            doc.add_paragraph("SLD PNG not available (generate in Single Line Diagram or install cairosvg).")
-        else:
-            doc.add_paragraph("Not generated (run diagram generation first).")
+        doc.add_paragraph("Diagram not generated.")
     doc.add_paragraph("")
 
     doc.add_heading("Block Layout (template view)", level=2)
     if ctx.layout_png_bytes:
         doc.add_picture(io.BytesIO(ctx.layout_png_bytes), width=Inches(6.7))
     else:
-        doc.add_paragraph("Not generated (run layout generation first).")
+        doc.add_paragraph("Diagram not generated.")
     doc.add_paragraph("")
 
     qc_checks = list(ctx.qc_checks)

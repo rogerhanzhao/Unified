@@ -137,7 +137,13 @@ def build_report_context(
     state = session_state or {}
     outputs = stage_outputs or {}
 
-    stage13_output = outputs.get("stage13_output") or state.get("stage13_output") or outputs.get("stage1")
+    dc_results = state.get("dc_results") if isinstance(state, dict) else {}
+    stage13_output = (
+        outputs.get("stage13_output")
+        or state.get("stage13_output")
+        or (dc_results.get("stage13_output") if isinstance(dc_results, dict) else None)
+        or outputs.get("stage1")
+    )
     if not stage13_output:
         raise ValueError("stage13_output is required to build ReportContext.")
 
@@ -148,7 +154,8 @@ def build_report_context(
     if stage3_df is None:
         stage3_df, stage3_meta = _get_stage3_df(stage1, stage2)
 
-    ac_output = outputs.get("ac_output") or state.get("ac_output") or {}
+    ac_results = state.get("ac_results") if isinstance(state, dict) else {}
+    ac_output = outputs.get("ac_output") or ac_results or state.get("ac_output") or {}
     project_name = (
         stage1.get("project_name")
         or ac_output.get("project_name")
@@ -167,7 +174,7 @@ def build_report_context(
         dc_blocks_total = int(stage13_output.get("dc_block_total_qty", 0))
 
     ac_blocks_total = int(ac_output.get("num_blocks", 0) or 0)
-    pcs_modules_total = int(ac_output.get("total_pcs", 0) or 0)
+    pcs_modules_total = int(ac_output.get("pcs_count_total") or ac_output.get("total_pcs", 0) or 0)
 
     template_fields = derive_ac_template_fields(ac_output)
     ac_block_template_id = template_fields["ac_block_template_id"]
@@ -284,13 +291,40 @@ def build_report_context(
     sld_pro_png_bytes = None
     layout_png_bytes = None
     if isinstance(state, dict):
-        for key in ("sld_pro_jp_svg_bytes", "sld_raw_svg_bytes"):
-            value = state.get(key)
-            if value:
-                sld_preview_svg_bytes = value
-                break
-        sld_pro_png_bytes = state.get("sld_pro_png_bytes")
-        layout_png_bytes = state.get("layout_png_bytes")
+        diagram_results = state.get("diagram_results")
+        if isinstance(diagram_results, dict) and diagram_results:
+            preferred = diagram_results.get("last_style")
+            if preferred and isinstance(diagram_results.get(preferred), dict):
+                sld_preview_svg_bytes = diagram_results[preferred].get("svg")
+                sld_pro_png_bytes = diagram_results[preferred].get("png")
+            if sld_preview_svg_bytes is None:
+                for style_key in ("raw_v05", "pro_v10", "jp_v08"):
+                    if isinstance(diagram_results.get(style_key), dict):
+                        sld_preview_svg_bytes = diagram_results[style_key].get("svg")
+                        sld_pro_png_bytes = diagram_results[style_key].get("png")
+                    if sld_preview_svg_bytes:
+                        break
+
+        layout_results = state.get("layout_results")
+        if isinstance(layout_results, dict) and layout_results:
+            preferred = layout_results.get("last_style")
+            if preferred and isinstance(layout_results.get(preferred), dict):
+                layout_png_bytes = layout_results[preferred].get("png")
+            if layout_png_bytes is None:
+                for style_key in ("raw_v05", "top_v10"):
+                    if isinstance(layout_results.get(style_key), dict):
+                        layout_png_bytes = layout_results[style_key].get("png")
+                    if layout_png_bytes:
+                        break
+
+        if sld_preview_svg_bytes is None:
+            for key in ("sld_pro_jp_svg_bytes", "sld_raw_svg_bytes"):
+                value = state.get(key)
+                if value:
+                    sld_preview_svg_bytes = value
+                    break
+        sld_pro_png_bytes = sld_pro_png_bytes or state.get("sld_pro_png_bytes")
+        layout_png_bytes = layout_png_bytes or state.get("layout_png_bytes")
 
     return ReportContext(
         project_name=project_name,
@@ -303,8 +337,12 @@ def build_report_context(
         poi_guarantee_year=poi_guarantee_year,
         project_life_years=project_life_years,
         cycles_per_year=cycles_per_year,
-        grid_mv_voltage_kv_ac=ac_output.get("grid_kv"),
-        pcs_lv_voltage_v_ll_rms_ac=ac_output.get("inverter_lv_v"),
+        grid_mv_voltage_kv_ac=ac_output.get("mv_voltage_kv")
+        or ac_output.get("mv_kv")
+        or ac_output.get("grid_kv"),
+        pcs_lv_voltage_v_ll_rms_ac=ac_output.get("lv_voltage_v")
+        or ac_output.get("lv_v")
+        or ac_output.get("inverter_lv_v"),
         grid_power_factor=grid_power_factor,
         ac_block_template_id=ac_block_template_id,
         pcs_per_block=pcs_per_block,

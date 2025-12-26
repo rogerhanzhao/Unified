@@ -8,6 +8,7 @@ from calb_sizing_tool.reporting.export_docx import (
 )
 from calb_sizing_tool.reporting.report_context import build_report_context
 from calb_sizing_tool.reporting.report_v2 import export_report_v2_1
+from calb_sizing_tool.state.session_state import init_shared_state
 
 
 def _extract_block_identity(stage2_raw):
@@ -22,11 +23,21 @@ def _extract_block_identity(stage2_raw):
 
 
 def show():
+    init_shared_state()
+    dc_results = st.session_state.get("dc_results", {}) or {}
+    ac_results = st.session_state.get("ac_results", {}) or {}
+    diagram_results = st.session_state.get("diagram_results", {}) or {}
+    layout_results = st.session_state.get("layout_results", {}) or {}
+
     st.header("Report Export")
     st.caption("Generate DOCX reports (V1 stable and V2.1 beta).")
 
-    stage13_output = st.session_state.get("stage13_output", {}) or {}
-    ac_output = st.session_state.get("ac_output", {}) or {}
+    stage13_output = (
+        dc_results.get("stage13_output")
+        or st.session_state.get("stage13_output")
+        or {}
+    )
+    ac_output = ac_results or st.session_state.get("ac_output") or {}
 
     if not stage13_output or not ac_output:
         st.warning("Run DC sizing and AC sizing first to enable report export.")
@@ -85,6 +96,10 @@ def show():
             "block_code": block_code,
             "block_name": block_name,
         }
+        if dc_results.get("results_dict"):
+            dc_output["results_dict"] = dc_results.get("results_dict")
+        if dc_results.get("report_order"):
+            dc_output["report_order"] = dc_results.get("report_order")
 
         if report_template.startswith("V2.1"):
             ctx = build_report_context(
@@ -109,7 +124,32 @@ def show():
             type="primary",
         )
 
-    if not st.session_state.get("sld_pro_png_bytes"):
+    sld_png = None
+    layout_png = None
+    if isinstance(diagram_results, dict) and diagram_results:
+        preferred = diagram_results.get("last_style")
+        if preferred and isinstance(diagram_results.get(preferred), dict):
+            sld_png = diagram_results[preferred].get("png")
+        if sld_png is None:
+            for style_key in ("raw_v05", "pro_v10", "jp_v08"):
+                if isinstance(diagram_results.get(style_key), dict):
+                    sld_png = diagram_results[style_key].get("png")
+                if sld_png:
+                    break
+    if isinstance(layout_results, dict) and layout_results:
+        preferred = layout_results.get("last_style")
+        if preferred and isinstance(layout_results.get(preferred), dict):
+            layout_png = layout_results[preferred].get("png")
+        if layout_png is None:
+            for style_key in ("raw_v05", "top_v10"):
+                if isinstance(layout_results.get(style_key), dict):
+                    layout_png = layout_results[style_key].get("png")
+                if layout_png:
+                    break
+    sld_png = sld_png or st.session_state.get("sld_pro_png_bytes")
+    layout_png = layout_png or st.session_state.get("layout_png_bytes")
+
+    if not sld_png:
         st.info("SLD Pro PNG not found. Generate it in Single Line Diagram > Pro tab.")
-    if not st.session_state.get("layout_png_bytes"):
+    if not layout_png:
         st.info("Layout PNG not found. Generate it in Site Layout.")

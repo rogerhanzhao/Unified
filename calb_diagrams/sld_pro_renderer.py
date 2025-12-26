@@ -39,8 +39,7 @@ def format_kv(value) -> str:
     v = _safe_float(value, 0.0)
     if v <= 0:
         return "TBD"
-    text = f"{v:.2f}".rstrip("0").rstrip(".")
-    return f"{text} kV"
+    return f"{v:.1f} kV"
 
 
 def format_v(value) -> str:
@@ -162,8 +161,15 @@ def _build_equipment_list(spec: SldGroupSpec) -> List[Tuple[str, str]]:
     items.append(("DC Cable", cables.get("dc_cable_spec") or "TBD"))
     items.append(("DC Fuse", dc_fuse.get("fuse_spec") or "TBD"))
 
-    dc_block_text = f"DC Block ({format_mwh(spec.dc_block_energy_mwh)} each) x {spec.dc_blocks_total_in_group}"
-    items.append(("Battery Storage Bank", dc_block_text))
+    allocation_parts = [
+        f"F{idx + 1}={spec.dc_blocks_per_feeder[idx] if idx < len(spec.dc_blocks_per_feeder) else 0}"
+        for idx in range(spec.pcs_count)
+    ]
+    allocation_text = ", ".join(allocation_parts) if allocation_parts else "TBD"
+    items.append(("DC Block Allocation", allocation_text))
+    items.append(
+        ("DC Blocks Total (this group)", f"{_safe_int(spec.dc_blocks_total_in_group, 0)}")
+    )
 
     return items
 
@@ -354,30 +360,27 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
         count = spec.dc_blocks_per_feeder[idx] if idx < len(spec.dc_blocks_per_feeder) else 0
         x = pcs_start_x + idx * slot_w
         line_x = x + pcs_box_w / 2
-        if count > 1:
-            comb_x = x + (pcs_box_w - combiner_w) / 2
-            comb_y = pcs_y + pcs_box_h + 10
-            dwg.add(dwg.line((line_x, pcs_y + pcs_box_h), (line_x, comb_y), class_="thin"))
-            dwg.add(dwg.rect(insert=(comb_x, comb_y), size=(combiner_w, combiner_h), class_="outline"))
-            dwg.add(
-                dwg.text(
-                    "DC Combiner (simplified)",
-                    insert=(comb_x + 4, comb_y + 15),
-                    class_="label",
-                )
+        comb_x = x + (pcs_box_w - combiner_w) / 2
+        comb_y = pcs_y + pcs_box_h + 10
+        dwg.add(dwg.line((line_x, pcs_y + pcs_box_h), (line_x, comb_y), class_="thin"))
+        dwg.add(dwg.rect(insert=(comb_x, comb_y), size=(combiner_w, combiner_h), class_="outline"))
+        dwg.add(
+            dwg.text(
+                "DC Combiner (simplified)",
+                insert=(comb_x + 4, comb_y + 15),
+                class_="label",
             )
-            dwg.add(
-                dwg.line(
-                    (line_x, comb_y + combiner_h),
-                    (line_x, dc_group_y),
-                    class_="thin",
-                )
+        )
+        dwg.add(
+            dwg.line(
+                (line_x, comb_y + combiner_h),
+                (line_x, dc_group_y),
+                class_="thin",
             )
-        else:
-            dwg.add(dwg.line((line_x, pcs_y + pcs_box_h), (line_x, dc_group_y), class_="thin"))
+        )
 
         dwg.add(dwg.rect(insert=(x, dc_group_y), size=(dc_box_w, dc_box_h), class_="outline"))
-        dc_text = f"DC Block ({format_mwh(spec.dc_block_energy_mwh)} each) x {count}"
+        dc_text = f"DC Block Group ({format_mwh(spec.dc_block_energy_mwh)} each) x {count}"
         dwg.add(dwg.text(dc_text, insert=(x + 6, dc_group_y + 30), class_="label"))
 
     battery_x = skid_x + 40
@@ -385,7 +388,7 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
     battery_w = skid_w - 80
     battery_h = dc_box_h + 60
     dwg.add(dwg.rect(insert=(battery_x, battery_y), size=(battery_w, battery_h), class_="dash"))
-    dwg.add(dwg.text("Battery Storage Bank", insert=(battery_x + 8, battery_y + 16), class_="label title"))
+    dwg.add(dwg.text("DC Block Group", insert=(battery_x + 8, battery_y + 16), class_="label title"))
     battery_symbol_x = battery_x + 8
     battery_symbol_y = battery_y + 26
     dwg.add(dwg.rect(insert=(battery_symbol_x, battery_symbol_y), size=(28, 16), class_="outline"))
@@ -398,7 +401,7 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
         f"F{idx + 1}={spec.dc_blocks_per_feeder[idx] if idx < len(spec.dc_blocks_per_feeder) else 0}"
         for idx in range(pcs_count)
     ]
-    allocation_text = "Allocation by feeder: " + ", ".join(allocation_parts)
+    allocation_text = "DC Block Allocation: " + ", ".join(allocation_parts)
 
     note_lines = [
         f"Group Summary: PCS={pcs_count}, DC Blocks Total={spec.dc_blocks_total_in_group}",

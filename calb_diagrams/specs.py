@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence
 
-from calb_sizing_tool.common.allocation import evenly_distribute
+from calb_sizing_tool.common.allocation import allocate_dc_blocks, evenly_distribute
 
 
 def _safe_int(value, default=0) -> int:
@@ -37,6 +37,14 @@ def _resolve_pcs_count_by_block(ac_output: dict, ac_blocks_total: int) -> List[i
     if pcs_counts:
         return pcs_counts
 
+    pcs_units = ac_output.get("pcs_units")
+    if isinstance(pcs_units, list) and pcs_units:
+        return [len(pcs_units) for _ in range(ac_blocks_total or 1)]
+
+    pcs_count_per_block = _safe_int(ac_output.get("pcs_count_per_ac_block"), 0)
+    if ac_blocks_total > 0 and pcs_count_per_block > 0:
+        return [pcs_count_per_block for _ in range(ac_blocks_total)]
+
     pcs_per_block = _safe_int(ac_output.get("pcs_per_block"), 0)
     total_pcs = _safe_int(ac_output.get("total_pcs"), 0)
     if ac_blocks_total > 0 and total_pcs > 0:
@@ -52,6 +60,22 @@ def _resolve_dc_blocks_total_by_block(
     dc_summary: dict,
     ac_blocks_total: int,
 ) -> List[int]:
+    allocation = ac_output.get("dc_block_allocation")
+    if isinstance(allocation, dict):
+        per_ac_block = allocation.get("per_ac_block")
+        if isinstance(per_ac_block, list) and per_ac_block:
+            totals = []
+            for entry in per_ac_block:
+                total = entry.get("dc_blocks_total")
+                if total is None:
+                    per_feeder = entry.get("per_feeder")
+                    if isinstance(per_feeder, dict):
+                        total = sum(_safe_int(v, 0) for v in per_feeder.values())
+                totals.append(_safe_int(total, 0))
+            normalized = _normalize_counts(totals, ac_blocks_total)
+            if normalized:
+                return normalized
+
     totals = _normalize_counts(ac_output.get("dc_blocks_total_by_block"), ac_blocks_total)
     if totals:
         return totals
@@ -95,9 +119,18 @@ class SldGroupSpec:
 class LayoutBlockSpec:
     block_indices_to_render: List[int]
     dc_blocks_per_block: int = 4
+    dc_block_counts_by_block: Dict[int, int] = field(default_factory=dict)
     arrangement: str = "2x2"
     show_skid: bool = True
     labels: Dict[str, str] = field(default_factory=dict)
+    container_length_mm: int = 6058
+    container_width_mm: int = 2438
+    dc_to_dc_clearance_m: Optional[float] = None
+    dc_to_ac_clearance_m: Optional[float] = None
+    perimeter_clearance_m: Optional[float] = None
+    use_template: bool = False
+    dc_block_svg_path: Optional[str] = None
+    ac_block_svg_path: Optional[str] = None
 
 
 def build_sld_group_spec(
@@ -147,17 +180,21 @@ def build_sld_group_spec(
 
     mv_kv = _safe_float(
         sld_inputs.get("mv_nominal_kv_ac")
+        or ac_output.get("mv_kv")
         or ac_output.get("grid_kv")
         or stage13_output.get("poi_nominal_voltage_kv"),
         33.0,
     )
     lv_v = _safe_float(
         sld_inputs.get("pcs_lv_voltage_v_ll")
+        or ac_output.get("lv_v")
         or ac_output.get("inverter_lv_v"),
-        690.0,
+        0.0,
     )
 
     transformer_mva = _safe_float(sld_inputs.get("transformer_rating_mva"), 0.0)
+    if transformer_mva <= 0:
+        transformer_mva = _safe_float(ac_output.get("transformer_mva"), 0.0)
     if transformer_mva <= 0:
         transformer_kva = _safe_float(
             sld_inputs.get("transformer_rating_kva") or ac_output.get("transformer_kva"),
@@ -179,6 +216,36 @@ def build_sld_group_spec(
         dc_block_energy_mwh = 5.106
 
     dc_blocks_per_feeder = None
+    allocation = ac_output.get("dc_block_allocation")
+    if isinstance(allocation, dict):
+        per_ac_block = allocation.get("per_ac_block")
+        if isinstance(per_ac_block, list) and per_ac_block:
+            if group_idx < len(per_ac_block):
+                per_feeder = per_ac_block[group_idx].get("per_feeder")
+                if isinstance(per_feeder, dict) and per_feeder:
+                    keys = sorted(
+                        per_feeder.keys(),
+                        key=lambda k: _safe_int(str(k).lstrip("Ff"), 0),
+                    )
+                    dc_blocks_per_feeder = [
+                        _safe_int(per_feeder.get(key), 0) for key in keys
+                    ]
+        if dc_blocks_per_feeder is None:
+            per_feeder = allocation.get("per_feeder")
+            if isinstance(per_feeder, dict) and per_feeder:
+                keys = sorted(
+                    per_feeder.keys(),
+                    key=lambda k: _safe_int(str(k).lstrip("Ff"), 0),
+                )
+                dc_blocks_per_feeder = [
+                    _safe_int(per_feeder.get(key), 0) for key in keys
+                ]
+        if dc_blocks_per_feeder is None:
+            per_pcs_group = allocation.get("per_pcs_group")
+            if isinstance(per_pcs_group, list) and per_pcs_group:
+                dc_blocks_per_feeder = [
+                    _safe_int(item.get("dc_block_count"), 0) for item in per_pcs_group
+                ]
     dc_blocks_per_feeder_by_block = ac_output.get("dc_blocks_per_feeder_by_block")
     if isinstance(dc_blocks_per_feeder_by_block, list) and dc_blocks_per_feeder_by_block:
         if group_idx < len(dc_blocks_per_feeder_by_block):
@@ -195,7 +262,7 @@ def build_sld_group_spec(
             dc_total_group = (
                 dc_totals_by_block[group_idx] if group_idx < len(dc_totals_by_block) else 0
             )
-            dc_blocks_per_feeder = evenly_distribute(dc_total_group, pcs_count)
+            dc_blocks_per_feeder = allocate_dc_blocks(dc_total_group, pcs_count)
 
     dc_blocks_total_in_group = sum(dc_blocks_per_feeder)
 
@@ -235,8 +302,17 @@ def build_layout_block_spec(
     block_indices_to_render: List[int],
     labels: Optional[Dict[str, str]] = None,
     dc_blocks_per_block: int = 4,
+    dc_block_counts_by_block: Optional[Dict[int, int]] = None,
     arrangement: str = "2x2",
     show_skid: bool = True,
+    container_length_mm: int = 6058,
+    container_width_mm: int = 2438,
+    dc_to_dc_clearance_m: Optional[float] = None,
+    dc_to_ac_clearance_m: Optional[float] = None,
+    perimeter_clearance_m: Optional[float] = None,
+    use_template: bool = False,
+    dc_block_svg_path: Optional[str] = None,
+    ac_block_svg_path: Optional[str] = None,
 ) -> LayoutBlockSpec:
     block_indices = block_indices_to_render or [1]
     normalized = []
@@ -251,10 +327,26 @@ def build_layout_block_spec(
     if not isinstance(output_labels, dict):
         output_labels = {}
 
+    normalized_counts: Dict[int, int] = {}
+    if isinstance(dc_block_counts_by_block, dict):
+        for key, value in dc_block_counts_by_block.items():
+            idx = _safe_int(key, 0)
+            if idx > 0:
+                normalized_counts[idx] = max(0, _safe_int(value, 0))
+
     return LayoutBlockSpec(
         block_indices_to_render=normalized,
         dc_blocks_per_block=int(dc_blocks_per_block),
+        dc_block_counts_by_block=normalized_counts,
         arrangement=arrangement,
         show_skid=bool(show_skid),
         labels=output_labels,
+        container_length_mm=int(container_length_mm),
+        container_width_mm=int(container_width_mm),
+        dc_to_dc_clearance_m=dc_to_dc_clearance_m,
+        dc_to_ac_clearance_m=dc_to_ac_clearance_m,
+        perimeter_clearance_m=perimeter_clearance_m,
+        use_template=bool(use_template),
+        dc_block_svg_path=dc_block_svg_path,
+        ac_block_svg_path=ac_block_svg_path,
     )

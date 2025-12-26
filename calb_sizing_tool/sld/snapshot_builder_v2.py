@@ -105,8 +105,9 @@ def build_sld_chain_snapshot_v2(
     )
     pcs_lv_v = _safe_float(
         sld_inputs.get("pcs_lv_v")
+        or ac_output.get("lv_v")
         or ac_output.get("inverter_lv_v"),
-        800.0,
+        0.0,
     )
 
     block_size_mw = _safe_float(

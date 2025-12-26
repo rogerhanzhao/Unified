@@ -14,15 +14,17 @@ from calb_sizing_tool.config import AC_DATA_PATH, DC_DATA_PATH, PROJECT_ROOT
 # ----------------------------------------
 
 
-def _find_logo_for_report():
-    try:
-        data_dir = Path(DC_DATA_PATH).parent
-        for item in data_dir.iterdir():
-            lower = item.name.lower()
-            if lower.endswith((".png", ".jpg", ".jpeg")) and ("logo" in lower or "calb" in lower):
-                return str(item)
-    except Exception:
-        return None
+def _resolve_logo_path() -> Path | None:
+    candidates = [
+        PROJECT_ROOT / "calb_assets" / "logo" / "calb_logo.png",
+        PROJECT_ROOT / "calb_logo.png",
+    ]
+    for candidate in candidates:
+        try:
+            if candidate.exists():
+                return candidate
+        except Exception:
+            continue
     return None
 
 
@@ -34,28 +36,40 @@ def _setup_margins(doc: Document):
     section.bottom_margin = Inches(0.8)
 
 
+def add_header_logo(document: Document, logo_path_or_bytes) -> list:
+    tables = []
+    for section in document.sections:
+        header = section.header
+        header.is_linked_to_previous = False
+        for para in list(header.paragraphs):
+            para._element.getparent().remove(para._element)
+        header_table = header.add_table(rows=1, cols=2, width=Inches(6.9))
+        tables.append(header_table)
+        if logo_path_or_bytes:
+            p_logo = header_table.rows[0].cells[0].paragraphs[0]
+            run_logo = p_logo.add_run()
+            if isinstance(logo_path_or_bytes, (str, Path)):
+                run_logo.add_picture(str(logo_path_or_bytes), width=Inches(1.2))
+            else:
+                run_logo.add_picture(io.BytesIO(logo_path_or_bytes), width=Inches(1.2))
+    return tables
+
+
 def _setup_header(doc: Document, title: str = "Confidential Sizing Report"):
-    section = doc.sections[0]
-    header = section.header
-    header.is_linked_to_previous = False
-    header_table = header.add_table(rows=1, cols=2, width=Inches(6.9))
-    hdr_cells = header_table.rows[0].cells
+    logo_path = _resolve_logo_path()
+    header_tables = add_header_logo(doc, logo_path)
 
-    logo_path = _find_logo_for_report()
-    if logo_path:
-        p_logo = hdr_cells[0].paragraphs[0]
-        run_logo = p_logo.add_run()
-        run_logo.add_picture(logo_path, width=Inches(1.2))
-
-    p_info = hdr_cells[1].paragraphs[0]
-    p_info.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    run_info = p_info.add_run(
-        "CALB Group Co., Ltd.\n"
-        "Utility-Scale Energy Storage Systems\n"
-        f"{title}"
-    )
-    run_info.font.size = Pt(9)
-    run_info.font.bold = True
+    for header_table in header_tables:
+        hdr_cells = header_table.rows[0].cells
+        p_info = hdr_cells[1].paragraphs[0]
+        p_info.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        run_info = p_info.add_run(
+            "CALB Group Co., Ltd.\n"
+            "Utility-Scale Energy Storage Systems\n"
+            f"{title}"
+        )
+        run_info.font.size = Pt(9)
+        run_info.font.bold = True
 
 
 def _format_float(value, decimals):
@@ -143,22 +157,7 @@ def _add_cover_page(doc: Document, title: str, project_name: str, ctx: dict):
 
 
 def _add_appendix(doc: Document, ctx: dict):
-    doc.add_heading("Appendix", level=2)
-    dictionary_version = ""
-    input_file_version = ""
-    if ctx:
-        dictionary_version = ctx.get("dictionary_version", "")
-        input_file_version = ctx.get("input_file_version", "")
-    if not dictionary_version:
-        dictionary_version = Path(AC_DATA_PATH).name
-    if not input_file_version:
-        input_file_version = Path(DC_DATA_PATH).name
-
-    rows = [
-        ("Dictionary Version", dictionary_version),
-        ("Input File Version", input_file_version),
-    ]
-    _add_table(doc, rows, ["Item", "Value"])
+    return
 
 
 # ----------------------------------------
@@ -455,12 +454,21 @@ def _append_dc_report_sections(doc: Document, dc_output: dict, ctx: dict, chapte
 
         if dc_view.MATPLOTLIB_AVAILABLE:
             try:
+                cap_png = dc_view._plot_dc_capacity_bar_png(
+                    s2=s2,
+                    s3_df=s3_df,
+                    guarantee_year=guarantee_year,
+                    title="DC Block Energy (BOL/COD/Yx at POI)",
+                )
+                if cap_png and cap_png.getbuffer().nbytes > 0:
+                    doc.add_picture(cap_png, width=Inches(6.7))
                 png = dc_view._plot_poi_usable_png(
                     s3_df=s3_df,
                     poi_target=poi_target,
                     title=f"POI Usable Energy vs Year \u2013 {key}",
                 )
-                doc.add_picture(png, width=Inches(6.7))
+                if png and png.getbuffer().nbytes > 0:
+                    doc.add_picture(png, width=Inches(6.7))
             except Exception:
                 doc.add_paragraph("Chart export skipped due to plotting error.")
         else:

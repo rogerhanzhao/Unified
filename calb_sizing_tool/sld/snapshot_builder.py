@@ -88,7 +88,8 @@ def build_sld_snapshot_v1(stage4_output: dict, project_inputs: dict, scenario_id
     pcs_kw = block_size_mw * 1000 / pcs_per_block if block_size_mw and pcs_per_block else 0.0
 
     mv_kv = _safe_float(stage4_output.get("grid_kv") or project_inputs.get("poi_nominal_voltage_kv"), 33.0)
-    lv_kv = _safe_float(stage4_output.get("inverter_lv_v"), 800.0) / 1000.0
+    lv_v = _safe_float(stage4_output.get("lv_v") or stage4_output.get("inverter_lv_v"), 0.0)
+    lv_kv = lv_v / 1000.0 if lv_v > 20.0 else lv_v
 
     grid_power_factor = template_fields.get("grid_power_factor") or 0.9
     transformer_kva = stage4_output.get("transformer_kva")

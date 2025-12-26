@@ -13,7 +13,7 @@ class ACBlockResult(BaseModel):
     block_id: str = "AC-Block"
     transformer_kva: float = 2500.0
     mv_voltage_kv: float = 33.0
-    lv_voltage_v: float = 800.0
+    lv_voltage_v: float = 690.0
     pcs_power_kw: float = 1250.0
     num_pcs: int = 2
     dc_blocks_connected: List[DCBlockResult] = []

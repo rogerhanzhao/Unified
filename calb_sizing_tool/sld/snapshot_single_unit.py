@@ -3,7 +3,7 @@ import hashlib
 import json
 from typing import Dict, List, Optional
 
-from calb_sizing_tool.common.allocation import evenly_distribute
+from calb_sizing_tool.common.allocation import allocate_dc_blocks, evenly_distribute
 from calb_sizing_tool.sld.ac_block_group import build_ac_block_group_spec
 
 
@@ -163,7 +163,7 @@ def build_single_unit_snapshot(
                 dc_blocks_for_one_ac_block_group = group_spec.dc_blocks_total_in_group
         if dc_blocks_for_one_ac_block_group <= 0:
             dc_blocks_for_one_ac_block_group = group_spec.pcs_count
-        dc_blocks_per_feeder = evenly_distribute(
+        dc_blocks_per_feeder = allocate_dc_blocks(
             dc_blocks_for_one_ac_block_group, group_spec.pcs_count
         )
         dc_blocks_by_feeder = _build_dc_blocks_by_feeder(

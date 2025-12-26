@@ -1,3 +1,6 @@
+import base64
+import html
+import math
 from pathlib import Path
 from typing import Tuple
 
@@ -21,6 +24,13 @@ def _safe_int(value, default=0) -> int:
         return default
 
 
+def _safe_float(value, default=0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
 def _write_png(svg_path: Path, png_path: Path) -> None:
     if cairosvg is None:
         raise ImportError("cairosvg is required to export PNG from SVG.")
@@ -37,22 +47,363 @@ def _grid_positions(arrangement: str) -> Tuple[int, int]:
     return 2, 2
 
 
+def _format_clearance(value) -> str:
+    try:
+        numeric = float(value)
+    except Exception:
+        return "TBD"
+    if numeric <= 0:
+        return "TBD"
+    return f"{numeric:.1f} m"
+
+
+def _m_to_px(value, scale: float) -> float:
+    numeric = _safe_float(value, 0.0)
+    if numeric <= 0:
+        return 0.0
+    return numeric * 1000.0 * scale
+
+
+def _gap_px(value, scale: float, fallback_px: float) -> float:
+    px = _m_to_px(value, scale)
+    if px <= 0:
+        return fallback_px
+    return px
+
+
+def _resolve_block_count(spec: LayoutBlockSpec, block_index: int) -> int:
+    if isinstance(spec.dc_block_counts_by_block, dict):
+        count = spec.dc_block_counts_by_block.get(block_index)
+        if count is not None:
+            return max(1, _safe_int(count, 1))
+    return max(1, _safe_int(spec.dc_blocks_per_block, 1))
+
+
+def _draw_h_dimension(dwg, x1, x2, y, ext_y, text):
+    arrow = 6
+    dwg.add(dwg.line((x1, ext_y), (x1, y), class_="thin"))
+    dwg.add(dwg.line((x2, ext_y), (x2, y), class_="thin"))
+    dwg.add(dwg.line((x1, y), (x2, y), class_="thin"))
+    dwg.add(dwg.line((x1, y), (x1 + arrow, y - arrow / 2), class_="thin"))
+    dwg.add(dwg.line((x1, y), (x1 + arrow, y + arrow / 2), class_="thin"))
+    dwg.add(dwg.line((x2, y), (x2 - arrow, y - arrow / 2), class_="thin"))
+    dwg.add(dwg.line((x2, y), (x2 - arrow, y + arrow / 2), class_="thin"))
+    dwg.add(dwg.text(text, insert=((x1 + x2) / 2, y - 4), class_="dim-text", text_anchor="middle"))
+
+
+def _draw_v_dimension(dwg, y1, y2, x, ext_x, text):
+    arrow = 6
+    dwg.add(dwg.line((ext_x, y1), (x, y1), class_="thin"))
+    dwg.add(dwg.line((ext_x, y2), (x, y2), class_="thin"))
+    dwg.add(dwg.line((x, y1), (x, y2), class_="thin"))
+    dwg.add(dwg.line((x, y1), (x - arrow / 2, y1 + arrow), class_="thin"))
+    dwg.add(dwg.line((x, y1), (x + arrow / 2, y1 + arrow), class_="thin"))
+    dwg.add(dwg.line((x, y2), (x - arrow / 2, y2 - arrow), class_="thin"))
+    dwg.add(dwg.line((x, y2), (x + arrow / 2, y2 - arrow), class_="thin"))
+    dwg.add(dwg.text(text, insert=(x + 6, (y1 + y2) / 2), class_="dim-text"))
+
+
+def _svg_to_data_uri(path: Path) -> str | None:
+    try:
+        data = Path(path).read_bytes()
+    except Exception:
+        return None
+    encoded = base64.b64encode(data).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded}"
+
+
+def _svg_escape(text) -> str:
+    return html.escape(str(text)) if text is not None else ""
+
+
+def _svg_line(lines, x1, y1, x2, y2, class_name="thin"):
+    lines.append(
+        f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" class="{class_name}" />'
+    )
+
+
+def _svg_rect(lines, x, y, w, h, class_name="outline"):
+    lines.append(
+        f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" class="{class_name}" />'
+    )
+
+
+def _svg_text(lines, text, x, y, class_name="label", anchor=None):
+    anchor_attr = f' text-anchor="{anchor}"' if anchor else ""
+    safe = _svg_escape(text)
+    lines.append(
+        f'<text x="{x:.1f}" y="{y:.1f}" class="{class_name}"{anchor_attr}>{safe}</text>'
+    )
+
+
+def _draw_h_dimension_raw(lines, x1, x2, y, ext_y, text):
+    arrow = 6
+    _svg_line(lines, x1, ext_y, x1, y)
+    _svg_line(lines, x2, ext_y, x2, y)
+    _svg_line(lines, x1, y, x2, y)
+    _svg_line(lines, x1, y, x1 + arrow, y - arrow / 2)
+    _svg_line(lines, x1, y, x1 + arrow, y + arrow / 2)
+    _svg_line(lines, x2, y, x2 - arrow, y - arrow / 2)
+    _svg_line(lines, x2, y, x2 - arrow, y + arrow / 2)
+    _svg_text(lines, text, (x1 + x2) / 2, y - 4, class_name="dim-text", anchor="middle")
+
+
+def _draw_v_dimension_raw(lines, y1, y2, x, ext_x, text):
+    arrow = 6
+    _svg_line(lines, ext_x, y1, x, y1)
+    _svg_line(lines, ext_x, y2, x, y2)
+    _svg_line(lines, x, y1, x, y2)
+    _svg_line(lines, x, y1, x - arrow / 2, y1 + arrow)
+    _svg_line(lines, x, y1, x + arrow / 2, y1 + arrow)
+    _svg_line(lines, x, y2, x - arrow / 2, y2 - arrow)
+    _svg_line(lines, x, y2, x + arrow / 2, y2 - arrow)
+    _svg_text(lines, text, x + 6, (y1 + y2) / 2, class_name="dim-text")
+
+
+def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
+    scale = 0.04
+    container_len = max(1.0, _safe_float(spec.container_length_mm, 6058)) * scale
+    container_w = max(1.0, _safe_float(spec.container_width_mm, 2438)) * scale
+
+    fallback_gap = max(16.0, container_w * 0.25)
+    dc_gap = _gap_px(spec.dc_to_dc_clearance_m, scale, fallback_gap)
+    ac_gap = _gap_px(spec.dc_to_ac_clearance_m, scale, fallback_gap)
+    perimeter_px = _m_to_px(spec.perimeter_clearance_m, scale)
+
+    left_margin = 40
+    top_margin = 40
+    gap_y = 50
+    inner_pad = 10
+    title_h = 22
+    dim_band_h = 18
+    label_h = 18
+
+    blocks = []
+    max_block_width = 0.0
+    for block_index in spec.block_indices_to_render:
+        dc_count = _resolve_block_count(spec, block_index)
+        cols, rows = _grid_positions(spec.arrangement)
+        cols = max(1, cols)
+        rows = max(1, rows)
+        if dc_count > cols * rows:
+            rows = int(math.ceil(dc_count / cols))
+
+        dc_w = cols * container_len + max(0, cols - 1) * dc_gap
+        dc_h = rows * container_w + max(0, rows - 1) * dc_gap
+        skid_w = container_len if spec.show_skid else 0.0
+        skid_h = container_w if spec.show_skid else 0.0
+
+        content_w = dc_w + (ac_gap if spec.show_skid else 0.0) + skid_w
+        content_h = max(dc_h, skid_h)
+
+        block_w = content_w + (inner_pad * 2) + (perimeter_px * 2)
+        block_h = title_h + dim_band_h + content_h + label_h + (perimeter_px * 2) + 24
+
+        blocks.append(
+            {
+                "block_index": block_index,
+                "dc_count": dc_count,
+                "cols": cols,
+                "rows": rows,
+                "dc_w": dc_w,
+                "dc_h": dc_h,
+                "content_w": content_w,
+                "content_h": content_h,
+                "block_w": block_w,
+                "block_h": block_h,
+            }
+        )
+        max_block_width = max(max_block_width, block_w)
+
+    height = top_margin * 2 + sum(b["block_h"] for b in blocks) + max(0, len(blocks) - 1) * gap_y
+    width = left_margin * 2 + max_block_width
+
+    lines = [
+        '<?xml version="1.0" encoding="utf-8"?>',
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.1f}px" height="{height:.1f}px" viewBox="0 0 {width:.1f} {height:.1f}">',
+        "<style>",
+        "svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }",
+        ".outline { stroke: #000000; stroke-width: 1.2; fill: none; }",
+        ".thin { stroke: #000000; stroke-width: 1; fill: none; }",
+        ".dash { stroke: #000000; stroke-width: 1.2; fill: none; stroke-dasharray: 6,4; }",
+        ".label { fill: #000000; }",
+        ".title { font-size: 13px; font-weight: bold; }",
+        ".dim-text { fill: #000000; font-size: 11px; }",
+        "</style>",
+    ]
+
+    block_title_template = spec.labels.get("block_title") if isinstance(spec.labels, dict) else None
+    bess_text_template = spec.labels.get("bess_range_text") if isinstance(spec.labels, dict) else None
+    skid_text = spec.labels.get("skid_text") if isinstance(spec.labels, dict) else None
+    skid_subtext = spec.labels.get("skid_subtext") if isinstance(spec.labels, dict) else None
+    if not block_title_template:
+        block_title_template = "Block {index}: DC Blocks={dc_blocks}"
+    if not bess_text_template:
+        bess_text_template = "BESS {start}~{end}"
+    if not skid_text:
+        skid_text = "PCS&MVT SKID"
+
+    block_offset = 0
+    current_y = top_margin
+    for block in blocks:
+        block_index = block["block_index"]
+        dc_count = block["dc_count"]
+        cols = block["cols"]
+        rows = block["rows"]
+        dc_w = block["dc_w"]
+        dc_h = block["dc_h"]
+
+        block_x = left_margin
+        block_y = current_y
+        if perimeter_px > 0:
+            _svg_rect(lines, block_x, block_y, block["block_w"], block["block_h"], class_name="dash")
+
+        start = block_offset + 1
+        end = block_offset + dc_count
+        block_offset += dc_count
+
+        try:
+            title_text = block_title_template.format(index=block_index, dc_blocks=dc_count, start=start, end=end)
+        except Exception:
+            title_text = block_title_template
+        _svg_text(lines, title_text, block_x + 6, block_y + 16, class_name="label title")
+
+        content_x = block_x + perimeter_px + inner_pad
+        content_y = block_y + perimeter_px + title_h + dim_band_h + 6
+
+        dc_array_x = content_x
+        dc_array_y = content_y
+
+        for r in range(rows):
+            for c in range(cols):
+                idx = r * cols + c
+                if idx >= dc_count:
+                    continue
+                cell_x = dc_array_x + c * (container_len + dc_gap)
+                cell_y = dc_array_y + r * (container_w + dc_gap)
+                _svg_rect(lines, cell_x, cell_y, container_len, container_w)
+                _svg_text(lines, "DC Block", cell_x + 6, cell_y + 18)
+
+        bess_text = bess_text_template.format(start=start, end=end)
+        _svg_text(lines, bess_text, dc_array_x, dc_array_y + dc_h + 18)
+
+        if spec.show_skid:
+            skid_x = dc_array_x + dc_w + ac_gap
+            skid_y = dc_array_y + (dc_h - container_w) / 2
+            _svg_rect(lines, skid_x, skid_y, container_len, container_w)
+            _svg_text(lines, skid_text, skid_x + 6, skid_y + 18)
+            if skid_subtext:
+                _svg_text(lines, skid_subtext, skid_x + 6, skid_y + 34)
+
+        dim_y_main = dc_array_y - 6
+        dim_y_secondary = dim_y_main - 16
+        dc_text = _format_clearance(spec.dc_to_dc_clearance_m)
+        ac_text = _format_clearance(spec.dc_to_ac_clearance_m)
+
+        if cols > 1:
+            x1 = dc_array_x + container_len
+            x2 = dc_array_x + container_len + dc_gap
+            _draw_h_dimension_raw(lines, x1, x2, dim_y_main, dc_array_y, dc_text)
+        elif rows > 1:
+            y1 = dc_array_y + container_w
+            y2 = dc_array_y + container_w + dc_gap
+            _draw_v_dimension_raw(lines, y1, y2, dc_array_x - 6, dc_array_x, dc_text)
+
+        if spec.show_skid:
+            x1 = dc_array_x + dc_w
+            x2 = dc_array_x + dc_w + ac_gap
+            _draw_h_dimension_raw(
+                lines, x1, x2, dim_y_secondary if cols > 1 else dim_y_main, dc_array_y, ac_text
+            )
+
+        current_y += block["block_h"] + gap_y
+
+    lines.append("</svg>")
+    return "\n".join(lines)
+
+
 def render_layout_block_svg(
     spec: LayoutBlockSpec, out_svg: Path, out_png: Path | None = None
 ) -> tuple[Path | None, str | None]:
     if svgwrite is None:
-        return None, "Missing dependency: svgwrite. Please install: pip install svgwrite"
+        out_svg = Path(out_svg)
+        svg_text = _render_layout_block_svg_fallback(spec)
+        out_svg.parent.mkdir(parents=True, exist_ok=True)
+        out_svg.write_text(svg_text, encoding="utf-8")
+        png_warning = None
+        if out_png is not None:
+            png_warning = "PNG export skipped (svgwrite unavailable)."
+        return out_svg, "Pro renderer unavailable; fallback to raw SVG."
     out_svg = Path(out_svg)
 
-    block_width = 880
-    block_height = 300
-    gap_y = 50
+    scale = 0.04
+    container_len = max(1.0, _safe_float(spec.container_length_mm, 6058)) * scale
+    container_w = max(1.0, _safe_float(spec.container_width_mm, 2438)) * scale
+
+    fallback_gap = max(16.0, container_w * 0.25)
+    dc_gap = _gap_px(spec.dc_to_dc_clearance_m, scale, fallback_gap)
+    ac_gap = _gap_px(spec.dc_to_ac_clearance_m, scale, fallback_gap)
+    perimeter_px = _m_to_px(spec.perimeter_clearance_m, scale)
+
     left_margin = 40
     top_margin = 40
+    gap_y = 50
+    inner_pad = 10
+    title_h = 22
+    dim_band_h = 18
+    label_h = 18
 
-    rows_count = len(spec.block_indices_to_render)
-    width = block_width + left_margin * 2
-    height = top_margin * 2 + rows_count * block_height + max(0, rows_count - 1) * gap_y
+    use_template = bool(getattr(spec, "use_template", False))
+    dc_template_uri = None
+    ac_template_uri = None
+    template_warning = None
+    if use_template:
+        if getattr(spec, "dc_block_svg_path", None):
+            dc_template_uri = _svg_to_data_uri(Path(spec.dc_block_svg_path))
+        if getattr(spec, "ac_block_svg_path", None):
+            ac_template_uri = _svg_to_data_uri(Path(spec.ac_block_svg_path))
+        if dc_template_uri is None or ac_template_uri is None:
+            template_warning = "Layout template asset missing; using rectangles."
+
+    blocks = []
+    max_block_width = 0.0
+    for block_index in spec.block_indices_to_render:
+        dc_count = _resolve_block_count(spec, block_index)
+        cols, rows = _grid_positions(spec.arrangement)
+        cols = max(1, cols)
+        rows = max(1, rows)
+        if dc_count > cols * rows:
+            rows = int(math.ceil(dc_count / cols))
+
+        dc_w = cols * container_len + max(0, cols - 1) * dc_gap
+        dc_h = rows * container_w + max(0, rows - 1) * dc_gap
+        skid_w = container_len if spec.show_skid else 0.0
+        skid_h = container_w if spec.show_skid else 0.0
+
+        content_w = dc_w + (ac_gap if spec.show_skid else 0.0) + skid_w
+        content_h = max(dc_h, skid_h)
+
+        block_w = content_w + (inner_pad * 2) + (perimeter_px * 2)
+        block_h = title_h + dim_band_h + content_h + label_h + (perimeter_px * 2) + 24
+
+        blocks.append(
+            {
+                "block_index": block_index,
+                "dc_count": dc_count,
+                "cols": cols,
+                "rows": rows,
+                "dc_w": dc_w,
+                "dc_h": dc_h,
+                "content_w": content_w,
+                "content_h": content_h,
+                "block_w": block_w,
+                "block_h": block_h,
+            }
+        )
+        max_block_width = max(max_block_width, block_w)
+
+    height = top_margin * 2 + sum(b["block_h"] for b in blocks) + max(0, len(blocks) - 1) * gap_y
+    width = left_margin * 2 + max_block_width
 
     dwg = svgwrite.Drawing(
         filename=str(out_svg),
@@ -68,6 +419,7 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
 .dash { stroke: #000000; stroke-width: 1.2; fill: none; stroke-dasharray: 6,4; }
 .label { fill: #000000; }
 .title { font-size: 13px; font-weight: bold; }
+.dim-text { fill: #000000; font-size: 11px; }
 """
         )
     )
@@ -75,78 +427,110 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
     block_title_template = spec.labels.get("block_title") if isinstance(spec.labels, dict) else None
     bess_text_template = spec.labels.get("bess_range_text") if isinstance(spec.labels, dict) else None
     skid_text = spec.labels.get("skid_text") if isinstance(spec.labels, dict) else None
+    skid_subtext = spec.labels.get("skid_subtext") if isinstance(spec.labels, dict) else None
     if not block_title_template:
-        block_title_template = "Block {index}"
+        block_title_template = "Block {index}: DC Blocks={dc_blocks}"
     if not bess_text_template:
         bess_text_template = "BESS {start}~{end}"
     if not skid_text:
         skid_text = "PCS&MVT SKID"
 
-    cols, rows = _grid_positions(spec.arrangement)
-    dc_blocks_per_block = max(1, _safe_int(spec.dc_blocks_per_block, 4))
-    dc_blocks_per_block = max(dc_blocks_per_block, cols * rows)
+    block_offset = 0
+    current_y = top_margin
+    for block in blocks:
+        block_index = block["block_index"]
+        dc_count = block["dc_count"]
+        cols = block["cols"]
+        rows = block["rows"]
+        dc_w = block["dc_w"]
+        dc_h = block["dc_h"]
 
-    for row_idx, block_index in enumerate(spec.block_indices_to_render):
         block_x = left_margin
-        block_y = top_margin + row_idx * (block_height + gap_y)
-        dwg.add(dwg.rect(insert=(block_x, block_y), size=(block_width, block_height), class_="outline"))
+        block_y = current_y
+        if perimeter_px > 0:
+            dwg.add(dwg.rect(insert=(block_x, block_y), size=(block["block_w"], block["block_h"]), class_="dash"))
 
-        title_text = block_title_template.format(index=block_index)
-        dwg.add(dwg.text(title_text, insert=(block_x + 10, block_y + 20), class_="label title"))
+        start = block_offset + 1
+        end = block_offset + dc_count
+        block_offset += dc_count
 
-        dc_area_x = block_x + 30
-        dc_area_y = block_y + 50
-        dc_area_w = 520
-        dc_area_h = 200
-        dwg.add(dwg.rect(insert=(dc_area_x, dc_area_y), size=(dc_area_w, dc_area_h), class_="dash"))
+        try:
+            title_text = block_title_template.format(index=block_index, dc_blocks=dc_count, start=start, end=end)
+        except Exception:
+            title_text = block_title_template
+        dwg.add(dwg.text(title_text, insert=(block_x + 6, block_y + 16), class_="label title"))
 
-        cell_w = dc_area_w / cols
-        cell_h = dc_area_h / rows
+        content_x = block_x + perimeter_px + inner_pad
+        content_y = block_y + perimeter_px + title_h + dim_band_h + 6
+
+        dc_array_x = content_x
+        dc_array_y = content_y
 
         for r in range(rows):
             for c in range(cols):
                 idx = r * cols + c
-                if idx >= dc_blocks_per_block:
+                if idx >= dc_count:
                     continue
-                cell_x = dc_area_x + c * cell_w
-                cell_y = dc_area_y + r * cell_h
-                dwg.add(
-                    dwg.rect(
-                        insert=(cell_x + 8, cell_y + 8),
-                        size=(cell_w - 16, cell_h - 16),
-                        class_="outline",
-                    )
-                )
-                for line_idx in range(1, 4):
-                    y = cell_y + 8 + line_idx * (cell_h - 16) / 4
+                cell_x = dc_array_x + c * (container_len + dc_gap)
+                cell_y = dc_array_y + r * (container_w + dc_gap)
+                if use_template and dc_template_uri:
                     dwg.add(
-                        dwg.line(
-                            (cell_x + 8, y),
-                            (cell_x + cell_w - 8, y),
-                            class_="thin",
+                        dwg.image(
+                            href=dc_template_uri,
+                            insert=(cell_x, cell_y),
+                            size=(container_len, container_w),
                         )
                     )
+                else:
+                    dwg.add(
+                        dwg.rect(
+                            insert=(cell_x, cell_y),
+                            size=(container_len, container_w),
+                            class_="outline",
+                        )
+                    )
+                    dwg.add(dwg.text("DC Block", insert=(cell_x + 6, cell_y + 18), class_="label"))
 
-        start = (block_index - 1) * dc_blocks_per_block + 1
-        end = start + dc_blocks_per_block - 1
         bess_text = bess_text_template.format(start=start, end=end)
-        dwg.add(dwg.text(bess_text, insert=(dc_area_x + 10, dc_area_y + dc_area_h + 18), class_="label"))
+        dwg.add(dwg.text(bess_text, insert=(dc_array_x, dc_array_y + dc_h + 18), class_="label"))
 
         if spec.show_skid:
-            skid_x = block_x + dc_area_w + 80
-            skid_y = dc_area_y + 20
-            skid_w = 230
-            skid_h = 160
-            dwg.add(dwg.rect(insert=(skid_x, skid_y), size=(skid_w, skid_h), class_="outline"))
-            dwg.add(dwg.text(skid_text, insert=(skid_x + 10, skid_y + 22), class_="label"))
-            if isinstance(spec.labels, dict) and spec.labels.get("skid_subtext"):
+            skid_x = dc_array_x + dc_w + ac_gap
+            skid_y = dc_array_y + (dc_h - container_w) / 2
+            if use_template and ac_template_uri:
                 dwg.add(
-                    dwg.text(
-                        spec.labels.get("skid_subtext"),
-                        insert=(skid_x + 10, skid_y + 40),
-                        class_="label",
+                    dwg.image(
+                        href=ac_template_uri,
+                        insert=(skid_x, skid_y),
+                        size=(container_len, container_w),
                     )
                 )
+            else:
+                dwg.add(dwg.rect(insert=(skid_x, skid_y), size=(container_len, container_w), class_="outline"))
+                dwg.add(dwg.text(skid_text, insert=(skid_x + 6, skid_y + 18), class_="label"))
+                if skid_subtext:
+                    dwg.add(dwg.text(skid_subtext, insert=(skid_x + 6, skid_y + 34), class_="label"))
+
+        dim_y_main = dc_array_y - 6
+        dim_y_secondary = dim_y_main - 16
+        dc_text = _format_clearance(spec.dc_to_dc_clearance_m)
+        ac_text = _format_clearance(spec.dc_to_ac_clearance_m)
+
+        if cols > 1:
+            x1 = dc_array_x + container_len
+            x2 = dc_array_x + container_len + dc_gap
+            _draw_h_dimension(dwg, x1, x2, dim_y_main, dc_array_y, dc_text)
+        elif rows > 1:
+            y1 = dc_array_y + container_w
+            y2 = dc_array_y + container_w + dc_gap
+            _draw_v_dimension(dwg, y1, y2, dc_array_x - 6, dc_array_x, dc_text)
+
+        if spec.show_skid:
+            x1 = dc_array_x + dc_w
+            x2 = dc_array_x + dc_w + ac_gap
+            _draw_h_dimension(dwg, x1, x2, dim_y_secondary if cols > 1 else dim_y_main, dc_array_y, ac_text)
+
+        current_y += block["block_h"] + gap_y
 
     out_svg.parent.mkdir(parents=True, exist_ok=True)
     dwg.save()
@@ -162,4 +546,6 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
         except Exception:
             png_warning = "PNG export failed."
 
-    return out_svg, png_warning
+    if template_warning and png_warning:
+        return out_svg, f"{template_warning} {png_warning}"
+    return out_svg, template_warning or png_warning

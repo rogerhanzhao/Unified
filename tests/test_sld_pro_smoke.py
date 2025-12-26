@@ -14,8 +14,8 @@ def test_sld_pro_smoke(tmp_path: Path):
     render_jp_pro_svg(snapshot, pro_svg_path)
     svg_text = pro_svg_path.read_text(encoding="utf-8")
     assert svg_text.strip()
-    assert "PCS&amp;MV SKID (AC Block)" in svg_text
+    assert "PCS&amp;MVT SKID (AC Block)" in svg_text
     assert "Transformer" in svg_text
-    assert "DC Block" in svg_text
+    assert "DC Block Group" in svg_text
     assert "DC Block Allocation" in svg_text
     assert "5.106 MWh" in svg_text

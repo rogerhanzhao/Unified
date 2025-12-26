@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
 
-from calb_sizing_tool.common.allocation import evenly_distribute
+from calb_sizing_tool.common.allocation import allocate_dc_blocks, evenly_distribute
 
 
 def _safe_int(value, default=0) -> int:
@@ -185,7 +185,7 @@ def build_ac_block_group_spec(
         dc_total_group = (
             dc_totals_by_block[group_idx] if group_idx < len(dc_totals_by_block) else 0
         )
-        dc_blocks_per_feeder = evenly_distribute(dc_total_group, pcs_count)
+        dc_blocks_per_feeder = allocate_dc_blocks(dc_total_group, pcs_count)
     return AcBlockGroupSpec(
         group_index=group_index,
         mv_voltage_kv=mv_kv,

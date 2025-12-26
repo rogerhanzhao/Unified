@@ -12,6 +12,7 @@ from calb_sizing_tool.sld import (
     render_pow_sybl_svg,
     validate_snapshot_chain_v2,
 )
+from calb_sizing_tool.state.project_state import get_project_state, init_project_state
 
 try:
     import pypowsybl  # noqa: F401
@@ -41,6 +42,10 @@ def _default_value(store: dict, key: str, fallback):
 
 
 def show():
+    init_project_state()
+    project_state = get_project_state()
+    inputs_state = project_state.get("inputs", {})
+
     st.header("SLD Generator Pro (Engineering)")
     st.caption("Generates a monochrome single-chain SLD (RMU -> TR -> 1 AC block with 4 feeders).")
 
@@ -49,9 +54,17 @@ def show():
         st.code("pip install pypowsybl")
         return
 
-    stage13_output = st.session_state.get("stage13_output", {}) or {}
-    ac_output = st.session_state.get("ac_output", {}) or {}
-    dc_summary = st.session_state.get("dc_result_summary", {}) or {}
+    stage13_output = (
+        st.session_state.get("stage13_output")
+        or (project_state.get("dc", {}).get("results") or {}).get("stage13_output")
+        or {}
+    )
+    ac_output = st.session_state.get("ac_output") or (project_state.get("ac", {}).get("results") or {}) or {}
+    dc_summary = (
+        st.session_state.get("dc_result_summary")
+        or (project_state.get("dc", {}).get("results") or {}).get("dc_result_summary")
+        or {}
+    )
 
     if not stage13_output:
         st.warning("Stage 1-3 sizing data not found. Defaults will be used.")
@@ -72,7 +85,11 @@ def show():
     st.subheader("Chain Parameters")
     c1, c2, c3 = st.columns(3)
     mv_kv_default = _safe_float(
-        ac_output.get("grid_kv") or stage13_output.get("poi_nominal_voltage_kv"), 33.0
+        inputs_state.get("mv_kv")
+        or ac_output.get("mv_kv")
+        or ac_output.get("grid_kv")
+        or stage13_output.get("poi_nominal_voltage_kv"),
+        33.0,
     )
     mv_kv = c1.number_input(
         "MV nominal voltage (kV)",
@@ -81,7 +98,12 @@ def show():
         step=0.1,
     )
 
-    pcs_lv_v_default = _safe_float(ac_output.get("inverter_lv_v"), 800.0)
+    pcs_lv_v_default = inputs_state.get("lv_v")
+    if pcs_lv_v_default is None:
+        pcs_lv_v_default = ac_output.get("lv_v") or ac_output.get("inverter_lv_v")
+    if pcs_lv_v_default is None:
+        pcs_lv_v_default = inputs_state.setdefault("lv_v", 690.0)
+    pcs_lv_v_default = _safe_float(pcs_lv_v_default, 690.0)
     pcs_lv_v = c2.number_input(
         "PCS LV voltage (V_LL,rms)",
         min_value=100.0,

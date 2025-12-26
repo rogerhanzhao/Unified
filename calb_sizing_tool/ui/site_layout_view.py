@@ -7,6 +7,8 @@ import streamlit as st
 
 from calb_diagrams.layout_block_renderer import render_layout_block_svg
 from calb_diagrams.specs import build_layout_block_spec
+from calb_sizing_tool.common.dependencies import check_dependencies
+from calb_sizing_tool.state.session_state import init_shared_state
 
 
 def _safe_float(value, default=0.0):
@@ -24,64 +26,180 @@ def _safe_int(value, default=0):
 
 
 def show():
+    init_shared_state()
     st.header("Site Layout")
     st.caption("Template block layout (abstract engineering view).")
 
-    stage13_output = st.session_state.get("stage13_output", {}) or {}
-    ac_output = st.session_state.get("ac_output", {}) or {}
+    deps = check_dependencies()
+    svgwrite_ok = deps.get("svgwrite", False)
 
-    if not stage13_output or not ac_output:
+    dc_results = st.session_state.get("dc_results", {}) or {}
+    ac_results = st.session_state.get("ac_results", {}) or {}
+    layout_inputs = st.session_state.get("layout_inputs", {}) or {}
+    layout_results = st.session_state.get("layout_results", {}) or {}
+
+    stage13_output = st.session_state.get("stage13_output") or dc_results.get("stage13_output") or {}
+    dc_summary = st.session_state.get("dc_result_summary") or dc_results.get("dc_result_summary") or {}
+    ac_output = st.session_state.get("ac_output") or ac_results or {}
+
+    has_prereq = bool(stage13_output) and bool(ac_output)
+    if not has_prereq:
         st.warning("Run DC sizing and AC sizing first to generate layout inputs.")
-        return
 
-    stored_inputs = st.session_state.get("layout_inputs", {}) or {}
+    st.subheader("Data Status")
+    dc_time = dc_results.get("last_run_time") or "Not run"
+    ac_time = ac_results.get("last_run_time") or "Not run"
+    mv_kv_status = ac_output.get("mv_voltage_kv") or ac_output.get("mv_kv") or ac_output.get("grid_kv") or "TBD"
+    lv_v_status = ac_output.get("lv_voltage_v") or ac_output.get("lv_v") or ac_output.get("inverter_lv_v") or "TBD"
+    dc_blocks_total = stage13_output.get("dc_block_total_qty")
+    if dc_blocks_total is None:
+        dc_blocks_total = _safe_int(stage13_output.get("container_count"), 0) + _safe_int(
+            stage13_output.get("cabinet_count"), 0
+        )
+    c_status1, c_status2, c_status3 = st.columns(3)
+    c_status1.metric("DC Run", dc_time)
+    c_status2.metric("AC Run", ac_time)
+    c_status3.metric("MV/LV", f"{mv_kv_status} kV / {lv_v_status} V")
+    c_status4, c_status5 = st.columns(2)
+    c_status4.metric("DC Blocks (total)", dc_blocks_total or "TBD")
+    c_status5.metric("AC Blocks", ac_output.get("num_blocks") or "TBD")
 
-    ac_blocks_total = _safe_int(ac_output.get("num_blocks"), 0) or 1
-    block_options = list(range(1, ac_blocks_total + 1))
-    default_blocks = stored_inputs.get("block_indices_to_render") or [1]
-    if isinstance(default_blocks, int):
-        default_blocks = [default_blocks]
-    default_blocks = [b for b in default_blocks if b in block_options] or [1]
+    if not svgwrite_ok:
+        st.error("Missing dependency: svgwrite. Pro renderer unavailable; using raw fallback.")
 
-    selected_blocks = st.multiselect(
-        "Blocks to render",
-        block_options,
-        default=default_blocks,
+    def _init_input(field: str, default_value):
+        key = f"layout_inputs.{field}"
+        if key not in st.session_state:
+            st.session_state[key] = default_value
+        if field not in layout_inputs:
+            layout_inputs[field] = st.session_state[key]
+        return key
+
+    style_options = ["Raw V0.5 (Stable)", "Top-View V1.0 (Template)"]
+    style_default = layout_inputs.get("style") or style_options[0]
+    if style_default not in style_options:
+        style_default = style_options[0]
+    style = st.selectbox(
+        "Style",
+        style_options,
+        index=style_options.index(style_default),
+        key=_init_input("style", style_default),
     )
-    if not selected_blocks:
-        selected_blocks = [1]
+    layout_inputs["style"] = style
 
+    ac_blocks_total = max(_safe_int(ac_output.get("num_blocks"), 0), 1)
+    block_default = _safe_int(layout_inputs.get("block_index"), 1)
+    block_default = max(1, min(block_default, ac_blocks_total))
+    block_index = st.selectbox(
+        "AC Block Group",
+        list(range(1, ac_blocks_total + 1)),
+        index=block_default - 1,
+        key=_init_input("block_index", block_default),
+        disabled=not has_prereq,
+    )
+    layout_inputs["block_index"] = block_index
+
+    arrangement_options = ["Auto", "2x2", "1x4", "4x1"]
+    arrangement_default = layout_inputs.get("arrangement") or "Auto"
+    if arrangement_default not in arrangement_options:
+        arrangement_default = "Auto"
     arrangement = st.selectbox(
         "DC Block arrangement",
-        ["2x2", "1x4", "4x1"],
-        index=["2x2", "1x4", "4x1"].index(stored_inputs.get("arrangement", "2x2")),
+        arrangement_options,
+        index=arrangement_options.index(arrangement_default),
+        key=_init_input("arrangement", arrangement_default),
+        disabled=not has_prereq,
     )
-    show_skid = st.checkbox("Show PCS&MVT SKID", value=stored_inputs.get("show_skid", True))
+    layout_inputs["arrangement"] = arrangement
+    show_skid = st.checkbox(
+        "Show PCS&MVT SKID",
+        key=_init_input("show_skid", bool(layout_inputs.get("show_skid", True))),
+        disabled=not has_prereq,
+    )
+    layout_inputs["show_skid"] = show_skid
 
-    mv_kv = _safe_float(ac_output.get("grid_kv"), 33.0)
-    lv_v = _safe_float(ac_output.get("inverter_lv_v"), 690.0)
-    transformer_mva = _safe_float(ac_output.get("transformer_kva"), 0.0) / 1000.0
+    st.subheader("Clearances (m)")
+    c_clear1, c_clear2, c_clear3 = st.columns(3)
+    dc_to_dc_default = layout_inputs.get("dc_to_dc_clearance_m")
+    if dc_to_dc_default is None:
+        dc_to_dc_default = 0.3
+    dc_to_dc_clearance = c_clear1.number_input(
+        "DC to DC",
+        min_value=0.0,
+        key=_init_input("dc_to_dc_clearance_m", float(dc_to_dc_default)),
+        step=0.1,
+        help="Set to 0 for TBD.",
+        disabled=not has_prereq,
+    )
+    layout_inputs["dc_to_dc_clearance_m"] = dc_to_dc_clearance
+
+    dc_to_ac_default = layout_inputs.get("dc_to_ac_clearance_m")
+    if dc_to_ac_default is None:
+        dc_to_ac_default = 2.0
+    dc_to_ac_clearance = c_clear2.number_input(
+        "DC to AC",
+        min_value=0.0,
+        key=_init_input("dc_to_ac_clearance_m", float(dc_to_ac_default)),
+        step=0.1,
+        help="Set to 0 for TBD.",
+        disabled=not has_prereq,
+    )
+    layout_inputs["dc_to_ac_clearance_m"] = dc_to_ac_clearance
+
+    perimeter_default = layout_inputs.get("perimeter_clearance_m")
+    if perimeter_default is None:
+        perimeter_default = 0.0
+    perimeter_clearance = c_clear3.number_input(
+        "Perimeter",
+        min_value=0.0,
+        key=_init_input("perimeter_clearance_m", float(perimeter_default)),
+        step=0.1,
+        help="Optional; set to 0 to hide perimeter clearance.",
+        disabled=not has_prereq,
+    )
+    layout_inputs["perimeter_clearance_m"] = perimeter_clearance
+
+    mv_kv_val = ac_output.get("mv_voltage_kv") or ac_output.get("mv_kv") or ac_output.get("grid_kv")
+    mv_kv = _safe_float(mv_kv_val, None)
+
+    lv_v_val = ac_output.get("lv_voltage_v") or ac_output.get("lv_v") or ac_output.get("inverter_lv_v")
+    lv_v = _safe_float(lv_v_val, None)
+
+    transformer_mva = _safe_float(ac_output.get("transformer_mva"), 0.0)
+    if transformer_mva <= 0:
+        transformer_mva = _safe_float(ac_output.get("transformer_kva"), 0.0) / 1000.0
     if transformer_mva <= 0 and _safe_float(ac_output.get("block_size_mw"), 0.0) > 0:
         transformer_mva = _safe_float(ac_output.get("block_size_mw"), 5.0) / 0.9
 
     st.subheader("Labels")
     block_title = st.text_input(
         "Block title template",
-        value=stored_inputs.get("block_title") or "Block {index}",
+        key=_init_input("block_title", layout_inputs.get("block_title") or "Block {index}: DC Blocks={dc_blocks}"),
+        disabled=not has_prereq,
     )
+    layout_inputs["block_title"] = block_title
     bess_range_text = st.text_input(
         "BESS range text template",
-        value=stored_inputs.get("bess_range_text") or "BESS {start}~{end}",
+        key=_init_input("bess_range_text", layout_inputs.get("bess_range_text") or "BESS {start}~{end}"),
+        disabled=not has_prereq,
     )
+    layout_inputs["bess_range_text"] = bess_range_text
     skid_text = st.text_input(
         "SKID label",
-        value=stored_inputs.get("skid_text") or "PCS&MVT SKID",
+        key=_init_input("skid_text", layout_inputs.get("skid_text") or "PCS&MVT SKID"),
+        disabled=not has_prereq,
     )
-    skid_subtext_default = f"{mv_kv:.1f} kV / {lv_v:.0f} V, {transformer_mva:.1f} MVA"
+    layout_inputs["skid_text"] = skid_text
+    mv_text = f"{mv_kv:.1f} kV" if isinstance(mv_kv, (int, float)) and mv_kv > 0 else "TBD"
+    lv_text = f"{lv_v:.0f} V" if isinstance(lv_v, (int, float)) and lv_v > 0 else "TBD"
+    mva_text = f"{transformer_mva:.1f} MVA" if transformer_mva > 0 else "TBD"
+    skid_subtext_default = f"{mv_text} / {lv_text}, {mva_text}"
     skid_subtext = st.text_input(
         "SKID subtext",
-        value=stored_inputs.get("skid_subtext") or skid_subtext_default,
+        key=_init_input("skid_subtext", layout_inputs.get("skid_subtext") or skid_subtext_default),
+        disabled=not has_prereq,
     )
+    layout_inputs["skid_subtext"] = skid_subtext
 
     labels = {
         "block_title": block_title,
@@ -90,22 +208,88 @@ def show():
         "skid_subtext": skid_subtext,
     }
 
-    generate = st.button("Generate Layout")
-    st.session_state["layout_inputs"] = {
-        "block_indices_to_render": selected_blocks,
-        "arrangement": arrangement,
-        "show_skid": show_skid,
-        **labels,
-    }
+    def _parse_block_index(value) -> int:
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            digits = "".join(ch for ch in value if ch.isdigit())
+            return _safe_int(digits, 0)
+        return 0
 
-    if generate:
+    dc_block_counts_by_block = {}
+    allocation = ac_output.get("dc_block_allocation") if isinstance(ac_output, dict) else None
+    if isinstance(allocation, dict):
+        per_ac_block = allocation.get("per_ac_block")
+        if isinstance(per_ac_block, list):
+            for entry in per_ac_block:
+                idx = _parse_block_index(
+                    entry.get("block_id") or entry.get("block_index") or entry.get("block")
+                )
+                if idx <= 0:
+                    continue
+                count = entry.get("dc_blocks_total")
+                if count is None:
+                    per_feeder = entry.get("per_feeder")
+                    if isinstance(per_feeder, dict):
+                        count = sum(_safe_int(v, 0) for v in per_feeder.values())
+                dc_block_counts_by_block[idx] = _safe_int(count, 0)
+
+        if not dc_block_counts_by_block:
+            totals = ac_output.get("dc_blocks_total_by_block")
+            if isinstance(totals, list) and totals:
+                for idx, count in enumerate(totals, start=1):
+                    dc_block_counts_by_block[idx] = _safe_int(count, 0)
+
+    fallback_count = 0
+    if isinstance(allocation, dict):
+        fallback_count = _safe_int(allocation.get("total_dc_blocks"), 0)
+    if fallback_count <= 0:
+        fallback_count = _safe_int(ac_output.get("dc_blocks_per_ac"), 0)
+    if fallback_count <= 0:
+        fallback_count = _safe_int(ac_output.get("dc_blocks_total"), 0)
+    if fallback_count <= 0:
+        fallback_count = 4
+
+    selected_blocks = [block_index]
+    if dc_block_counts_by_block.get(block_index) is None:
+        dc_block_counts_by_block[block_index] = fallback_count
+
+    block_dc_count = dc_block_counts_by_block.get(block_index) or fallback_count
+    if arrangement == "Auto":
+        layout_arrangement = "1x4" if block_dc_count <= 2 else "2x2"
+    else:
+        layout_arrangement = arrangement
+
+    style_id = "raw_v05" if style.startswith("Raw") else "top_v10"
+    if style_id not in layout_results:
+        layout_results[style_id] = {}
+
+    generate_disabled = not has_prereq
+    if style_id == "top_v10" and not svgwrite_ok:
+        generate_disabled = True
+        st.error("Top-View rendering requires svgwrite. Install with `pip install svgwrite`.")
+
+    generate = st.button("Generate Layout", disabled=generate_disabled)
+
+    if generate and style_id in ("raw_v05", "top_v10"):
         try:
+            assets_root = Path("calb_assets") / "layout"
+            dc_asset = assets_root / "dc_block_top.svg"
+            ac_asset = assets_root / "ac_block_top.svg"
             spec = build_layout_block_spec(
                 ac_output=ac_output,
                 block_indices_to_render=selected_blocks,
                 labels=labels,
-                arrangement=arrangement,
+                dc_blocks_per_block=fallback_count,
+                dc_block_counts_by_block=dc_block_counts_by_block,
+                arrangement=layout_arrangement,
                 show_skid=show_skid,
+                dc_to_dc_clearance_m=dc_to_dc_clearance,
+                dc_to_ac_clearance_m=dc_to_ac_clearance,
+                perimeter_clearance_m=perimeter_clearance,
+                use_template=(style_id == "top_v10"),
+                dc_block_svg_path=str(dc_asset) if dc_asset.exists() else None,
+                ac_block_svg_path=str(ac_asset) if ac_asset.exists() else None,
             )
             with tempfile.TemporaryDirectory() as tmpdir:
                 tmp_path = Path(tmpdir)
@@ -122,26 +306,37 @@ def show():
                             st.code("pip install cairosvg")
 
                     if svg_path.exists():
-                        st.session_state["layout_svg_bytes"] = svg_path.read_bytes()
+                        svg_bytes = svg_path.read_bytes()
+                        layout_results[style_id] = {
+                            "svg": svg_bytes,
+                            "png": None,
+                            "meta": {
+                                "generated_at": __import__("datetime")
+                                .datetime.now()
+                                .isoformat(timespec="seconds"),
+                                "style": style_id,
+                            },
+                        }
+                        st.session_state["layout_results"] = layout_results
+                        layout_results["last_style"] = style_id
+                        st.session_state["layout_svg_bytes"] = svg_bytes
                     if png_path.exists():
                         png_bytes = png_path.read_bytes()
                         st.session_state["layout_png_bytes"] = png_bytes
-                        st.session_state["layout_png_meta"] = {
-                            "generated_at": __import__("datetime")
-                            .datetime.now()
-                            .isoformat(timespec="seconds"),
-                            "hash": __import__("hashlib")
-                            .sha256(png_bytes)
-                            .hexdigest()[:12],
-                        }
+                        if style_id in layout_results:
+                            layout_results[style_id]["png"] = png_bytes
+                            if isinstance(layout_results[style_id].get("meta"), dict):
+                                layout_results[style_id]["meta"]["hash"] = __import__("hashlib").sha256(png_bytes).hexdigest()[:12]
+                        st.session_state["layout_results"] = layout_results
                     st.session_state["layout_spec_json"] = json.dumps(
                         asdict(spec), indent=2, sort_keys=True
                     )
         except Exception as exc:
             st.error(f"Layout generation failed: {exc}")
 
-    layout_png = st.session_state.get("layout_png_bytes")
-    layout_svg = st.session_state.get("layout_svg_bytes")
+    cached = layout_results.get(style_id) or {}
+    layout_png = cached.get("png") or st.session_state.get("layout_png_bytes")
+    layout_svg = cached.get("svg") or st.session_state.get("layout_svg_bytes")
     if layout_png or layout_svg:
         st.subheader("Preview")
         if layout_png:

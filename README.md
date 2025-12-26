@@ -9,6 +9,7 @@ This repository contains a Streamlit application for sizing energy storage syste
    ```bash
    pip install -r requirements.txt
    ```
+   - `svgwrite` is required for Pro SVG rendering; if missing, the app falls back to raw renderers.
 
 ## Run the app
 
@@ -38,16 +39,19 @@ Ensure the Excel data files (for example, `ess_sizing_data_dictionary_v13_dc_aut
 1. Install dependencies: `pip install pypowsybl svgwrite cairosvg`.
 2. Run DC sizing and AC sizing.
 3. Open the `Single Line Diagram` page and select the AC block group.
-4. Fill the chain parameters and Electrical SLD Inputs, then click **Generate SLD Pro**.
-5. Download `sld_pro.svg` and `sld_pro.png`.
-6. For Raw debug view, switch to the Raw tab and generate `raw.svg` + `raw_metadata.json`.
+4. Choose the style (Raw V0.5 or Pro English V1.0), then click **Generate SLD**.
+5. Download the SVG (and PNG if available).
 
 ## Site Layout usage (template view)
 
 1. Run DC sizing and AC sizing.
-2. Open the `Site Layout` page and choose block indices.
-3. Click **Generate Layout**.
+2. Open the `Site Layout` page and choose the AC block group.
+3. Choose the style (Raw V0.5 or Top-View V1.0), then click **Generate Layout**.
 4. Download `layout_block.svg` and `layout_block.png`.
+
+## Legacy pages
+
+Legacy Streamlit page wrappers are kept in `pages_legacy` for debug use.
 
 ## SLD Generator Pro usage (engineering style)
 
@@ -64,6 +68,14 @@ Execute the test suite with:
 ```bash
 pytest -q
 ```
+
+## Smoke tests (manual)
+
+1. Install deps from `requirements.txt` and open SLD/Layout pages (no svgwrite crash; raw fallback works).
+2. Run AC sizing with LV=690 V, switch to SLD/Layout/Report, confirm 690 V is shown everywhere.
+3. Verify SLD PCS count matches AC sizing output (2/4/etc).
+4. Verify Layout shows 20 ft footprints and has clearance dimension annotations.
+5. Export DOCX: header logo appears on each section and DC sizing bar chart matches UI.
 感谢您使用和关注本项目！
 本项目基于开源生态构建，参考并使用了社区中多种优秀技术与工具。我们尊重开源许可证并在此明确致谢：
 
