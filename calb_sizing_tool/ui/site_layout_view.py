@@ -8,6 +8,7 @@ import streamlit as st
 from calb_diagrams.layout_block_renderer import render_layout_block_svg
 from calb_diagrams.specs import build_layout_block_spec
 from calb_sizing_tool.common.dependencies import check_dependencies
+from calb_sizing_tool.state.project_state import init_project_state
 from calb_sizing_tool.state.session_state import init_shared_state
 
 
@@ -27,6 +28,7 @@ def _safe_int(value, default=0):
 
 def show():
     init_shared_state()
+    init_project_state()
     st.header("Site Layout")
     st.caption("Template block layout (abstract engineering view).")
 
@@ -186,7 +188,7 @@ def show():
     layout_inputs["bess_range_text"] = bess_range_text
     skid_text = st.text_input(
         "SKID label",
-        key=_init_input("skid_text", layout_inputs.get("skid_text") or "PCS&MVT SKID"),
+        key=_init_input("skid_text", layout_inputs.get("skid_text") or "PCS&MVT SKID (AC Block)"),
         disabled=not has_prereq,
     )
     layout_inputs["skid_text"] = skid_text

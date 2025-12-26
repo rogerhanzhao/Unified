@@ -110,6 +110,31 @@ def _doc_to_bytes(doc: Document) -> bytes:
     return buf.getvalue()
 
 
+def _svg_bytes_to_png(svg_bytes: bytes) -> bytes | None:
+    if not svg_bytes:
+        return None
+    try:
+        import cairosvg
+    except Exception:
+        return None
+    try:
+        return cairosvg.svg2png(bytestring=svg_bytes)
+    except Exception:
+        return None
+
+
+def _resolve_diagram_bytes(ctx: dict | None, png_key: str, svg_key: str) -> bytes | None:
+    if not ctx:
+        return None
+    png_bytes = ctx.get(png_key)
+    if png_bytes:
+        return png_bytes
+    svg_bytes = ctx.get(svg_key)
+    if svg_bytes:
+        return _svg_bytes_to_png(svg_bytes)
+    return None
+
+
 # ----------------------------------------
 # Cover + Appendix helpers
 # ----------------------------------------
@@ -717,7 +742,19 @@ def create_combined_report(dc_output: dict, ac_output: dict, ctx: dict) -> bytes
     doc.add_paragraph("")
 
     doc.add_heading("6. Single Line Diagram", level=2)
-    doc.add_paragraph("SLD placeholder - to be provided.")
+    sld_png = _resolve_diagram_bytes(ctx or {}, "sld_png_bytes", "sld_svg_bytes")
+    if sld_png:
+        doc.add_picture(io.BytesIO(sld_png), width=Inches(6.7))
+    else:
+        doc.add_paragraph("Diagram not generated.")
+    doc.add_paragraph("")
+
+    doc.add_heading("7. Site Layout", level=2)
+    layout_png = _resolve_diagram_bytes(ctx or {}, "layout_png_bytes", "layout_svg_bytes")
+    if layout_png:
+        doc.add_picture(io.BytesIO(layout_png), width=Inches(6.7))
+    else:
+        doc.add_paragraph("Diagram not generated.")
     doc.add_paragraph("")
 
     _add_appendix(doc, ctx or {})

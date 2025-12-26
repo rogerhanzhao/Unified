@@ -180,6 +180,7 @@ def build_sld_group_spec(
 
     mv_kv = _safe_float(
         sld_inputs.get("mv_nominal_kv_ac")
+        or ac_output.get("mv_voltage_kv")
         or ac_output.get("mv_kv")
         or ac_output.get("grid_kv")
         or stage13_output.get("poi_nominal_voltage_kv"),
@@ -187,6 +188,7 @@ def build_sld_group_spec(
     )
     lv_v = _safe_float(
         sld_inputs.get("pcs_lv_voltage_v_ll")
+        or ac_output.get("lv_voltage_v")
         or ac_output.get("lv_v")
         or ac_output.get("inverter_lv_v"),
         0.0,

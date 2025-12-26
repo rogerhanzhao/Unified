@@ -22,6 +22,7 @@ from calb_sizing_tool.sld.snapshot_single_unit import (
 from calb_sizing_tool.sld.svg_postprocess_margin import add_margins
 from calb_sizing_tool.sld.svg_postprocess_raw import apply_raw_style
 from calb_sizing_tool.ui.sld_inputs import render_electrical_inputs
+from calb_sizing_tool.state.project_state import init_project_state
 from calb_sizing_tool.state.session_state import init_shared_state
 
 
@@ -128,6 +129,7 @@ def _resolve_dc_blocks_per_feeder(
 
 def show():
     init_shared_state()
+    init_project_state()
 
     st.header("Single Line Diagram")
     st.caption("Engineering-readable SLD for one AC block group.")

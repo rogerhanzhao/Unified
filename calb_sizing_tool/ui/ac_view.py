@@ -3,7 +3,6 @@
 import pandas as pd
 import streamlit as st
 
-from calb_sizing_tool.config import AC_DATA_PATH, DC_DATA_PATH
 from calb_sizing_tool.common.allocation import allocate_dc_blocks, evenly_distribute
 from calb_sizing_tool.models import DCBlockResult
 from calb_sizing_tool.reporting.export_docx import (
@@ -291,12 +290,55 @@ def show():
                     stage13_output.get("dc_nameplate_bol_mwh"), 3
                 )
 
+        diagram_results = st.session_state.get("diagram_results", {}) or {}
+        layout_results = st.session_state.get("layout_results", {}) or {}
+        sld_entry = None
+        if isinstance(diagram_results, dict) and diagram_results:
+            preferred = diagram_results.get("last_style")
+            if preferred and isinstance(diagram_results.get(preferred), dict):
+                sld_entry = diagram_results.get(preferred)
+            if sld_entry is None:
+                for style_key in ("raw_v05", "pro_v10", "jp_v08"):
+                    entry = diagram_results.get(style_key)
+                    if isinstance(entry, dict) and (entry.get("png") or entry.get("svg")):
+                        sld_entry = entry
+                        break
+        sld_png = sld_entry.get("png") if sld_entry else None
+        sld_svg = sld_entry.get("svg") if sld_entry else None
+        if sld_png is None:
+            sld_png = st.session_state.get("sld_pro_png_bytes")
+        if sld_svg is None:
+            sld_svg = (
+                st.session_state.get("sld_pro_jp_svg_bytes")
+                or st.session_state.get("sld_raw_svg_bytes")
+            )
+
+        layout_entry = None
+        if isinstance(layout_results, dict) and layout_results:
+            preferred = layout_results.get("last_style")
+            if preferred and isinstance(layout_results.get(preferred), dict):
+                layout_entry = layout_results.get(preferred)
+            if layout_entry is None:
+                for style_key in ("raw_v05", "top_v10"):
+                    entry = layout_results.get(style_key)
+                    if isinstance(entry, dict) and (entry.get("png") or entry.get("svg")):
+                        layout_entry = entry
+                        break
+        layout_png = layout_entry.get("png") if layout_entry else None
+        layout_svg = layout_entry.get("svg") if layout_entry else None
+        if layout_png is None:
+            layout_png = st.session_state.get("layout_png_bytes")
+        if layout_svg is None:
+            layout_svg = st.session_state.get("layout_svg_bytes")
+
         report_context = {
             "project_name": project_name,
             "inputs": inputs,
-            "dictionary_version": AC_DATA_PATH.name,
-            "input_file_version": DC_DATA_PATH.name,
             "tool_version": "V1.0",
+            "sld_png_bytes": sld_png,
+            "sld_svg_bytes": sld_svg,
+            "layout_png_bytes": layout_png,
+            "layout_svg_bytes": layout_svg,
         }
 
         st.subheader("Downloads")
