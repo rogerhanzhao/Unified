@@ -22,7 +22,7 @@ from calb_sizing_tool.sld.snapshot_single_unit import (
 from calb_sizing_tool.sld.svg_postprocess_margin import add_margins
 from calb_sizing_tool.sld.svg_postprocess_raw import apply_raw_style
 from calb_sizing_tool.ui.sld_inputs import render_electrical_inputs
-from calb_sizing_tool.state.project_state import init_project_state
+from calb_sizing_tool.state.project_state import get_project_state, init_project_state
 from calb_sizing_tool.state.session_state import init_shared_state
 
 
@@ -130,6 +130,7 @@ def _resolve_dc_blocks_per_feeder(
 def show():
     state = init_shared_state()
     init_project_state()
+    project_state = get_project_state()
 
     st.header("Single Line Diagram")
     st.caption("Engineering-readable SLD for one AC block group.")
@@ -139,11 +140,22 @@ def show():
     cairosvg_ok = deps.get("cairosvg", False)
     pypowsybl_ok = deps.get("pypowsybl", False)
 
-    dc_results = state.dc_results or {}
-    ac_results = state.ac_results or {}
+    def _pick_value(*values):
+        for value in values:
+            if value is not None:
+                return value
+        return None
+
+    dc_results = project_state.get("dc_results") or state.dc_results
+    ac_inputs = project_state.get("ac_inputs") or state.ac_inputs
+    ac_results = project_state.get("ac_results") or state.ac_results
     diagram_outputs = state.diagram_outputs
-    diagram_inputs = st.session_state.setdefault("diagram_inputs", {})
-    diagram_results = st.session_state.setdefault("diagram_results", {})
+    diagram_inputs = project_state.get("diagram_inputs") or st.session_state.setdefault(
+        "diagram_inputs", {}
+    )
+    diagram_results = project_state.get("diagram_outputs") or st.session_state.setdefault(
+        "diagram_results", {}
+    )
     artifacts = state.artifacts
 
     stage13_output = st.session_state.get("stage13_output") or dc_results.get("stage13_output") or {}
@@ -159,8 +171,22 @@ def show():
         st.warning("Please run DC Sizing + AC Sizing first.")
     dc_time = dc_results.get("last_run_time") or "Not run"
     ac_time = ac_results.get("last_run_time") or "Not run"
-    mv_kv_status = ac_output.get("mv_voltage_kv") or ac_output.get("mv_kv") or ac_output.get("grid_kv") or "TBD"
-    lv_v_status = ac_output.get("lv_voltage_v") or ac_output.get("lv_v") or ac_output.get("inverter_lv_v") or "TBD"
+    mv_kv_value = _pick_value(
+        ac_inputs.get("grid_kv"),
+        ac_inputs.get("mv_kv"),
+        ac_output.get("mv_voltage_kv"),
+        ac_output.get("mv_kv"),
+        ac_output.get("grid_kv"),
+    )
+    lv_v_value = _pick_value(
+        ac_inputs.get("lv_voltage_v"),
+        ac_inputs.get("pcs_lv_v"),
+        ac_output.get("lv_voltage_v"),
+        ac_output.get("lv_v"),
+        ac_output.get("inverter_lv_v"),
+    )
+    mv_kv_status = mv_kv_value if mv_kv_value is not None else "TBD"
+    lv_v_status = lv_v_value if lv_v_value is not None else "TBD"
     pcs_counts = _resolve_pcs_count_by_block(ac_output)
     pcs_count_status = pcs_counts[0] if pcs_counts else "TBD"
     dc_blocks_status = ac_output.get("dc_block_allocation", {}).get("total_dc_blocks")
@@ -179,30 +205,27 @@ def show():
         if not pypowsybl_ok:
             st.error("Raw fallback also requires pypowsybl. Install with `pip install pypowsybl`.")
 
-    def _init_input(field: str, default_value):
-        key = f"diagram_inputs.{field}"
-        if key not in st.session_state:
-            st.session_state[key] = default_value
-        if field not in diagram_inputs:
-            diagram_inputs[field] = st.session_state[key]
-        return key
-
-    scenario_default = diagram_inputs.get("scenario_id") or stage13_output.get("selected_scenario", "container_only")
+    scenario_default = diagram_inputs.get("scenario_id")
+    if scenario_default is None:
+        scenario_default = stage13_output.get("selected_scenario", "container_only")
     scenario_id = st.text_input(
         "Scenario ID",
-        key=_init_input("scenario_id", scenario_default),
+        value=str(scenario_default) if scenario_default is not None else "",
+        key="diagram_inputs.scenario_id",
     )
     diagram_inputs["scenario_id"] = scenario_id
 
     style_options = ["Raw V0.5 (Stable)", "Pro English V1.0"]
-    style_default = diagram_inputs.get("style") or style_options[0]
+    style_default = diagram_inputs.get("style")
+    if style_default is None:
+        style_default = style_options[0]
     if style_default not in style_options:
         style_default = style_options[0]
     style = st.selectbox(
         "Style",
         style_options,
         index=style_options.index(style_default),
-        key=_init_input("style", style_default),
+        key="diagram_inputs.style",
     )
     diagram_inputs["style"] = style
 
@@ -213,7 +236,7 @@ def show():
         "AC Block Group",
         list(range(1, ac_blocks_total + 1)),
         index=group_default - 1,
-        key=_init_input("group_index", group_default),
+        key="diagram_inputs.group_index",
         disabled=not has_prereq,
     )
     diagram_inputs["group_index"] = group_index
@@ -225,11 +248,12 @@ def show():
     c1, c2, c3 = st.columns(3)
     mv_kv_default = diagram_inputs.get("mv_kv")
     if mv_kv_default is None:
-        mv_kv_default = mv_kv_status if mv_kv_status != "TBD" else 33.0
+        mv_kv_default = mv_kv_value if mv_kv_value is not None else 33.0
     mv_kv = c1.number_input(
         "MV nominal voltage (kV)",
         min_value=1.0,
-        key=_init_input("mv_kv", float(mv_kv_default)),
+        value=float(mv_kv_default),
+        key="diagram_inputs.mv_kv",
         step=0.1,
         disabled=not has_prereq,
     )
@@ -237,11 +261,12 @@ def show():
 
     lv_v_default = diagram_inputs.get("lv_v")
     if lv_v_default is None:
-        lv_v_default = lv_v_status if lv_v_status != "TBD" else 690.0
+        lv_v_default = lv_v_value if lv_v_value is not None else 690.0
     pcs_lv_v = c2.number_input(
         "PCS LV voltage (V_LL,rms)",
         min_value=100.0,
-        key=_init_input("lv_v", float(lv_v_default)),
+        value=float(lv_v_default),
+        key="diagram_inputs.lv_v",
         step=10.0,
         disabled=not has_prereq,
     )
@@ -257,7 +282,8 @@ def show():
     transformer_rating_mva = c3.number_input(
         "Transformer rating (MVA)",
         min_value=0.1,
-        key=_init_input("transformer_mva", float(transformer_mva_default or 5.0)),
+        value=float(transformer_mva_default or 5.0),
+        key="diagram_inputs.transformer_mva",
         step=0.1,
         disabled=not has_prereq,
     )
@@ -274,7 +300,8 @@ def show():
     pcs_rating_each_kw = d1.number_input(
         "PCS rating each (kW)",
         min_value=0.0,
-        key=_init_input("pcs_rating_kw", float(pcs_rating_default or 1250.0)),
+        value=float(pcs_rating_default or 1250.0),
+        key="diagram_inputs.pcs_rating_kw",
         step=10.0,
         disabled=not has_prereq,
     )
@@ -292,7 +319,8 @@ def show():
     dc_block_energy_mwh = d2.number_input(
         "DC block energy (MWh)",
         min_value=0.0,
-        key=_init_input("dc_block_energy_mwh", float(dc_block_default or 5.106)),
+        value=float(dc_block_default or 5.106),
+        key="diagram_inputs.dc_block_energy_mwh",
         step=0.001,
         disabled=not has_prereq,
     )
@@ -313,14 +341,23 @@ def show():
             "dc_block_count": dc_blocks_per_feeder,
         }
     )
-    table_key = _init_input("dc_blocks_table", dc_df)
+
+    stored_df = st.session_state.get("diagram_inputs_dc_blocks_df")
+    if isinstance(stored_df, pd.DataFrame) and len(stored_df) != len(dc_df):
+        st.session_state.pop("diagram_inputs_dc_blocks_df")
+    if "diagram_inputs_dc_blocks_df" not in st.session_state:
+        st.session_state["diagram_inputs_dc_blocks_df"] = dc_df
+
     dc_df = st.data_editor(
-        dc_df,
+        st.session_state["diagram_inputs_dc_blocks_df"],
+        key="diagram_inputs_dc_blocks_editor",
         use_container_width=True,
+        hide_index=True,
         num_rows="fixed",
-        key=table_key,
         disabled=not has_prereq,
     )
+    st.session_state["diagram_inputs_dc_blocks_df"] = dc_df
+
     dc_blocks_per_feeder = [
         _safe_int(row.get("dc_block_count"), 0) for row in dc_df.to_dict("records")
     ]
@@ -505,8 +542,8 @@ def show():
             "Zoom (%)",
             min_value=50,
             max_value=200,
-            value=int(diagram_inputs.get("zoom", 100) or 100),
-            key=_init_input("zoom", 100),
+            value=int(diagram_inputs.get("zoom") if diagram_inputs.get("zoom") is not None else 100),
+            key="diagram_inputs.zoom",
         )
         diagram_inputs["zoom"] = zoom
         if png_bytes:
