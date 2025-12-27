@@ -1,0 +1,18 @@
+[Unit]
+Description=ngrok tunnel for CALB SizingTool (%i)
+After=network-online.target calb-sizingtool@%i.service
+Wants=network-online.target calb-sizingtool@%i.service
+
+[Service]
+Type=simple
+User=calb
+EnvironmentFile=/etc/calb-sizingtool/%i.env
+WorkingDirectory=/opt/calb/%i/CALB_SIZINGTOOL
+ExecStart=/usr/local/bin/ngrok http ${PORT} --log=stdout
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

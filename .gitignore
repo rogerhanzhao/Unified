@@ -16,3 +16,7 @@ __pycache__/
 
 # Temporary files
 *.log
+
+# Systemd env files
+deploy/systemd/*.env
+!deploy/systemd/*.env.example
