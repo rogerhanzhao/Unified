@@ -342,21 +342,21 @@ def show():
         }
     )
 
-    stored_df = st.session_state.get("diagram_inputs_dc_blocks_df")
+    stored_df = st.session_state.get("sld_dc_blocks_df")
     if isinstance(stored_df, pd.DataFrame) and len(stored_df) != len(dc_df):
-        st.session_state.pop("diagram_inputs_dc_blocks_df")
-    if "diagram_inputs_dc_blocks_df" not in st.session_state:
-        st.session_state["diagram_inputs_dc_blocks_df"] = dc_df
+        st.session_state.pop("sld_dc_blocks_df")
+    if "sld_dc_blocks_df" not in st.session_state:
+        st.session_state["sld_dc_blocks_df"] = dc_df
 
     dc_df = st.data_editor(
-        st.session_state["diagram_inputs_dc_blocks_df"],
-        key="diagram_inputs_dc_blocks_editor",
+        st.session_state["sld_dc_blocks_df"],
+        key="sld_dc_blocks_editor",
         use_container_width=True,
         hide_index=True,
         num_rows="fixed",
         disabled=not has_prereq,
     )
-    st.session_state["diagram_inputs_dc_blocks_df"] = dc_df
+    st.session_state["sld_dc_blocks_df"] = dc_df
 
     dc_blocks_per_feeder = [
         _safe_int(row.get("dc_block_count"), 0) for row in dc_df.to_dict("records")
@@ -523,6 +523,16 @@ def show():
                 }
                 diagram_results["last_style"] = style_id
                 st.session_state["diagram_results"] = diagram_results
+                outputs_dir = Path("outputs")
+                outputs_dir.mkdir(exist_ok=True)
+                if svg_bytes:
+                    svg_path = outputs_dir / "sld_latest.svg"
+                    svg_path.write_bytes(svg_bytes)
+                    diagram_outputs.sld_svg_path = str(svg_path)
+                if png_bytes:
+                    png_path = outputs_dir / "sld_latest.png"
+                    png_path.write_bytes(png_bytes)
+                    diagram_outputs.sld_png_path = str(png_path)
                 if svg_bytes:
                     artifacts["sld_svg_bytes"] = svg_bytes
                     diagram_outputs.sld_svg = svg_bytes

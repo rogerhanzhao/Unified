@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import streamlit as st
 from calb_sizing_tool.reporting.export_docx import (
     create_ac_report,
@@ -50,6 +52,17 @@ def show():
             st.session_state.get("sld_pro_jp_svg_bytes")
             or st.session_state.get("sld_raw_svg_bytes")
         )
+    outputs_dir = Path("outputs")
+    if sld_png is None:
+        candidate = outputs_dir / "sld_latest.png"
+        if candidate.exists():
+            sld_png = candidate.read_bytes()
+            artifacts["sld_png_bytes"] = sld_png
+    if sld_svg is None:
+        candidate = outputs_dir / "sld_latest.svg"
+        if candidate.exists():
+            sld_svg = candidate.read_bytes()
+            artifacts["sld_svg_bytes"] = sld_svg
 
     layout_entry = None
     if isinstance(layout_results, dict) and layout_results:
@@ -68,6 +81,16 @@ def show():
         layout_png = st.session_state.get("layout_png_bytes")
     if layout_svg is None:
         layout_svg = st.session_state.get("layout_svg_bytes")
+    if layout_png is None:
+        candidate = outputs_dir / "layout_latest.png"
+        if candidate.exists():
+            layout_png = candidate.read_bytes()
+            artifacts["layout_png_bytes"] = layout_png
+    if layout_svg is None:
+        candidate = outputs_dir / "layout_latest.svg"
+        if candidate.exists():
+            layout_svg = candidate.read_bytes()
+            artifacts["layout_svg_bytes"] = layout_svg
 
     st.header("Report Export")
     st.caption("Generate DOCX reports (V1 stable and V2.1 beta).")
@@ -83,8 +106,13 @@ def show():
         st.warning("Run DC sizing and AC sizing first to enable report export.")
         return
 
+    project_name = None
+    project = st.session_state.get("project")
+    if isinstance(project, dict):
+        project_name = project.get("name")
     project_name = (
-        st.session_state.get("project_name")
+        project_name
+        or st.session_state.get("project_name")
         or stage13_output.get("project_name")
         or ac_output.get("project_name")
         or "CALB ESS Project"
@@ -160,7 +188,8 @@ def show():
             file_suffix = "Combined"
             button_label = "Download Combined Report (DC+AC)"
 
-        proposal_filename = make_proposal_filename(project_name)
+        version = "V2.1" if report_template.startswith("V2.1") else "V1.0"
+        proposal_filename = make_proposal_filename(project_name, version=version)
         st.download_button(
             button_label,
             comb_bytes,

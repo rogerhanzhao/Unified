@@ -336,6 +336,20 @@ def build_report_context(
         sld_pro_png_bytes = sld_pro_png_bytes or state.get("sld_pro_png_bytes")
         layout_png_bytes = layout_png_bytes or state.get("layout_png_bytes")
 
+    outputs_dir = Path("outputs")
+    if sld_pro_png_bytes is None:
+        candidate = outputs_dir / "sld_latest.png"
+        if candidate.exists():
+            sld_pro_png_bytes = candidate.read_bytes()
+    if sld_preview_svg_bytes is None:
+        candidate = outputs_dir / "sld_latest.svg"
+        if candidate.exists():
+            sld_preview_svg_bytes = candidate.read_bytes()
+    if layout_png_bytes is None:
+        candidate = outputs_dir / "layout_latest.png"
+        if candidate.exists():
+            layout_png_bytes = candidate.read_bytes()
+
     return ReportContext(
         project_name=project_name,
         scenario_id=scenario_id,

@@ -37,7 +37,7 @@ def _setup_margins(doc: Document):
     section.bottom_margin = Inches(0.8)
 
 
-def add_header_logo(document: Document, logo_path_or_bytes) -> list:
+def add_header_logo(document: Document, logo_path_or_bytes, width=Inches(1.2)) -> list:
     tables = []
     for section in document.sections:
         header = section.header
@@ -50,15 +50,20 @@ def add_header_logo(document: Document, logo_path_or_bytes) -> list:
             p_logo = header_table.rows[0].cells[0].paragraphs[0]
             run_logo = p_logo.add_run()
             if isinstance(logo_path_or_bytes, (str, Path)):
-                run_logo.add_picture(str(logo_path_or_bytes), width=Inches(1.2))
+                run_logo.add_picture(str(logo_path_or_bytes), width=width)
             else:
-                run_logo.add_picture(io.BytesIO(logo_path_or_bytes), width=Inches(1.2))
+                run_logo.add_picture(io.BytesIO(logo_path_or_bytes), width=width)
     return tables
 
 
+def apply_header_logo(document: Document, logo_path=None, width=Inches(1.2)) -> list:
+    if logo_path is None:
+        logo_path = _resolve_logo_path()
+    return add_header_logo(document, logo_path, width=width)
+
+
 def _setup_header(doc: Document, title: str = "Confidential Sizing Report"):
-    logo_path = _resolve_logo_path()
-    header_tables = add_header_logo(doc, logo_path)
+    header_tables = apply_header_logo(doc)
 
     for header_table in header_tables:
         hdr_cells = header_table.rows[0].cells
@@ -632,12 +637,13 @@ def sanitize_filename(text: str, max_length: int = 80) -> str:
     return cleaned
 
 
-def make_proposal_filename(project_name: str | None) -> str:
-    stamp = datetime.date.today().strftime('%Y%m%d')
-    safe_project = sanitize_filename(project_name or '')
+def make_proposal_filename(project_name: str | None, version: str = "V2.1") -> str:
+    stamp = datetime.date.today().strftime("%Y%m%d")
+    safe_project = sanitize_filename(project_name or "")
+    safe_version = sanitize_filename(version or "", max_length=12) or "V2.1"
     if safe_project:
-        return f'CALB_BESS_Proposal_{safe_project}_{stamp}.docx'
-    return f'CALB_BESS_Proposal_{stamp}.docx'
+        return f"CALB_{safe_project}_BESS_Proposal_{stamp}_{safe_version}.docx"
+    return f"CALB_BESS_Proposal_{stamp}_{safe_version}.docx"
 
 
 def create_dc_report(dc_output: dict, ctx: dict) -> bytes:

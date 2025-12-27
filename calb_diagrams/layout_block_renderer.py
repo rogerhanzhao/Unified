@@ -9,7 +9,16 @@ try:  # pragma: no cover - optional dependency
 except Exception:  # pragma: no cover
     svgwrite = None
 
-from calb_diagrams.specs import LayoutBlockSpec
+from calb_diagrams.specs import (
+    LAYOUT_DASH_ARRAY,
+    LAYOUT_FONT_FAMILY,
+    LAYOUT_FONT_SIZE,
+    LAYOUT_FONT_SIZE_SMALL,
+    LAYOUT_FONT_SIZE_TITLE,
+    LAYOUT_STROKE_OUTLINE,
+    LAYOUT_STROKE_THIN,
+    LayoutBlockSpec,
+)
 
 try:
     import cairosvg
@@ -103,6 +112,29 @@ def _draw_v_dimension(dwg, y1, y2, x, ext_x, text):
     dwg.add(dwg.text(text, insert=(x + 6, (y1 + y2) / 2), class_="dim-text"))
 
 
+def _draw_dc_interior(dwg, x, y, w, h):
+    pad = min(10.0, max(4.0, w * 0.06))
+    cols, rows = 2, 2
+    cell_w = max(1.0, (w - pad * (cols + 1)) / cols)
+    cell_h = max(1.0, (h - pad * (rows + 1)) / rows)
+    for r in range(rows):
+        for c in range(cols):
+            cx = x + pad + c * (cell_w + pad)
+            cy = y + pad + r * (cell_h + pad)
+            dwg.add(dwg.rect(insert=(cx, cy), size=(cell_w, cell_h), class_="thin"))
+
+
+def _draw_ac_interior(dwg, x, y, w, h, skid_text: str):
+    section_w = w / 3.0
+    for i in range(1, 3):
+        dwg.add(dwg.line((x + section_w * i, y), (x + section_w * i, y + h), class_="thin"))
+    labels = ["PCS", "Transformer", "RMU"]
+    for idx, label in enumerate(labels):
+        cx = x + section_w * idx + 6
+        dwg.add(dwg.text(label, insert=(cx, y + 16), class_="dim-text"))
+    dwg.add(dwg.text(skid_text, insert=(x + w / 2, y + h / 2 + 4), class_="label", text_anchor="middle"))
+
+
 def _svg_to_data_uri(path: Path) -> str | None:
     try:
         data = Path(path).read_bytes()
@@ -158,6 +190,28 @@ def _draw_v_dimension_raw(lines, y1, y2, x, ext_x, text):
     _svg_line(lines, x, y2, x - arrow / 2, y2 - arrow)
     _svg_line(lines, x, y2, x + arrow / 2, y2 - arrow)
     _svg_text(lines, text, x + 6, (y1 + y2) / 2, class_name="dim-text")
+
+
+def _draw_dc_interior_raw(lines, x, y, w, h):
+    pad = min(10.0, max(4.0, w * 0.06))
+    cols, rows = 2, 2
+    cell_w = max(1.0, (w - pad * (cols + 1)) / cols)
+    cell_h = max(1.0, (h - pad * (rows + 1)) / rows)
+    for r in range(rows):
+        for c in range(cols):
+            cx = x + pad + c * (cell_w + pad)
+            cy = y + pad + r * (cell_h + pad)
+            _svg_rect(lines, cx, cy, cell_w, cell_h, class_name="thin")
+
+
+def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str):
+    section_w = w / 3.0
+    for i in range(1, 3):
+        _svg_line(lines, x + section_w * i, y, x + section_w * i, y + h, class_name="thin")
+    labels = ["PCS", "Transformer", "RMU"]
+    for idx, label in enumerate(labels):
+        _svg_text(lines, label, x + section_w * idx + 6, y + 16, class_name="dim-text")
+    _svg_text(lines, skid_text, x + w / 2, y + h / 2 + 4, class_name="label", anchor="middle")
 
 
 def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
@@ -222,13 +276,13 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
         '<?xml version="1.0" encoding="utf-8"?>',
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.1f}px" height="{height:.1f}px" viewBox="0 0 {width:.1f} {height:.1f}">',
         "<style>",
-        "svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }",
-        ".outline { stroke: #000000; stroke-width: 1.2; fill: none; }",
-        ".thin { stroke: #000000; stroke-width: 1; fill: none; }",
-        ".dash { stroke: #000000; stroke-width: 1.2; fill: none; stroke-dasharray: 6,4; }",
+        f"svg {{ font-family: {LAYOUT_FONT_FAMILY}, Helvetica, sans-serif; font-size: {LAYOUT_FONT_SIZE}px; }}",
+        f".outline {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_OUTLINE}; fill: none; }}",
+        f".thin {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_THIN}; fill: none; }}",
+        f".dash {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_OUTLINE}; fill: none; stroke-dasharray: {LAYOUT_DASH_ARRAY}; }}",
         ".label { fill: #000000; }",
-        ".title { font-size: 13px; font-weight: bold; }",
-        ".dim-text { fill: #000000; font-size: 11px; }",
+        f".title {{ font-size: {LAYOUT_FONT_SIZE_TITLE}px; font-weight: bold; }}",
+        f".dim-text {{ fill: #000000; font-size: {LAYOUT_FONT_SIZE_SMALL}px; }}",
         "</style>",
     ]
 
@@ -282,6 +336,7 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
                 cell_x = dc_array_x + c * (container_len + dc_gap)
                 cell_y = dc_array_y + r * (container_w + dc_gap)
                 _svg_rect(lines, cell_x, cell_y, container_len, container_w)
+                _draw_dc_interior_raw(lines, cell_x, cell_y, container_len, container_w)
                 _svg_text(lines, "DC Block", cell_x + 6, cell_y + 18)
 
         bess_text = bess_text_template.format(start=start, end=end)
@@ -289,11 +344,11 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
 
         if spec.show_skid:
             skid_x = dc_array_x + dc_w + ac_gap
-            skid_y = dc_array_y + (dc_h - container_w) / 2
+            skid_y = dc_array_y
             _svg_rect(lines, skid_x, skid_y, container_len, container_w)
-            _svg_text(lines, skid_text, skid_x + 6, skid_y + 18)
+            _draw_ac_interior_raw(lines, skid_x, skid_y, container_len, container_w, skid_text)
             if skid_subtext:
-                _svg_text(lines, skid_subtext, skid_x + 6, skid_y + 34)
+                _svg_text(lines, skid_subtext, skid_x + 6, skid_y + container_w - 10, class_name="dim-text")
 
         dim_y_main = dc_array_y - 6
         dim_y_secondary = dim_y_main - 16
@@ -304,7 +359,7 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
             x1 = dc_array_x + container_len
             x2 = dc_array_x + container_len + dc_gap
             _draw_h_dimension_raw(lines, x1, x2, dim_y_main, dc_array_y, dc_text)
-        elif rows > 1:
+        if rows > 1:
             y1 = dc_array_y + container_w
             y2 = dc_array_y + container_w + dc_gap
             _draw_v_dimension_raw(lines, y1, y2, dc_array_x - 6, dc_array_x, dc_text)
@@ -412,14 +467,14 @@ def render_layout_block_svg(
     )
     dwg.add(
         dwg.style(
-            """
-svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
-.outline { stroke: #000000; stroke-width: 1.2; fill: none; }
-.thin { stroke: #000000; stroke-width: 1; fill: none; }
-.dash { stroke: #000000; stroke-width: 1.2; fill: none; stroke-dasharray: 6,4; }
-.label { fill: #000000; }
-.title { font-size: 13px; font-weight: bold; }
-.dim-text { fill: #000000; font-size: 11px; }
+            f"""
+svg {{ font-family: {LAYOUT_FONT_FAMILY}, Helvetica, sans-serif; font-size: {LAYOUT_FONT_SIZE}px; }}
+.outline {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_OUTLINE}; fill: none; }}
+.thin {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_THIN}; fill: none; }}
+.dash {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_OUTLINE}; fill: none; stroke-dasharray: {LAYOUT_DASH_ARRAY}; }}
+.label {{ fill: #000000; }}
+.title {{ font-size: {LAYOUT_FONT_SIZE_TITLE}px; font-weight: bold; }}
+.dim-text {{ fill: #000000; font-size: {LAYOUT_FONT_SIZE_SMALL}px; }}
 """
         )
     )
@@ -489,6 +544,7 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
                             class_="outline",
                         )
                     )
+                    _draw_dc_interior(dwg, cell_x, cell_y, container_len, container_w)
                     dwg.add(dwg.text("DC Block", insert=(cell_x + 6, cell_y + 18), class_="label"))
 
         bess_text = bess_text_template.format(start=start, end=end)
@@ -496,7 +552,7 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
 
         if spec.show_skid:
             skid_x = dc_array_x + dc_w + ac_gap
-            skid_y = dc_array_y + (dc_h - container_w) / 2
+            skid_y = dc_array_y
             if use_template and ac_template_uri:
                 dwg.add(
                     dwg.image(
@@ -507,9 +563,9 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
                 )
             else:
                 dwg.add(dwg.rect(insert=(skid_x, skid_y), size=(container_len, container_w), class_="outline"))
-                dwg.add(dwg.text(skid_text, insert=(skid_x + 6, skid_y + 18), class_="label"))
+                _draw_ac_interior(dwg, skid_x, skid_y, container_len, container_w, skid_text)
                 if skid_subtext:
-                    dwg.add(dwg.text(skid_subtext, insert=(skid_x + 6, skid_y + 34), class_="label"))
+                    dwg.add(dwg.text(skid_subtext, insert=(skid_x + 6, skid_y + container_w - 10), class_="dim-text"))
 
         dim_y_main = dc_array_y - 6
         dim_y_secondary = dim_y_main - 16
@@ -520,7 +576,7 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
             x1 = dc_array_x + container_len
             x2 = dc_array_x + container_len + dc_gap
             _draw_h_dimension(dwg, x1, x2, dim_y_main, dc_array_y, dc_text)
-        elif rows > 1:
+        if rows > 1:
             y1 = dc_array_y + container_w
             y2 = dc_array_y + container_w + dc_gap
             _draw_v_dimension(dwg, y1, y2, dc_array_x - 6, dc_array_x, dc_text)

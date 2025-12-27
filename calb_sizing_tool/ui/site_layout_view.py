@@ -359,11 +359,20 @@ def show():
                         }
                         layout_results["last_style"] = style_id
                         st.session_state["layout_results"] = layout_results
+                        outputs_dir = Path("outputs")
+                        outputs_dir.mkdir(exist_ok=True)
+                        if svg_bytes:
+                            svg_path = outputs_dir / "layout_latest.svg"
+                            svg_path.write_bytes(svg_bytes)
+                            diagram_outputs.layout_svg_path = str(svg_path)
                         if svg_bytes:
                             st.session_state["layout_svg_bytes"] = svg_bytes
                             artifacts["layout_svg_bytes"] = svg_bytes
                             diagram_outputs.layout_svg = svg_bytes
                         if png_bytes:
+                            png_path = outputs_dir / "layout_latest.png"
+                            png_path.write_bytes(png_bytes)
+                            diagram_outputs.layout_png_path = str(png_path)
                             st.session_state["layout_png_bytes"] = png_bytes
                             artifacts["layout_png_bytes"] = png_bytes
                             diagram_outputs.layout_png = png_bytes
@@ -385,6 +394,23 @@ def show():
             st.image(layout_png, use_container_width=True)
         else:
             st.components.v1.html(layout_svg.decode("utf-8"), height=640, scrolling=True)
+
+        st.subheader("Configuration Summary")
+        pcs_counts = ac_output.get("pcs_count_by_block")
+        if isinstance(pcs_counts, list) and pcs_counts:
+            pcs_count = pcs_counts[block_index - 1] if block_index - 1 < len(pcs_counts) else pcs_counts[0]
+        else:
+            pcs_count = _safe_int(
+                ac_output.get("pcs_count_per_ac_block") or ac_output.get("pcs_per_block"), 0
+            )
+        mv_text = f"{mv_kv:.1f} kV" if isinstance(mv_kv, (int, float)) and mv_kv > 0 else "TBD"
+        lv_text = f"{lv_v:.0f} V" if isinstance(lv_v, (int, float)) and lv_v > 0 else "TBD"
+        tr_text = f"{transformer_mva:.1f} MVA" if transformer_mva > 0 else "TBD"
+        s1, s2, s3, s4 = st.columns(4)
+        s1.metric("DC Blocks (group)", block_dc_count or "TBD")
+        s2.metric("PCS Count", pcs_count or "TBD")
+        s3.metric("MV/LV", f"{mv_text} / {lv_text}")
+        s4.metric("Transformer", tr_text)
 
         st.subheader("Downloads")
         if st.session_state.get("layout_spec_json"):
