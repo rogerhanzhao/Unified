@@ -1,0 +1,13 @@
+version: 3
+# Replace the placeholders below on the target server only. Do not commit real tokens.
+authtoken: YOUR_NGROK_AUTHTOKEN
+# Uncomment and set if you have a reserved domain
+# region: ap
+# web_addr: 127.0.0.1:4040
+
+tunnels:
+  sizingtool:
+    proto: http
+    addr: 8501
+    # hostname: example.ngrok-free.app
+    # inspect: false

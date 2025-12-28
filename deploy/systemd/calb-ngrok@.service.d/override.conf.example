@@ -1,0 +1,6 @@
+[Service]
+# Location of the ngrok configuration that holds the real authtoken.
+Environment=NGROK_CONFIG=/home/calb/.config/ngrok/ngrok.yml
+# Use the wrapper to start ngrok with consistent logging and validation.
+ExecStart=
+ExecStart=/usr/local/bin/calb-ngrok-wrapper http ${PORT}

@@ -20,3 +20,10 @@ __pycache__/
 # Systemd env files
 deploy/systemd/*.env
 !deploy/systemd/*.env.example
+
+# Ngrok configuration (keep only example configs tracked)
+ngrok.yml
+ngrok.yaml
+deploy/ngrok/ngrok.yml
+deploy/systemd/calb-ngrok@.service.d/override.conf
+**/.ngrok2/
