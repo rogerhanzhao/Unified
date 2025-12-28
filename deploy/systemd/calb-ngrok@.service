@@ -8,9 +8,12 @@ Type=simple
 User=calb
 EnvironmentFile=/etc/calb-sizingtool/%i.env
 WorkingDirectory=/opt/calb/%i/CALB_SIZINGTOOL
-ExecStart=/usr/local/bin/ngrok http ${PORT} --log=stdout
-Restart=always
-RestartSec=5
+Environment=NGROK_CONFIG=/home/calb/.config/ngrok/ngrok.yml
+ExecStart=/usr/local/bin/calb-ngrok-wrapper %i
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=60
+StartLimitBurst=5
 StandardOutput=journal
 StandardError=journal
 
