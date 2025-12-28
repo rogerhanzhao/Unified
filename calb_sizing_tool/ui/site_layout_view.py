@@ -9,7 +9,7 @@ import streamlit as st
 from calb_diagrams.layout_block_renderer import render_layout_block_svg
 from calb_diagrams.specs import build_layout_block_spec
 from calb_sizing_tool.common.dependencies import check_dependencies
-from calb_sizing_tool.state.project_state import init_project_state
+from calb_sizing_tool.state.project_state import get_project_state, init_project_state
 from calb_sizing_tool.state.session_state import init_shared_state
 
 
@@ -30,17 +30,29 @@ def _safe_int(value, default=0):
 def show():
     state = init_shared_state()
     init_project_state()
+    project_state = get_project_state()
     st.header("Site Layout")
     st.caption("Template block layout (abstract engineering view).")
 
     deps = check_dependencies()
     svgwrite_ok = deps.get("svgwrite", False)
 
-    dc_results = state.dc_results or {}
-    ac_results = state.ac_results or {}
+    def _pick_value(*values):
+        for value in values:
+            if value is not None:
+                return value
+        return None
+
+    dc_results = project_state.get("dc_results") or state.dc_results
+    ac_inputs = project_state.get("ac_inputs") or state.ac_inputs
+    ac_results = project_state.get("ac_results") or state.ac_results
     diagram_outputs = state.diagram_outputs
-    layout_inputs = st.session_state.setdefault("layout_inputs", {})
-    layout_results = st.session_state.setdefault("layout_results", {})
+    layout_inputs = project_state.get("layout_inputs") or st.session_state.setdefault(
+        "layout_inputs", {}
+    )
+    layout_results = project_state.get("layout_outputs") or st.session_state.setdefault(
+        "layout_results", {}
+    )
     artifacts = state.artifacts
 
     stage13_output = st.session_state.get("stage13_output") or dc_results.get("stage13_output") or {}
@@ -54,8 +66,22 @@ def show():
     st.subheader("Data Status")
     dc_time = dc_results.get("last_run_time") or "Not run"
     ac_time = ac_results.get("last_run_time") or "Not run"
-    mv_kv_status = ac_output.get("mv_voltage_kv") or ac_output.get("mv_kv") or ac_output.get("grid_kv") or "TBD"
-    lv_v_status = ac_output.get("lv_voltage_v") or ac_output.get("lv_v") or ac_output.get("inverter_lv_v") or "TBD"
+    mv_kv_value = _pick_value(
+        ac_inputs.get("grid_kv"),
+        ac_inputs.get("mv_kv"),
+        ac_output.get("mv_voltage_kv"),
+        ac_output.get("mv_kv"),
+        ac_output.get("grid_kv"),
+    )
+    lv_v_value = _pick_value(
+        ac_inputs.get("lv_voltage_v"),
+        ac_inputs.get("pcs_lv_v"),
+        ac_output.get("lv_voltage_v"),
+        ac_output.get("lv_v"),
+        ac_output.get("inverter_lv_v"),
+    )
+    mv_kv_status = mv_kv_value if mv_kv_value is not None else "TBD"
+    lv_v_status = lv_v_value if lv_v_value is not None else "TBD"
     dc_blocks_total = stage13_output.get("dc_block_total_qty")
     if dc_blocks_total is None:
         dc_blocks_total = _safe_int(stage13_output.get("container_count"), 0) + _safe_int(
@@ -164,11 +190,8 @@ def show():
     )
     layout_inputs["perimeter_clearance_m"] = perimeter_clearance
 
-    mv_kv_val = ac_output.get("mv_voltage_kv") or ac_output.get("mv_kv") or ac_output.get("grid_kv")
-    mv_kv = _safe_float(mv_kv_val, None)
-
-    lv_v_val = ac_output.get("lv_voltage_v") or ac_output.get("lv_v") or ac_output.get("inverter_lv_v")
-    lv_v = _safe_float(lv_v_val, None)
+    mv_kv = _safe_float(mv_kv_value, None)
+    lv_v = _safe_float(lv_v_value, None)
 
     transformer_mva = _safe_float(ac_output.get("transformer_mva"), 0.0)
     if transformer_mva <= 0:
@@ -336,11 +359,20 @@ def show():
                         }
                         layout_results["last_style"] = style_id
                         st.session_state["layout_results"] = layout_results
+                        outputs_dir = Path("outputs")
+                        outputs_dir.mkdir(exist_ok=True)
+                        if svg_bytes:
+                            svg_path = outputs_dir / "layout_latest.svg"
+                            svg_path.write_bytes(svg_bytes)
+                            diagram_outputs.layout_svg_path = str(svg_path)
                         if svg_bytes:
                             st.session_state["layout_svg_bytes"] = svg_bytes
                             artifacts["layout_svg_bytes"] = svg_bytes
                             diagram_outputs.layout_svg = svg_bytes
                         if png_bytes:
+                            png_path = outputs_dir / "layout_latest.png"
+                            png_path.write_bytes(png_bytes)
+                            diagram_outputs.layout_png_path = str(png_path)
                             st.session_state["layout_png_bytes"] = png_bytes
                             artifacts["layout_png_bytes"] = png_bytes
                             diagram_outputs.layout_png = png_bytes
@@ -362,6 +394,23 @@ def show():
             st.image(layout_png, use_container_width=True)
         else:
             st.components.v1.html(layout_svg.decode("utf-8"), height=640, scrolling=True)
+
+        st.subheader("Configuration Summary")
+        pcs_counts = ac_output.get("pcs_count_by_block")
+        if isinstance(pcs_counts, list) and pcs_counts:
+            pcs_count = pcs_counts[block_index - 1] if block_index - 1 < len(pcs_counts) else pcs_counts[0]
+        else:
+            pcs_count = _safe_int(
+                ac_output.get("pcs_count_per_ac_block") or ac_output.get("pcs_per_block"), 0
+            )
+        mv_text = f"{mv_kv:.1f} kV" if isinstance(mv_kv, (int, float)) and mv_kv > 0 else "TBD"
+        lv_text = f"{lv_v:.0f} V" if isinstance(lv_v, (int, float)) and lv_v > 0 else "TBD"
+        tr_text = f"{transformer_mva:.1f} MVA" if transformer_mva > 0 else "TBD"
+        s1, s2, s3, s4 = st.columns(4)
+        s1.metric("DC Blocks (group)", block_dc_count or "TBD")
+        s2.metric("PCS Count", pcs_count or "TBD")
+        s3.metric("MV/LV", f"{mv_text} / {lv_text}")
+        s4.metric("Transformer", tr_text)
 
         st.subheader("Downloads")
         if st.session_state.get("layout_spec_json"):

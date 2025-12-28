@@ -6,7 +6,17 @@ try:  # pragma: no cover - optional dependency
 except Exception:  # pragma: no cover
     svgwrite = None
 
-from calb_diagrams.specs import SldGroupSpec
+from calb_diagrams.specs import (
+    SLD_DASH_ARRAY,
+    SLD_FONT_FAMILY,
+    SLD_FONT_SIZE,
+    SLD_FONT_SIZE_SMALL,
+    SLD_FONT_SIZE_TITLE,
+    SLD_STROKE_OUTLINE,
+    SLD_STROKE_THICK,
+    SLD_STROKE_THIN,
+    SldGroupSpec,
+)
 
 try:
     import cairosvg
@@ -77,6 +87,16 @@ def _wrap_text(text: str, max_chars: int) -> List[str]:
             current = word
     lines.append(current)
     return lines
+
+
+def _approx_chars(width_px: float) -> int:
+    return max(6, int(width_px / 7))
+
+
+def _table_row_lines(text: str, max_chars: int) -> List[str]:
+    value = str(text or "TBD")
+    lines = _wrap_text(value, max_chars)
+    return lines if lines else ["TBD"]
 
 
 def _rmu_class_kv(mv_kv: float) -> float:
@@ -155,11 +175,19 @@ def _build_equipment_list(spec: SldGroupSpec) -> List[Tuple[str, str]]:
     items.append(("LV Busbar", ", ".join(lv_parts) if lv_parts else "TBD"))
 
     pcs_text = _range_text(spec.pcs_rating_kw_list, "kW")
-    items.append(("PCS", f"{pcs_text} x {spec.pcs_count}"))
+    pcs_spec = f"{pcs_text} x {spec.pcs_count}"
+    if spec.lv_voltage_v_ll:
+        pcs_spec = f"{pcs_spec}, LV {format_v(spec.lv_voltage_v_ll)}"
+    items.append(("PCS", pcs_spec))
 
     items.append(("LV Cable", cables.get("lv_cable_spec") or "TBD"))
     items.append(("DC Cable", cables.get("dc_cable_spec") or "TBD"))
     items.append(("DC Fuse", dc_fuse.get("fuse_spec") or "TBD"))
+
+    battery_parts = [f"{format_mwh(spec.dc_block_energy_mwh)} each"]
+    if spec.dc_blocks_total_in_group:
+        battery_parts.append(f"x {_safe_int(spec.dc_blocks_total_in_group, 0)}")
+    items.append(("Battery Storage Bank", " ".join(battery_parts) if battery_parts else "TBD"))
 
     allocation_parts = [
         f"F{idx + 1}={spec.dc_blocks_per_feeder[idx] if idx < len(spec.dc_blocks_per_feeder) else 0}"
@@ -167,9 +195,6 @@ def _build_equipment_list(spec: SldGroupSpec) -> List[Tuple[str, str]]:
     ]
     allocation_text = ", ".join(allocation_parts) if allocation_parts else "TBD"
     items.append(("DC Block Allocation", allocation_text))
-    items.append(
-        ("DC Blocks Total (this group)", f"{_safe_int(spec.dc_blocks_total_in_group, 0)}")
-    )
 
     return items
 
@@ -187,13 +212,81 @@ def render_sld_pro_svg(
         return None, "Missing dependency: svgwrite. Please install: pip install svgwrite"
     out_svg = Path(out_svg)
 
-    width = 1600
-    height = 1000
+    width = 1750
     left_margin = 40
-    left_col_width = 360
+    left_col_width = 420
+    table_x = left_margin
+    table_y = 40
+    table_w = left_col_width
     diagram_left = left_margin + left_col_width + 40
     diagram_right = width - 40
     diagram_width = diagram_right - diagram_left
+
+    row_h = 16
+    title_h = 20
+    header_h = 18
+    item_col_w = 150
+    spec_col_w = table_w - item_col_w
+    items = _build_equipment_list(spec)
+
+    item_chars = _approx_chars(item_col_w)
+    spec_chars = _approx_chars(spec_col_w)
+    rows = []
+    for item, spec_text in items:
+        item_lines = _table_row_lines(item, item_chars)
+        spec_lines = _table_row_lines(spec_text, spec_chars)
+        rows.append(
+            {
+                "item_lines": item_lines,
+                "spec_lines": spec_lines,
+                "lines": max(len(item_lines), len(spec_lines)),
+            }
+        )
+
+    table_h = title_h + header_h + sum(row["lines"] * row_h for row in rows)
+
+    skid_x = diagram_left
+    skid_y = table_y
+    pcs_count = max(1, int(spec.pcs_count))
+    pcs_box_h = 54
+    pcs_pad = 60
+    available = max(240.0, diagram_width - pcs_pad * 2)
+    slot_w = available / pcs_count
+    pcs_box_w = min(160.0, max(110.0, slot_w - 10.0))
+    pcs_start_x = skid_x + pcs_pad + (slot_w - pcs_box_w) / 2
+
+    bus_y = skid_y + 230
+    pcs_y = bus_y + 24
+    dc_bus_y = pcs_y + pcs_box_h + 30
+    skid_h = max(360.0, dc_bus_y - skid_y + 50)
+
+    battery_y = skid_y + skid_h + 40
+    battery_title_h = 20
+    dc_box_h = 60
+    dc_box_w = pcs_box_w
+    dc_box_y = battery_y + battery_title_h + 30
+    battery_h = battery_title_h + 30 + dc_box_h + 40
+
+    allocation_parts = [
+        f"F{idx + 1}={spec.dc_blocks_per_feeder[idx] if idx < len(spec.dc_blocks_per_feeder) else 0}"
+        for idx in range(pcs_count)
+    ]
+    allocation_text = ", ".join(allocation_parts) if allocation_parts else "TBD"
+    summary_lines = [
+        f"Battery Storage Bank: {_safe_int(spec.dc_blocks_total_in_group, 0)} blocks @ {format_mwh(spec.dc_block_energy_mwh)} each",
+        f"PCS count: {pcs_count}, LV {format_v(spec.lv_voltage_v_ll)}",
+        f"Allocation: {allocation_text}",
+    ]
+    wrapped_lines = []
+    for line in summary_lines:
+        wrapped_lines.extend(_wrap_text(line, 64))
+
+    note_w = min(480.0, diagram_width * 0.9)
+    note_h = 24 + len(wrapped_lines) * 18
+    note_x = diagram_right - note_w
+    note_y = battery_y + battery_h + 24
+
+    height = max(table_y + table_h + 40, note_y + note_h + 40)
 
     dwg = svgwrite.Drawing(
         filename=str(out_svg),
@@ -202,50 +295,40 @@ def render_sld_pro_svg(
     )
     dwg.add(
         dwg.style(
-            """
-svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
-.outline { stroke: #000000; stroke-width: 1.2; fill: none; }
-.thin { stroke: #000000; stroke-width: 1; fill: none; }
-.thick { stroke: #000000; stroke-width: 2.2; fill: none; }
-.dash { stroke: #000000; stroke-width: 1.2; fill: none; stroke-dasharray: 6,4; }
-.label { fill: #000000; }
-.title { font-size: 13px; font-weight: bold; }
+            f"""
+svg {{ font-family: {SLD_FONT_FAMILY}, Helvetica, sans-serif; font-size: {SLD_FONT_SIZE}px; }}
+.outline {{ stroke: #000000; stroke-width: {SLD_STROKE_OUTLINE}; fill: none; }}
+.thin {{ stroke: #000000; stroke-width: {SLD_STROKE_THIN}; fill: none; }}
+.thick {{ stroke: #000000; stroke-width: {SLD_STROKE_THICK}; fill: none; }}
+.dash {{ stroke: #000000; stroke-width: {SLD_STROKE_OUTLINE}; fill: none; stroke-dasharray: {SLD_DASH_ARRAY}; }}
+.label {{ fill: #000000; }}
+.title {{ font-size: {SLD_FONT_SIZE_TITLE}px; font-weight: bold; }}
+.small {{ font-size: {SLD_FONT_SIZE_SMALL}px; }}
 """
         )
     )
 
-    table_x = left_margin
-    table_y = 40
-    row_h = 18
-    header_h = 22
-    items = _build_equipment_list(spec)
-    table_h = header_h + row_h * (len(items) + 1)
-    table_w = left_col_width
-
-    dwg.add(
-        dwg.rect(
-            insert=(table_x, table_y),
-            size=(table_w, table_h),
-            class_="outline",
-        )
-    )
-    col_split = table_x + 130
+    dwg.add(dwg.rect(insert=(table_x, table_y), size=(table_w, table_h), class_="outline"))
+    col_split = table_x + item_col_w
     dwg.add(dwg.line((col_split, table_y), (col_split, table_y + table_h), class_="thin"))
-    dwg.add(dwg.line((table_x, table_y + header_h), (table_x + table_w, table_y + header_h), class_="thin"))
-    dwg.add(dwg.text("Equipment List", insert=(table_x + 6, table_y + 15), class_="label title"))
-    dwg.add(dwg.text("Item", insert=(table_x + 6, table_y + header_h + 14), class_="label"))
-    dwg.add(dwg.text("Spec", insert=(col_split + 6, table_y + header_h + 14), class_="label"))
+    dwg.add(dwg.line((table_x, table_y + title_h), (table_x + table_w, table_y + title_h), class_="thin"))
+    dwg.add(dwg.line((table_x, table_y + title_h + header_h), (table_x + table_w, table_y + title_h + header_h), class_="thin"))
+    dwg.add(dwg.text("Equipment List", insert=(table_x + 6, table_y + 14), class_="label title"))
+    dwg.add(dwg.text("Item", insert=(table_x + 6, table_y + title_h + 13), class_="label"))
+    dwg.add(dwg.text("Spec", insert=(col_split + 6, table_y + title_h + 13), class_="label"))
 
-    for idx, (item, spec_text) in enumerate(items, start=1):
-        y = table_y + header_h + row_h * idx + 14
-        dwg.add(dwg.text(item, insert=(table_x + 6, y), class_="label"))
-        dwg.add(dwg.text(spec_text, insert=(col_split + 6, y), class_="label"))
+    current_y = table_y + title_h + header_h
+    for row in rows:
+        for line_idx, line in enumerate(row["item_lines"]):
+            y = current_y + row_h * (line_idx + 1) - 3
+            dwg.add(dwg.text(line, insert=(table_x + 6, y), class_="label"))
+        for line_idx, line in enumerate(row["spec_lines"]):
+            y = current_y + row_h * (line_idx + 1) - 3
+            dwg.add(dwg.text(line, insert=(col_split + 6, y), class_="label"))
+        current_y += row_h * row["lines"]
+        dwg.add(dwg.line((table_x, current_y), (table_x + table_w, current_y), class_="thin"))
 
-    skid_x = diagram_left
-    skid_y = 40
-    skid_w = diagram_width
-    skid_h = 420
-    dwg.add(dwg.rect(insert=(skid_x, skid_y), size=(skid_w, skid_h), class_="dash"))
+    dwg.add(dwg.rect(insert=(skid_x, skid_y), size=(diagram_width, skid_h), class_="dash"))
     dwg.add(
         dwg.text(
             "PCS&MVT SKID (AC Block)",
@@ -262,9 +345,9 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
     if not to_other_rmu:
         to_other_rmu = "To Other RMU"
 
-    terminal_y = skid_y + 50
-    terminal_left_x = skid_x + 60
-    terminal_right_x = skid_x + skid_w - 60
+    terminal_y = skid_y + 55
+    terminal_left_x = skid_x + 70
+    terminal_right_x = skid_x + diagram_width - 70
     dwg.add(dwg.text(to_switchgear, insert=(terminal_left_x - 10, terminal_y - 10), class_="label"))
     dwg.add(
         dwg.text(
@@ -277,7 +360,7 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
     dwg.add(dwg.line((terminal_left_x, terminal_y), (terminal_left_x, terminal_y + 20), class_="thin"))
     dwg.add(dwg.line((terminal_right_x, terminal_y), (terminal_right_x, terminal_y + 20), class_="thin"))
 
-    rmu_center_y = skid_y + 90
+    rmu_center_y = skid_y + 95
     rmu_left_x = skid_x + 80
     rmu_right_x = rmu_left_x + 70
     dwg.add(dwg.text("RMU", insert=(rmu_left_x, rmu_center_y - 25), class_="label"))
@@ -293,8 +376,8 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
     dwg.add(dwg.line((ground_x - 6, ground_y + 14), (ground_x + 6, ground_y + 14), class_="thin"))
     dwg.add(dwg.line((ground_x - 4, ground_y + 18), (ground_x + 4, ground_y + 18), class_="thin"))
 
-    tr_x = skid_x + skid_w / 2 - 40
-    tr_y = skid_y + 120
+    tr_x = skid_x + diagram_width / 2 - 40
+    tr_y = skid_y + 130
     dwg.add(dwg.circle(center=(tr_x, tr_y + 25), r=18, class_="outline"))
     dwg.add(dwg.circle(center=(tr_x + 50, tr_y + 25), r=18, class_="outline"))
     dwg.add(dwg.line((tr_x + 18, tr_y + 25), (tr_x + 32, tr_y + 25), class_="thin"))
@@ -320,20 +403,10 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
     for idx, line in enumerate(tr_lines):
         dwg.add(dwg.text(line, insert=(tr_text_x, tr_text_y + idx * 16), class_="label"))
 
-    bus_y = skid_y + 270
     bus_x1 = skid_x + 80
-    bus_x2 = skid_x + skid_w - 80
+    bus_x2 = skid_x + diagram_width - 80
     dwg.add(dwg.line((bus_x1, bus_y), (bus_x2, bus_y), class_="thick"))
     dwg.add(dwg.text("LV Busbar", insert=(bus_x1, bus_y - 8), class_="label"))
-
-    pcs_count = max(1, int(spec.pcs_count))
-    pcs_box_h = 52
-    pcs_pad = 60
-    available = max(200.0, skid_w - pcs_pad * 2)
-    slot_w = available / pcs_count
-    pcs_box_w = min(170.0, max(110.0, slot_w - 10.0))
-    pcs_start_x = skid_x + pcs_pad + (slot_w - pcs_box_w) / 2
-    pcs_y = bus_y + 28
 
     for idx in range(pcs_count):
         x = pcs_start_x + idx * slot_w
@@ -350,87 +423,57 @@ svg { font-family: Arial, Helvetica, sans-serif; font-size: 12px; }
             )
         )
 
-    dc_group_y = skid_y + skid_h + 60
-    dc_box_h = 50
-    dc_box_w = pcs_box_w
-    combiner_h = 22
-    combiner_w = pcs_box_w * 0.7
+    dwg.add(dwg.line((bus_x1, dc_bus_y), (bus_x2, dc_bus_y), class_="thick"))
+    dwg.add(dwg.text("DC BUSBAR", insert=(bus_x1, dc_bus_y - 8), class_="label"))
+
+    fuse_h = 10
+    fuse_w = 18
+    for idx in range(pcs_count):
+        x = pcs_start_x + idx * slot_w
+        line_x = x + pcs_box_w / 2
+        dwg.add(dwg.line((line_x, pcs_y + pcs_box_h), (line_x, dc_bus_y), class_="thin"))
+        fuse_y = (pcs_y + pcs_box_h + dc_bus_y) / 2 - fuse_h / 2
+        dwg.add(dwg.rect(insert=(line_x - fuse_w / 2, fuse_y), size=(fuse_w, fuse_h), class_="outline"))
+
+    battery_x = skid_x + 40
+    battery_w = diagram_width - 80
+    dwg.add(dwg.rect(insert=(battery_x, battery_y), size=(battery_w, battery_h), class_="dash"))
+    dwg.add(dwg.text("Battery Storage Bank", insert=(battery_x + 8, battery_y + 16), class_="label title"))
 
     for idx in range(pcs_count):
         count = spec.dc_blocks_per_feeder[idx] if idx < len(spec.dc_blocks_per_feeder) else 0
         x = pcs_start_x + idx * slot_w
         line_x = x + pcs_box_w / 2
-        comb_x = x + (pcs_box_w - combiner_w) / 2
-        comb_y = pcs_y + pcs_box_h + 10
-        dwg.add(dwg.line((line_x, pcs_y + pcs_box_h), (line_x, comb_y), class_="thin"))
-        dwg.add(dwg.rect(insert=(comb_x, comb_y), size=(combiner_w, combiner_h), class_="outline"))
+        dwg.add(dwg.line((line_x, dc_bus_y), (line_x, dc_box_y - 10), class_="thin"))
+        dwg.add(dwg.text(f"F{idx + 1}", insert=(line_x - 6, dc_box_y - 14), class_="small"))
+
+        dwg.add(dwg.rect(insert=(x, dc_box_y), size=(dc_box_w, dc_box_h), class_="outline"))
+        dwg.add(dwg.text(f"F{idx + 1}", insert=(x + 6, dc_box_y + 18), class_="label"))
         dwg.add(
             dwg.text(
-                "DC Combiner (simplified)",
-                insert=(comb_x + 4, comb_y + 15),
-                class_="label",
+                f"DC Block x {count}",
+                insert=(x + 6, dc_box_y + 34),
+                class_="small",
             )
         )
         dwg.add(
-            dwg.line(
-                (line_x, comb_y + combiner_h),
-                (line_x, dc_group_y),
-                class_="thin",
+            dwg.text(
+                f"{format_mwh(spec.dc_block_energy_mwh)} each",
+                insert=(x + 6, dc_box_y + 50),
+                class_="small",
             )
         )
 
-        dwg.add(dwg.rect(insert=(x, dc_group_y), size=(dc_box_w, dc_box_h), class_="outline"))
-        dc_text = f"DC Block Group ({format_mwh(spec.dc_block_energy_mwh)} each) x {count}"
-        dwg.add(dwg.text(dc_text, insert=(x + 6, dc_group_y + 30), class_="label"))
-
-    battery_x = skid_x + 40
-    battery_y = dc_group_y - 20
-    battery_w = skid_w - 80
-    battery_h = dc_box_h + 60
-    dwg.add(dwg.rect(insert=(battery_x, battery_y), size=(battery_w, battery_h), class_="dash"))
-    dwg.add(dwg.text("DC Block Group", insert=(battery_x + 8, battery_y + 16), class_="label title"))
-    battery_symbol_x = battery_x + 8
-    battery_symbol_y = battery_y + 26
-    dwg.add(dwg.rect(insert=(battery_symbol_x, battery_symbol_y), size=(28, 16), class_="outline"))
-    dwg.add(dwg.line((battery_symbol_x + 28, battery_symbol_y + 4), (battery_symbol_x + 32, battery_symbol_y + 4), class_="thin"))
-    dwg.add(dwg.line((battery_symbol_x + 28, battery_symbol_y + 12), (battery_symbol_x + 32, battery_symbol_y + 12), class_="thin"))
-    dwg.add(dwg.text("+", insert=(battery_symbol_x + 6, battery_symbol_y + 12), class_="label"))
-    dwg.add(dwg.text("-", insert=(battery_symbol_x + 18, battery_symbol_y + 12), class_="label"))
-
-    allocation_parts = [
-        f"F{idx + 1}={spec.dc_blocks_per_feeder[idx] if idx < len(spec.dc_blocks_per_feeder) else 0}"
-        for idx in range(pcs_count)
-    ]
-    allocation_text = "DC Block Allocation: " + ", ".join(allocation_parts)
-
-    note_lines = [
-        f"Group Summary: PCS={pcs_count}, DC Blocks Total={spec.dc_blocks_total_in_group}",
-        allocation_text,
-        "Note: Counts indicate allocation for sizing/configuration; detailed DC wiring is not represented.",
-    ]
-    wrapped_lines = []
-    for line in note_lines:
-        wrapped_lines.extend(_wrap_text(line, 56))
-
-    note_w = 430
-    note_h = 24 + len(wrapped_lines) * 18
-    note_x = diagram_right - note_w
-    note_y = battery_y + battery_h + 30
     dwg.add(dwg.rect(insert=(note_x, note_y), size=(note_w, note_h), class_="outline"))
     dwg.add(
         dwg.text(
-            "DC Block Allocation (for this AC Block group)",
+            "Allocation Summary (AC Block group)",
             insert=(note_x + 8, note_y + 18),
             class_="label title",
         )
     )
     for idx, line in enumerate(wrapped_lines):
         dwg.add(dwg.text(line, insert=(note_x + 8, note_y + 36 + idx * 18), class_="label"))
-
-    total_height = max(height, int(note_y + note_h + 40))
-    if total_height != height:
-        dwg["height"] = f"{total_height}px"
-        dwg.viewbox(0, 0, width, total_height)
 
     out_svg.parent.mkdir(parents=True, exist_ok=True)
     dwg.save()

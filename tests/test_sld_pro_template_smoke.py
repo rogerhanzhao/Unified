@@ -46,5 +46,7 @@ def test_sld_pro_template_smoke(tmp_path: Path):
     svg_text = svg_path.read_text(encoding="utf-8")
     assert svg_text.strip()
     assert "PCS&amp;MVT SKID (AC Block)" in svg_text
-    assert "DC Block Group" in svg_text
+    assert "Battery Storage Bank" in svg_text
+    assert "DC BUSBAR" in svg_text
     assert "DC Block Allocation" in svg_text
+    assert "DC Combiner" not in svg_text

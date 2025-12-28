@@ -1,4 +1,5 @@
 ﻿import math
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -326,6 +327,16 @@ def show():
                 or st.session_state.get("sld_raw_svg_bytes")
             )
 
+        outputs_dir = Path("outputs")
+        if sld_png is None:
+            candidate = outputs_dir / "sld_latest.png"
+            if candidate.exists():
+                sld_png = candidate.read_bytes()
+        if sld_svg is None:
+            candidate = outputs_dir / "sld_latest.svg"
+            if candidate.exists():
+                sld_svg = candidate.read_bytes()
+
         layout_entry = None
         if isinstance(layout_results, dict) and layout_results:
             preferred = layout_results.get("last_style")
@@ -343,6 +354,15 @@ def show():
             layout_png = st.session_state.get("layout_png_bytes")
         if layout_svg is None:
             layout_svg = st.session_state.get("layout_svg_bytes")
+
+        if layout_png is None:
+            candidate = outputs_dir / "layout_latest.png"
+            if candidate.exists():
+                layout_png = candidate.read_bytes()
+        if layout_svg is None:
+            candidate = outputs_dir / "layout_latest.svg"
+            if candidate.exists():
+                layout_svg = candidate.read_bytes()
 
         report_context = {
             "project_name": project_name,
@@ -404,7 +424,8 @@ def show():
                     file_suffix = "Combined"
                     button_label = "Download Combined Report (DC+AC)"
 
-                proposal_filename = make_proposal_filename(project_name)
+                version = "V2.1" if report_template.startswith("V2.1") else "V1.0"
+                proposal_filename = make_proposal_filename(project_name, version=version)
                 st.download_button(
                     button_label,
                     comb_bytes,

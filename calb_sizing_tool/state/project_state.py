@@ -10,9 +10,37 @@ def _default_diagram_state() -> dict:
     return {"generated_from_ac_run_id": None, "svg": None, "png": None, "meta": {}}
 
 
+def _ensure_state_dict(state: dict, key: str, fallback: dict) -> dict:
+    value = state.get(key)
+    if isinstance(value, dict):
+        return value
+    state[key] = fallback
+    return fallback
+
+
 def init_project_state() -> None:
     init_shared_state()
     state = st.session_state.setdefault("project_state", {})
+
+    dc_inputs = st.session_state.setdefault("dc_inputs", {})
+    dc_results = st.session_state.setdefault("dc_results", {})
+    ac_inputs = st.session_state.setdefault("ac_inputs", {})
+    ac_results = st.session_state.setdefault("ac_results", {})
+    diagram_inputs = st.session_state.setdefault("diagram_inputs", {})
+    diagram_results = st.session_state.setdefault("diagram_results", {})
+    layout_inputs = st.session_state.setdefault("layout_inputs", {})
+    layout_results = st.session_state.setdefault("layout_results", {})
+
+    st.session_state["dc_inputs"] = _ensure_state_dict(state, "dc_inputs", dc_inputs)
+    st.session_state["dc_results"] = _ensure_state_dict(state, "dc_results", dc_results)
+    st.session_state["ac_inputs"] = _ensure_state_dict(state, "ac_inputs", ac_inputs)
+    st.session_state["ac_results"] = _ensure_state_dict(state, "ac_results", ac_results)
+    st.session_state["diagram_inputs"] = _ensure_state_dict(state, "diagram_inputs", diagram_inputs)
+    st.session_state["diagram_results"] = _ensure_state_dict(
+        state, "diagram_outputs", diagram_results
+    )
+    st.session_state["layout_inputs"] = _ensure_state_dict(state, "layout_inputs", layout_inputs)
+    st.session_state["layout_results"] = _ensure_state_dict(state, "layout_outputs", layout_results)
 
     inputs = state.setdefault("inputs", {})
     inputs.setdefault("poi_freq_hz", None)

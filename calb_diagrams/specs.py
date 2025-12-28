@@ -3,6 +3,23 @@ from typing import Dict, List, Optional, Sequence
 
 from calb_sizing_tool.common.allocation import allocate_dc_blocks, evenly_distribute
 
+SLD_FONT_FAMILY = "Arial"
+SLD_FONT_SIZE = 11
+SLD_FONT_SIZE_SMALL = 10
+SLD_FONT_SIZE_TITLE = 12
+SLD_STROKE_THIN = 1.0
+SLD_STROKE_THICK = 2.0
+SLD_STROKE_OUTLINE = 1.4
+SLD_DASH_ARRAY = "6,4"
+
+LAYOUT_FONT_FAMILY = "Arial"
+LAYOUT_FONT_SIZE = 11
+LAYOUT_FONT_SIZE_SMALL = 10
+LAYOUT_FONT_SIZE_TITLE = 12
+LAYOUT_STROKE_THIN = 1.0
+LAYOUT_STROKE_OUTLINE = 1.2
+LAYOUT_DASH_ARRAY = "6,4"
+
 
 def _safe_int(value, default=0) -> int:
     try:
