@@ -1324,6 +1324,9 @@ def show():
                             poi_nominal_voltage_kv=poi_nominal_voltage_kv,
                             poi_frequency_hz=poi_frequency_hz,
                         )
+                        # Store computed Stage-3 DataFrame so export can access it
+                        st.session_state["stage13_output"]["stage3_df"] = s3_df
+
                         dc_results.update(
                             {
                                 "stage13_output": st.session_state.get("stage13_output"),

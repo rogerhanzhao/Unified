@@ -149,7 +149,9 @@ def build_report_context(
 
     stage1 = stage13_output
     stage2 = outputs.get("stage2") or stage13_output.get("stage2_raw") or {}
-    stage3_df = outputs.get("stage3_df")
+    # Prefer an explicit stage3_df passed in outputs, then any stage3_df embedded in
+    # the stage13_output (packaged by DC UI). If none, attempt to recompute.
+    stage3_df = outputs.get("stage3_df") or stage13_output.get("stage3_df")
     stage3_meta = outputs.get("stage3_meta") or stage13_output.get("stage3_meta") or {}
     if stage3_df is None:
         stage3_df, stage3_meta = _get_stage3_df(stage1, stage2)
