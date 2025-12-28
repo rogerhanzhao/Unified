@@ -31,3 +31,5 @@ def test_layout_block_smoke(tmp_path: Path):
     assert svg_text.strip()
     assert "Block 1" in svg_text
     assert "PCS&amp;MVT SKID" in svg_text
+    assert "Transformer" in svg_text
+    assert "DC Block" in svg_text

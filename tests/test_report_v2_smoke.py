@@ -45,14 +45,20 @@ def test_report_v2_smoke():
     joined = "\n".join(texts)
 
     ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
-    has_logo = any(
-        section.header._element.xpath(".//w:drawing", namespaces=ns)
-        for section in doc.sections
-    )
+
+    def _has_header_drawing(section) -> bool:
+        try:
+            return bool(section.header._element.xpath(".//w:drawing", namespaces=ns))
+        except TypeError:
+            return bool(section.header._element.xpath(".//w:drawing"))
+
+    has_logo = any(_has_header_drawing(section) for section in doc.sections)
 
     assert texts.count("Executive Summary") == 1
     assert texts.count("Inputs & Assumptions") == 1
     assert "Conventions & Units" in texts
+    assert any("Single Line Diagram" in text for text in texts)
+    assert any("Block Layout" in text for text in texts)
     assert "Appendix" not in joined
     assert ".xlsx" not in joined
     assert "314 Ah cell database" not in joined

@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Sequence
 
 from calb_sizing_tool.common.allocation import allocate_dc_blocks, evenly_distribute
 
-SLD_FONT_FAMILY = "Arial"
+SLD_FONT_FAMILY = "Arial, 'DejaVu Sans', sans-serif"
 SLD_FONT_SIZE = 11
 SLD_FONT_SIZE_SMALL = 10
 SLD_FONT_SIZE_TITLE = 12
@@ -12,7 +12,7 @@ SLD_STROKE_THICK = 2.0
 SLD_STROKE_OUTLINE = 1.4
 SLD_DASH_ARRAY = "6,4"
 
-LAYOUT_FONT_FAMILY = "Arial"
+LAYOUT_FONT_FAMILY = "Arial, 'DejaVu Sans', sans-serif"
 LAYOUT_FONT_SIZE = 11
 LAYOUT_FONT_SIZE_SMALL = 10
 LAYOUT_FONT_SIZE_TITLE = 12
@@ -145,6 +145,7 @@ class LayoutBlockSpec:
     dc_to_dc_clearance_m: Optional[float] = None
     dc_to_ac_clearance_m: Optional[float] = None
     perimeter_clearance_m: Optional[float] = None
+    dc_block_mirrored: bool = False
     use_template: bool = False
     dc_block_svg_path: Optional[str] = None
     ac_block_svg_path: Optional[str] = None
@@ -329,6 +330,7 @@ def build_layout_block_spec(
     dc_to_dc_clearance_m: Optional[float] = None,
     dc_to_ac_clearance_m: Optional[float] = None,
     perimeter_clearance_m: Optional[float] = None,
+    dc_block_mirrored: bool = False,
     use_template: bool = False,
     dc_block_svg_path: Optional[str] = None,
     ac_block_svg_path: Optional[str] = None,
@@ -365,6 +367,7 @@ def build_layout_block_spec(
         dc_to_dc_clearance_m=dc_to_dc_clearance_m,
         dc_to_ac_clearance_m=dc_to_ac_clearance_m,
         perimeter_clearance_m=perimeter_clearance_m,
+        dc_block_mirrored=bool(dc_block_mirrored),
         use_template=bool(use_template),
         dc_block_svg_path=dc_block_svg_path,
         ac_block_svg_path=ac_block_svg_path,
