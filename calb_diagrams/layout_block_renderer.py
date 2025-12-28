@@ -112,26 +112,86 @@ def _draw_v_dimension(dwg, y1, y2, x, ext_x, text):
     dwg.add(dwg.text(text, insert=(x + 6, (y1 + y2) / 2), class_="dim-text"))
 
 
-def _draw_dc_interior(dwg, x, y, w, h):
+def _draw_dc_interior(dwg, x, y, w, h, mirrored: bool = False):
     pad = min(10.0, max(4.0, w * 0.06))
-    cols, rows = 2, 2
-    cell_w = max(1.0, (w - pad * (cols + 1)) / cols)
-    cell_h = max(1.0, (h - pad * (rows + 1)) / rows)
-    for r in range(rows):
-        for c in range(cols):
-            cx = x + pad + c * (cell_w + pad)
-            cy = y + pad + r * (cell_h + pad)
-            dwg.add(dwg.rect(insert=(cx, cy), size=(cell_w, cell_h), class_="thin"))
+    door_w = max(6.0, w * 0.12)
+    door_h = h * 0.35
+    door_x = x + pad if not mirrored else x + w - door_w - pad
+    door_y = y + h * 0.15
+    dwg.add(dwg.rect(insert=(door_x, door_y), size=(door_w, door_h), class_="thin"))
+    dwg.add(
+        dwg.line(
+            (door_x + door_w * 0.75, door_y + door_h * 0.25),
+            (door_x + door_w * 0.75, door_y + door_h * 0.75),
+            class_="thin",
+        )
+    )
+
+    grill_w = door_w * 0.6
+    grill_h = h * 0.4
+    grill_x = x + w - grill_w - pad if not mirrored else x + pad
+    grill_y = y + h * 0.15
+    dwg.add(dwg.rect(insert=(grill_x, grill_y), size=(grill_w, grill_h), class_="thin"))
+    for i in range(3):
+        gy = grill_y + (i + 1) * grill_h / 4
+        dwg.add(dwg.line((grill_x + 2, gy), (grill_x + grill_w - 2, gy), class_="thin"))
+
+    rack_x = x + pad + (door_w + pad if not mirrored else grill_w + pad)
+    rack_w = w - (pad * 3 + door_w + grill_w)
+    rack_y = y + pad
+    rack_h = h - 2 * pad
+    if rack_w <= 2 or rack_h <= 2:
+        return
+    cols = 3
+    rack_gap = max(2.0, rack_w * 0.05)
+    cell_w = max(1.0, (rack_w - rack_gap * (cols - 1)) / cols)
+    for c in range(cols):
+        cx = rack_x + c * (cell_w + rack_gap)
+        dwg.add(dwg.rect(insert=(cx, rack_y), size=(cell_w, rack_h), class_="thin"))
 
 
 def _draw_ac_interior(dwg, x, y, w, h, skid_text: str):
-    section_w = w / 3.0
-    for i in range(1, 3):
-        dwg.add(dwg.line((x + section_w * i, y), (x + section_w * i, y + h), class_="thin"))
-    labels = ["PCS", "Transformer", "RMU"]
-    for idx, label in enumerate(labels):
-        cx = x + section_w * idx + 6
-        dwg.add(dwg.text(label, insert=(cx, y + 16), class_="dim-text"))
+    pcs_w = w * 0.55
+    tr_w = w * 0.3
+    rmu_w = w - pcs_w - tr_w
+    if rmu_w < w * 0.1:
+        rmu_w = w * 0.1
+        pcs_w = w - tr_w - rmu_w
+
+    split_1 = x + pcs_w
+    split_2 = split_1 + tr_w
+    dwg.add(dwg.line((split_1, y), (split_1, y + h), class_="thin"))
+    dwg.add(dwg.line((split_2, y), (split_2, y + h), class_="thin"))
+
+    dwg.add(dwg.text("PCS", insert=(x + 6, y + 16), class_="dim-text"))
+    dwg.add(dwg.text("Transformer", insert=(split_1 + 6, y + 16), class_="dim-text"))
+    dwg.add(dwg.text("RMU", insert=(split_2 + 6, y + 16), class_="dim-text"))
+
+    pcs_pad = max(4.0, pcs_w * 0.06)
+    cabinet_w = max(6.0, (pcs_w - pcs_pad * 4) / 3)
+    cabinet_h = h - pcs_pad * 2
+    for i in range(3):
+        cx = x + pcs_pad + i * (cabinet_w + pcs_pad)
+        dwg.add(dwg.rect(insert=(cx, y + pcs_pad), size=(cabinet_w, cabinet_h), class_="thin"))
+
+    tr_pad = max(5.0, tr_w * 0.08)
+    dwg.add(
+        dwg.rect(
+            insert=(split_1 + tr_pad, y + tr_pad),
+            size=(tr_w - tr_pad * 2, h - tr_pad * 2),
+            class_="thin",
+        )
+    )
+
+    rmu_pad = max(4.0, rmu_w * 0.12)
+    dwg.add(
+        dwg.rect(
+            insert=(split_2 + rmu_pad, y + rmu_pad),
+            size=(rmu_w - rmu_pad * 2, h - rmu_pad * 2),
+            class_="thin",
+        )
+    )
+
     dwg.add(dwg.text(skid_text, insert=(x + w / 2, y + h / 2 + 4), class_="label", text_anchor="middle"))
 
 
@@ -192,25 +252,74 @@ def _draw_v_dimension_raw(lines, y1, y2, x, ext_x, text):
     _svg_text(lines, text, x + 6, (y1 + y2) / 2, class_name="dim-text")
 
 
-def _draw_dc_interior_raw(lines, x, y, w, h):
+def _draw_dc_interior_raw(lines, x, y, w, h, mirrored: bool = False):
     pad = min(10.0, max(4.0, w * 0.06))
-    cols, rows = 2, 2
-    cell_w = max(1.0, (w - pad * (cols + 1)) / cols)
-    cell_h = max(1.0, (h - pad * (rows + 1)) / rows)
-    for r in range(rows):
-        for c in range(cols):
-            cx = x + pad + c * (cell_w + pad)
-            cy = y + pad + r * (cell_h + pad)
-            _svg_rect(lines, cx, cy, cell_w, cell_h, class_name="thin")
+    door_w = max(6.0, w * 0.12)
+    door_h = h * 0.35
+    door_x = x + pad if not mirrored else x + w - door_w - pad
+    door_y = y + h * 0.15
+    _svg_rect(lines, door_x, door_y, door_w, door_h, class_name="thin")
+    _svg_line(
+        lines,
+        door_x + door_w * 0.75,
+        door_y + door_h * 0.25,
+        door_x + door_w * 0.75,
+        door_y + door_h * 0.75,
+        class_name="thin",
+    )
+
+    grill_w = door_w * 0.6
+    grill_h = h * 0.4
+    grill_x = x + w - grill_w - pad if not mirrored else x + pad
+    grill_y = y + h * 0.15
+    _svg_rect(lines, grill_x, grill_y, grill_w, grill_h, class_name="thin")
+    for i in range(3):
+        gy = grill_y + (i + 1) * grill_h / 4
+        _svg_line(lines, grill_x + 2, gy, grill_x + grill_w - 2, gy, class_name="thin")
+
+    rack_x = x + pad + (door_w + pad if not mirrored else grill_w + pad)
+    rack_w = w - (pad * 3 + door_w + grill_w)
+    rack_y = y + pad
+    rack_h = h - 2 * pad
+    if rack_w <= 2 or rack_h <= 2:
+        return
+    cols = 3
+    rack_gap = max(2.0, rack_w * 0.05)
+    cell_w = max(1.0, (rack_w - rack_gap * (cols - 1)) / cols)
+    for c in range(cols):
+        cx = rack_x + c * (cell_w + rack_gap)
+        _svg_rect(lines, cx, rack_y, cell_w, rack_h, class_name="thin")
 
 
 def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str):
-    section_w = w / 3.0
-    for i in range(1, 3):
-        _svg_line(lines, x + section_w * i, y, x + section_w * i, y + h, class_name="thin")
-    labels = ["PCS", "Transformer", "RMU"]
-    for idx, label in enumerate(labels):
-        _svg_text(lines, label, x + section_w * idx + 6, y + 16, class_name="dim-text")
+    pcs_w = w * 0.55
+    tr_w = w * 0.3
+    rmu_w = w - pcs_w - tr_w
+    if rmu_w < w * 0.1:
+        rmu_w = w * 0.1
+        pcs_w = w - tr_w - rmu_w
+
+    split_1 = x + pcs_w
+    split_2 = split_1 + tr_w
+    _svg_line(lines, split_1, y, split_1, y + h, class_name="thin")
+    _svg_line(lines, split_2, y, split_2, y + h, class_name="thin")
+    _svg_text(lines, "PCS", x + 6, y + 16, class_name="dim-text")
+    _svg_text(lines, "Transformer", split_1 + 6, y + 16, class_name="dim-text")
+    _svg_text(lines, "RMU", split_2 + 6, y + 16, class_name="dim-text")
+
+    pcs_pad = max(4.0, pcs_w * 0.06)
+    cabinet_w = max(6.0, (pcs_w - pcs_pad * 4) / 3)
+    cabinet_h = h - pcs_pad * 2
+    for i in range(3):
+        cx = x + pcs_pad + i * (cabinet_w + pcs_pad)
+        _svg_rect(lines, cx, y + pcs_pad, cabinet_w, cabinet_h, class_name="thin")
+
+    tr_pad = max(5.0, tr_w * 0.08)
+    _svg_rect(lines, split_1 + tr_pad, y + tr_pad, tr_w - tr_pad * 2, h - tr_pad * 2, class_name="thin")
+
+    rmu_pad = max(4.0, rmu_w * 0.12)
+    _svg_rect(lines, split_2 + rmu_pad, y + rmu_pad, rmu_w - rmu_pad * 2, h - rmu_pad * 2, class_name="thin")
+
     _svg_text(lines, skid_text, x + w / 2, y + h / 2 + 4, class_name="label", anchor="middle")
 
 
@@ -275,8 +384,9 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
     lines = [
         '<?xml version="1.0" encoding="utf-8"?>',
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.1f}px" height="{height:.1f}px" viewBox="0 0 {width:.1f} {height:.1f}">',
+        '<rect x="0" y="0" width="100%" height="100%" fill="#ffffff" />',
         "<style>",
-        f"svg {{ font-family: {LAYOUT_FONT_FAMILY}, Helvetica, sans-serif; font-size: {LAYOUT_FONT_SIZE}px; }}",
+        f"svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}",
         f".outline {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_OUTLINE}; fill: none; }}",
         f".thin {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_THIN}; fill: none; }}",
         f".dash {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_OUTLINE}; fill: none; stroke-dasharray: {LAYOUT_DASH_ARRAY}; }}",
@@ -336,7 +446,9 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
                 cell_x = dc_array_x + c * (container_len + dc_gap)
                 cell_y = dc_array_y + r * (container_w + dc_gap)
                 _svg_rect(lines, cell_x, cell_y, container_len, container_w)
-                _draw_dc_interior_raw(lines, cell_x, cell_y, container_len, container_w)
+                _draw_dc_interior_raw(
+                    lines, cell_x, cell_y, container_len, container_w, mirrored=spec.dc_block_mirrored
+                )
                 _svg_text(lines, "DC Block", cell_x + 6, cell_y + 18)
 
         bess_text = bess_text_template.format(start=start, end=end)
@@ -418,7 +530,7 @@ def render_layout_block_svg(
         if getattr(spec, "ac_block_svg_path", None):
             ac_template_uri = _svg_to_data_uri(Path(spec.ac_block_svg_path))
         if dc_template_uri is None or ac_template_uri is None:
-            template_warning = "Layout template asset missing; using rectangles."
+            template_warning = "Layout template asset missing; using built-in template."
 
     blocks = []
     max_block_width = 0.0
@@ -468,7 +580,7 @@ def render_layout_block_svg(
     dwg.add(
         dwg.style(
             f"""
-svg {{ font-family: {LAYOUT_FONT_FAMILY}, Helvetica, sans-serif; font-size: {LAYOUT_FONT_SIZE}px; }}
+svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
 .outline {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_OUTLINE}; fill: none; }}
 .thin {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_THIN}; fill: none; }}
 .dash {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_OUTLINE}; fill: none; stroke-dasharray: {LAYOUT_DASH_ARRAY}; }}
@@ -478,6 +590,7 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}, Helvetica, sans-serif; font-size: {LAY
 """
         )
     )
+    dwg.add(dwg.rect(insert=(0, 0), size=(width, height), fill="#ffffff"))
 
     block_title_template = spec.labels.get("block_title") if isinstance(spec.labels, dict) else None
     bess_text_template = spec.labels.get("bess_range_text") if isinstance(spec.labels, dict) else None
@@ -528,7 +641,7 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}, Helvetica, sans-serif; font-size: {LAY
                     continue
                 cell_x = dc_array_x + c * (container_len + dc_gap)
                 cell_y = dc_array_y + r * (container_w + dc_gap)
-                if use_template and dc_template_uri:
+                if use_template and dc_template_uri and not spec.dc_block_mirrored:
                     dwg.add(
                         dwg.image(
                             href=dc_template_uri,
@@ -536,6 +649,7 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}, Helvetica, sans-serif; font-size: {LAY
                             size=(container_len, container_w),
                         )
                     )
+                    _draw_dc_interior(dwg, cell_x, cell_y, container_len, container_w, mirrored=False)
                 else:
                     dwg.add(
                         dwg.rect(
@@ -544,8 +658,10 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}, Helvetica, sans-serif; font-size: {LAY
                             class_="outline",
                         )
                     )
-                    _draw_dc_interior(dwg, cell_x, cell_y, container_len, container_w)
-                    dwg.add(dwg.text("DC Block", insert=(cell_x + 6, cell_y + 18), class_="label"))
+                    _draw_dc_interior(
+                        dwg, cell_x, cell_y, container_len, container_w, mirrored=spec.dc_block_mirrored
+                    )
+                dwg.add(dwg.text("DC Block", insert=(cell_x + 6, cell_y + 18), class_="label"))
 
         bess_text = bess_text_template.format(start=start, end=end)
         dwg.add(dwg.text(bess_text, insert=(dc_array_x, dc_array_y + dc_h + 18), class_="label"))
@@ -563,9 +679,9 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}, Helvetica, sans-serif; font-size: {LAY
                 )
             else:
                 dwg.add(dwg.rect(insert=(skid_x, skid_y), size=(container_len, container_w), class_="outline"))
-                _draw_ac_interior(dwg, skid_x, skid_y, container_len, container_w, skid_text)
-                if skid_subtext:
-                    dwg.add(dwg.text(skid_subtext, insert=(skid_x + 6, skid_y + container_w - 10), class_="dim-text"))
+            _draw_ac_interior(dwg, skid_x, skid_y, container_len, container_w, skid_text)
+            if skid_subtext:
+                dwg.add(dwg.text(skid_subtext, insert=(skid_x + 6, skid_y + container_w - 10), class_="dim-text"))
 
         dim_y_main = dc_array_y - 6
         dim_y_secondary = dim_y_main - 16

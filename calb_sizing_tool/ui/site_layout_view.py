@@ -27,6 +27,20 @@ def _safe_int(value, default=0):
         return default
 
 
+@st.cache_data(show_spinner=False)
+def _svg_bytes_to_png(svg_bytes: bytes) -> bytes | None:
+    if not svg_bytes:
+        return None
+    try:
+        import cairosvg
+    except Exception:
+        return None
+    try:
+        return cairosvg.svg2png(bytestring=svg_bytes, background_color="white")
+    except Exception:
+        return None
+
+
 def show():
     state = init_shared_state()
     init_project_state()
@@ -36,6 +50,7 @@ def show():
 
     deps = check_dependencies()
     svgwrite_ok = deps.get("svgwrite", False)
+    cairosvg_ok = deps.get("cairosvg", False)
 
     def _pick_value(*values):
         for value in values:
@@ -148,6 +163,12 @@ def show():
         disabled=not has_prereq,
     )
     layout_inputs["show_skid"] = show_skid
+    dc_block_mirrored = st.checkbox(
+        "Mirror DC block interior hints",
+        key=_init_input("dc_block_mirrored", bool(layout_inputs.get("dc_block_mirrored", False))),
+        disabled=not has_prereq,
+    )
+    layout_inputs["dc_block_mirrored"] = dc_block_mirrored
 
     st.subheader("Clearances (m)")
     c_clear1, c_clear2, c_clear3 = st.columns(3)
@@ -315,6 +336,7 @@ def show():
                 dc_to_dc_clearance_m=dc_to_dc_clearance,
                 dc_to_ac_clearance_m=dc_to_ac_clearance,
                 perimeter_clearance_m=perimeter_clearance,
+                dc_block_mirrored=dc_block_mirrored,
                 use_template=(style_id == "top_v10"),
                 dc_block_svg_path=str(dc_asset) if dc_asset.exists() else None,
                 ac_block_svg_path=str(ac_asset) if ac_asset.exists() else None,
@@ -322,8 +344,7 @@ def show():
             with tempfile.TemporaryDirectory() as tmpdir:
                 tmp_path = Path(tmpdir)
                 svg_path = tmp_path / "layout_block.svg"
-                png_path = tmp_path / "layout_block.png"
-                svg_result, warning = render_layout_block_svg(spec, svg_path, png_path)
+                svg_result, warning = render_layout_block_svg(spec, svg_path)
                 if svg_result is None:
                     st.error(warning or "Layout renderer unavailable.")
                     st.code("pip install svgwrite")
@@ -334,7 +355,9 @@ def show():
                             st.code("pip install cairosvg")
 
                     svg_bytes = svg_path.read_bytes() if svg_path.exists() else None
-                    png_bytes = png_path.read_bytes() if png_path.exists() else None
+                    png_bytes = _svg_bytes_to_png(svg_bytes) if svg_bytes and cairosvg_ok else None
+                    if svg_bytes and png_bytes is None and not cairosvg_ok:
+                        st.warning("Missing dependency: cairosvg. PNG export skipped.")
                     if svg_bytes or png_bytes:
                         meta = {
                             "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -365,6 +388,7 @@ def show():
                             svg_path = outputs_dir / "layout_latest.svg"
                             svg_path.write_bytes(svg_bytes)
                             diagram_outputs.layout_svg_path = str(svg_path)
+                            st.session_state["layout_svg_path"] = str(svg_path)
                         if svg_bytes:
                             st.session_state["layout_svg_bytes"] = svg_bytes
                             artifacts["layout_svg_bytes"] = svg_bytes
@@ -373,6 +397,7 @@ def show():
                             png_path = outputs_dir / "layout_latest.png"
                             png_path.write_bytes(png_bytes)
                             diagram_outputs.layout_png_path = str(png_path)
+                            st.session_state["layout_png_path"] = str(png_path)
                             st.session_state["layout_png_bytes"] = png_bytes
                             artifacts["layout_png_bytes"] = png_bytes
                             diagram_outputs.layout_png = png_bytes

@@ -48,9 +48,24 @@ def apply_raw_style(
     tag_style = f"{{{namespace}}}style" if namespace else "style"
     tag_g = f"{{{namespace}}}g" if namespace else "g"
     tag_text = f"{{{namespace}}}text" if namespace else "text"
+    tag_rect = f"{{{namespace}}}rect" if namespace else "rect"
+
+    min_x, min_y, width, height = _get_viewbox(root)
+    if width > 0 and height > 0:
+        bg = ET.Element(
+            tag_rect,
+            attrib={
+                "x": f"{min_x:.1f}",
+                "y": f"{min_y:.1f}",
+                "width": f"{width:.1f}",
+                "height": f"{height:.1f}",
+                "fill": "#ffffff",
+            },
+        )
+        root.insert(0, bg)
 
     css = """
-.sld-raw text { fill: #000000 !important; font-family: Arial, Helvetica, sans-serif !important; font-size: 11px !important; }
+.sld-raw text { fill: #000000 !important; font-family: Arial, 'DejaVu Sans', sans-serif !important; font-size: 11px !important; }
 .sld-raw path, .sld-raw line, .sld-raw polyline, .sld-raw polygon, .sld-raw rect, .sld-raw circle, .sld-raw ellipse {
   stroke: #000000 !important;
   fill: none !important;
@@ -64,7 +79,6 @@ def apply_raw_style(
     if "sld-raw" not in existing_class:
         root.attrib["class"] = f"{existing_class} sld-raw".strip()
 
-    min_x, min_y, width, _ = _get_viewbox(root)
     if to_switchgear or to_other_rmu:
         label_group = ET.Element(tag_g, attrib={"class": "sld-raw-labels"})
         if to_switchgear:

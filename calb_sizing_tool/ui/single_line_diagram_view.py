@@ -40,6 +40,20 @@ def _safe_int(value, default=0):
         return default
 
 
+@st.cache_data(show_spinner=False)
+def _svg_bytes_to_png(svg_bytes: bytes) -> bytes | None:
+    if not svg_bytes:
+        return None
+    try:
+        import cairosvg
+    except Exception:
+        return None
+    try:
+        return cairosvg.svg2png(bytestring=svg_bytes, background_color="white")
+    except Exception:
+        return None
+
+
 def _resolve_pcs_count_by_block(ac_output: dict) -> list[int]:
     pcs_counts = ac_output.get("pcs_count_by_block")
     if isinstance(pcs_counts, list) and pcs_counts:
@@ -342,21 +356,21 @@ def show():
         }
     )
 
-    stored_df = st.session_state.get("sld_dc_blocks_df")
+    dc_df_key = "diagram_inputs.dc_blocks_df"
+    stored_df = st.session_state.get(dc_df_key)
     if isinstance(stored_df, pd.DataFrame) and len(stored_df) != len(dc_df):
-        st.session_state.pop("sld_dc_blocks_df")
-    if "sld_dc_blocks_df" not in st.session_state:
-        st.session_state["sld_dc_blocks_df"] = dc_df
+        st.session_state.pop(dc_df_key)
+    st.session_state.setdefault(dc_df_key, dc_df)
 
     dc_df = st.data_editor(
-        st.session_state["sld_dc_blocks_df"],
-        key="sld_dc_blocks_editor",
+        st.session_state[dc_df_key],
+        key="diagram_inputs.dc_blocks_table",
         use_container_width=True,
         hide_index=True,
         num_rows="fixed",
         disabled=not has_prereq,
     )
-    st.session_state["sld_dc_blocks_df"] = dc_df
+    st.session_state[dc_df_key] = dc_df
 
     dc_blocks_per_feeder = [
         _safe_int(row.get("dc_block_count"), 0) for row in dc_df.to_dict("records")
@@ -408,15 +422,16 @@ def show():
                     with tempfile.TemporaryDirectory() as tmpdir:
                         tmp_path = Path(tmpdir)
                         svg_path = tmp_path / "sld_raw_v05.svg"
-                        png_path = tmp_path / "sld_raw_v05.png"
-                        svg_result, warning = render_sld_pro_svg(spec, svg_path, png_path)
+                        svg_result, warning = render_sld_pro_svg(spec, svg_path)
                         if svg_result is None:
                             st.error(warning or "SLD renderer unavailable.")
                         else:
                             if warning:
                                 st.warning(warning)
                             svg_bytes = svg_path.read_bytes() if svg_path.exists() else None
-                            png_bytes = png_path.read_bytes() if png_path.exists() else None
+                            png_bytes = _svg_bytes_to_png(svg_bytes) if svg_bytes and cairosvg_ok else None
+                            if svg_bytes and png_bytes is None and not cairosvg_ok:
+                                st.warning("Missing dependency: cairosvg. PNG export skipped.")
                 elif not pypowsybl_ok:
                     st.error("Raw fallback requires pypowsybl. Install with `pip install pypowsybl`.")
                     svg_bytes = None
@@ -458,14 +473,7 @@ def show():
                         )
                         add_margins(styled_svg_path, final_svg_path, left_margin_px=140, top_margin_px=40)
                         svg_bytes = final_svg_path.read_bytes() if final_svg_path.exists() else None
-                        png_bytes = None
-                        if svg_bytes and cairosvg_ok:
-                            try:
-                                import cairosvg
-
-                                png_bytes = cairosvg.svg2png(bytestring=svg_bytes)
-                            except Exception:
-                                png_bytes = None
+                        png_bytes = _svg_bytes_to_png(svg_bytes) if svg_bytes and cairosvg_ok else None
             else:
                 if style_id == "pro_v10" and not svgwrite_ok:
                     st.error("Pro rendering requires svgwrite. Install with `pip install svgwrite`.")
@@ -493,14 +501,7 @@ def show():
                         svg_path = tmp_path / "sld_pro_v10.svg"
                         render_jp_pro_svg(snapshot, svg_path)
                         svg_bytes = svg_path.read_bytes()
-                        png_bytes = None
-                        if cairosvg_ok:
-                            try:
-                                import cairosvg
-
-                                png_bytes = cairosvg.svg2png(bytestring=svg_bytes)
-                            except Exception:
-                                png_bytes = None
+                        png_bytes = _svg_bytes_to_png(svg_bytes) if svg_bytes and cairosvg_ok else None
 
             if svg_bytes or png_bytes:
                 dc_blocks_total = sum(dc_blocks_per_feeder) if dc_blocks_per_feeder else 0
@@ -529,10 +530,12 @@ def show():
                     svg_path = outputs_dir / "sld_latest.svg"
                     svg_path.write_bytes(svg_bytes)
                     diagram_outputs.sld_svg_path = str(svg_path)
+                    st.session_state["sld_svg_path"] = str(svg_path)
                 if png_bytes:
                     png_path = outputs_dir / "sld_latest.png"
                     png_path.write_bytes(png_bytes)
                     diagram_outputs.sld_png_path = str(png_path)
+                    st.session_state["sld_png_path"] = str(png_path)
                 if svg_bytes:
                     artifacts["sld_svg_bytes"] = svg_bytes
                     diagram_outputs.sld_svg = svg_bytes

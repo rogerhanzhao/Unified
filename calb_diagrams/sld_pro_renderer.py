@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 from typing import List, Tuple
 
@@ -115,6 +116,13 @@ def _range_text(values: List[float], unit: str) -> str:
     if abs(maximum - minimum) < 1e-6:
         return f"{minimum:.0f} {unit}"
     return f"{minimum:.0f}-{maximum:.0f} {unit}"
+
+
+def _split_pcs_groups(pcs_count: int) -> tuple[list[int], list[int]]:
+    if pcs_count <= 0:
+        return [], []
+    split = int(math.ceil(pcs_count / 2))
+    return list(range(1, split + 1)), list(range(split + 1, pcs_count + 1))
 
 
 def _build_equipment_list(spec: SldGroupSpec) -> List[Tuple[str, str]]:
@@ -248,6 +256,8 @@ def render_sld_pro_svg(
     skid_x = diagram_left
     skid_y = table_y
     pcs_count = max(1, int(spec.pcs_count))
+    group_a, group_b = _split_pcs_groups(pcs_count)
+    group_split = len(group_a)
     pcs_box_h = 54
     pcs_pad = 60
     available = max(240.0, diagram_width - pcs_pad * 2)
@@ -257,25 +267,62 @@ def render_sld_pro_svg(
 
     bus_y = skid_y + 230
     pcs_y = bus_y + 24
-    dc_bus_y = pcs_y + pcs_box_h + 30
-    skid_h = max(360.0, dc_bus_y - skid_y + 50)
+    dc_bus_a_y = pcs_y + pcs_box_h + 28
+    dc_bus_gap = 22
+    dc_bus_b_y = dc_bus_a_y + dc_bus_gap
+    skid_h = max(380.0, dc_bus_b_y - skid_y + 60)
 
     battery_y = skid_y + skid_h + 40
     battery_title_h = 20
-    dc_box_h = 60
-    dc_box_w = pcs_box_w
-    dc_box_y = battery_y + battery_title_h + 30
-    battery_h = battery_title_h + 30 + dc_box_h + 40
+    circuit_pad = 18
+    circuit_gap = 18
+    dc_circuit_a_y = battery_y + battery_title_h + circuit_pad
+    dc_circuit_b_y = dc_circuit_a_y + circuit_gap
+    dc_box_h = 54
+
+    battery_x = skid_x + 40
+    battery_w = diagram_width - 80
+    dc_blocks_total = _safe_int(spec.dc_blocks_total_in_group, 0)
+    show_individual_blocks = 0 < dc_blocks_total <= 6
+    blocks_to_draw = dc_blocks_total if show_individual_blocks else 1
+    block_cols = min(3, blocks_to_draw) if show_individual_blocks else 1
+    block_rows = int(math.ceil(blocks_to_draw / block_cols)) if show_individual_blocks else 1
+    block_gap_x = 20.0
+    block_gap_y = 16.0
+    block_area_w = max(220.0, battery_w - 80.0)
+    dc_box_w = min(
+        160.0,
+        max(110.0, (block_area_w - (block_cols - 1) * block_gap_x) / block_cols),
+    )
+    block_grid_w = block_cols * dc_box_w + max(0, block_cols - 1) * block_gap_x
+    block_grid_h = block_rows * dc_box_h + max(0, block_rows - 1) * block_gap_y
+    dc_box_x_start = battery_x + (battery_w - block_grid_w) / 2
+    dc_box_y = dc_circuit_b_y + 24
+    battery_note_y = dc_box_y + block_grid_h + 18
+    battery_h = max(battery_title_h + 80.0, battery_note_y - battery_y + 24)
 
     allocation_parts = [
         f"F{idx + 1}={spec.dc_blocks_per_feeder[idx] if idx < len(spec.dc_blocks_per_feeder) else 0}"
         for idx in range(pcs_count)
     ]
     allocation_text = ", ".join(allocation_parts) if allocation_parts else "TBD"
+    group_a_counts = [
+        spec.dc_blocks_per_feeder[idx - 1] if idx - 1 < len(spec.dc_blocks_per_feeder) else 0
+        for idx in group_a
+    ]
+    group_b_counts = [
+        spec.dc_blocks_per_feeder[idx - 1] if idx - 1 < len(spec.dc_blocks_per_feeder) else 0
+        for idx in group_b
+    ]
+    group_a_text = ", ".join([f"F{idx}={group_a_counts[i]}" for i, idx in enumerate(group_a)]) or "None"
+    group_b_text = ", ".join([f"F{idx}={group_b_counts[i]}" for i, idx in enumerate(group_b)]) or "None"
     summary_lines = [
-        f"Battery Storage Bank: {_safe_int(spec.dc_blocks_total_in_group, 0)} blocks @ {format_mwh(spec.dc_block_energy_mwh)} each",
+        f"Battery Storage Bank: {dc_blocks_total} blocks @ {format_mwh(spec.dc_block_energy_mwh)} each",
         f"PCS count: {pcs_count}, LV {format_v(spec.lv_voltage_v_ll)}",
+        f"Group A feeders: {group_a_text} (total {sum(group_a_counts)})",
+        f"Group B feeders: {group_b_text} (total {sum(group_b_counts)})",
         f"Allocation: {allocation_text}",
+        "Counts indicate allocation for sizing/configuration; detailed DC wiring is not represented.",
     ]
     wrapped_lines = []
     for line in summary_lines:
@@ -296,7 +343,7 @@ def render_sld_pro_svg(
     dwg.add(
         dwg.style(
             f"""
-svg {{ font-family: {SLD_FONT_FAMILY}, Helvetica, sans-serif; font-size: {SLD_FONT_SIZE}px; }}
+svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
 .outline {{ stroke: #000000; stroke-width: {SLD_STROKE_OUTLINE}; fill: none; }}
 .thin {{ stroke: #000000; stroke-width: {SLD_STROKE_THIN}; fill: none; }}
 .thick {{ stroke: #000000; stroke-width: {SLD_STROKE_THICK}; fill: none; }}
@@ -307,6 +354,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}, Helvetica, sans-serif; font-size: {SLD_FO
 """
         )
     )
+    dwg.add(dwg.rect(insert=(0, 0), size=(width, height), fill="#ffffff"))
 
     dwg.add(dwg.rect(insert=(table_x, table_y), size=(table_w, table_h), class_="outline"))
     col_split = table_x + item_col_w
@@ -423,46 +471,71 @@ svg {{ font-family: {SLD_FONT_FAMILY}, Helvetica, sans-serif; font-size: {SLD_FO
             )
         )
 
-    dwg.add(dwg.line((bus_x1, dc_bus_y), (bus_x2, dc_bus_y), class_="thick"))
-    dwg.add(dwg.text("DC BUSBAR", insert=(bus_x1, dc_bus_y - 8), class_="label"))
+    dwg.add(dwg.line((bus_x1, dc_bus_a_y), (bus_x2, dc_bus_a_y), class_="thick"))
+    dwg.add(dwg.text("DC BUSBAR A", insert=(bus_x1, dc_bus_a_y - 8), class_="label"))
+    dwg.add(dwg.line((bus_x1, dc_bus_b_y), (bus_x2, dc_bus_b_y), class_="thick"))
+    dwg.add(dwg.text("DC BUSBAR B", insert=(bus_x1, dc_bus_b_y - 8), class_="label"))
 
     fuse_h = 10
     fuse_w = 18
     for idx in range(pcs_count):
         x = pcs_start_x + idx * slot_w
         line_x = x + pcs_box_w / 2
-        dwg.add(dwg.line((line_x, pcs_y + pcs_box_h), (line_x, dc_bus_y), class_="thin"))
-        fuse_y = (pcs_y + pcs_box_h + dc_bus_y) / 2 - fuse_h / 2
-        dwg.add(dwg.rect(insert=(line_x - fuse_w / 2, fuse_y), size=(fuse_w, fuse_h), class_="outline"))
+        target_bus_y = dc_bus_a_y if idx < group_split else dc_bus_b_y
+        dwg.add(dwg.line((line_x, pcs_y + pcs_box_h), (line_x, target_bus_y), class_="thin"))
+        fuse_y = (pcs_y + pcs_box_h + target_bus_y) / 2 - fuse_h / 2
+        dwg.add(
+            dwg.rect(insert=(line_x - fuse_w / 2, fuse_y), size=(fuse_w, fuse_h), class_="outline")
+        )
 
-    battery_x = skid_x + 40
-    battery_w = diagram_width - 80
     dwg.add(dwg.rect(insert=(battery_x, battery_y), size=(battery_w, battery_h), class_="dash"))
-    dwg.add(dwg.text("Battery Storage Bank", insert=(battery_x + 8, battery_y + 16), class_="label title"))
+    dwg.add(
+        dwg.text("Battery Storage Bank", insert=(battery_x + 8, battery_y + 16), class_="label title")
+    )
 
-    for idx in range(pcs_count):
-        count = spec.dc_blocks_per_feeder[idx] if idx < len(spec.dc_blocks_per_feeder) else 0
-        x = pcs_start_x + idx * slot_w
-        line_x = x + pcs_box_w / 2
-        dwg.add(dwg.line((line_x, dc_bus_y), (line_x, dc_box_y - 10), class_="thin"))
-        dwg.add(dwg.text(f"F{idx + 1}", insert=(line_x - 6, dc_box_y - 14), class_="small"))
+    circuit_x1 = battery_x + 60
+    circuit_x2 = battery_x + battery_w - 60
+    dwg.add(dwg.line((circuit_x1, dc_circuit_a_y), (circuit_x2, dc_circuit_a_y), class_="thin"))
+    dwg.add(dwg.text("Circuit A", insert=(circuit_x1, dc_circuit_a_y - 6), class_="small"))
+    dwg.add(dwg.line((circuit_x1, dc_circuit_b_y), (circuit_x2, dc_circuit_b_y), class_="thin"))
+    dwg.add(dwg.text("Circuit B", insert=(circuit_x1, dc_circuit_b_y - 6), class_="small"))
 
-        dwg.add(dwg.rect(insert=(x, dc_box_y), size=(dc_box_w, dc_box_h), class_="outline"))
-        dwg.add(dwg.text(f"F{idx + 1}", insert=(x + 6, dc_box_y + 18), class_="label"))
-        dwg.add(
-            dwg.text(
-                f"DC Block x {count}",
-                insert=(x + 6, dc_box_y + 34),
-                class_="small",
-            )
+    link_x = bus_x2 - 40
+    dwg.add(dwg.line((link_x, dc_bus_a_y), (link_x, dc_circuit_a_y), class_="thin"))
+    dwg.add(dwg.line((link_x, dc_bus_b_y), (link_x, dc_circuit_b_y), class_="thin"))
+
+    block_index = 0
+    for row in range(block_rows):
+        for col in range(block_cols):
+            if show_individual_blocks and block_index >= dc_blocks_total:
+                break
+            cell_x = dc_box_x_start + col * (dc_box_w + block_gap_x)
+            cell_y = dc_box_y + row * (dc_box_h + block_gap_y)
+            dwg.add(dwg.rect(insert=(cell_x, cell_y), size=(dc_box_w, dc_box_h), class_="outline"))
+
+            if show_individual_blocks:
+                label = f"DC Block #{block_index + 1} ({format_mwh(spec.dc_block_energy_mwh)})"
+            else:
+                label = f"DC Block ({format_mwh(spec.dc_block_energy_mwh)}) x {dc_blocks_total}"
+            dwg.add(dwg.text(label, insert=(cell_x + 6, cell_y + 20), class_="small"))
+            dwg.add(dwg.text("2 circuits (A/B)", insert=(cell_x + 6, cell_y + 38), class_="small"))
+
+            line_x_a = cell_x + dc_box_w * 0.4
+            line_x_b = cell_x + dc_box_w * 0.6
+            dwg.add(dwg.line((line_x_a, cell_y), (line_x_a, dc_circuit_a_y), class_="thin"))
+            dwg.add(dwg.line((line_x_b, cell_y), (line_x_b, dc_circuit_b_y), class_="thin"))
+
+            block_index += 1
+        if show_individual_blocks and block_index >= dc_blocks_total:
+            break
+
+    dwg.add(
+        dwg.text(
+            "Each DC block provides Circuit A and Circuit B.",
+            insert=(battery_x + 8, battery_note_y),
+            class_="small",
         )
-        dwg.add(
-            dwg.text(
-                f"{format_mwh(spec.dc_block_energy_mwh)} each",
-                insert=(x + 6, dc_box_y + 50),
-                class_="small",
-            )
-        )
+    )
 
     dwg.add(dwg.rect(insert=(note_x, note_y), size=(note_w, note_h), class_="outline"))
     dwg.add(
