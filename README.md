@@ -76,6 +76,9 @@ pytest -q
 3. Verify SLD PCS count matches AC sizing output (2/4/etc).
 4. Verify Layout shows 20 ft footprints and has clearance dimension annotations.
 5. Export DOCX: header logo appears on each section and DC sizing bar chart matches UI.
+
+
+
 感谢您使用和关注本项目！
 本项目基于开源生态构建，参考并使用了社区中多种优秀技术与工具。我们尊重开源许可证并在此明确致谢：
 
