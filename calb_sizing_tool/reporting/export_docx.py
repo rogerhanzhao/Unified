@@ -8,6 +8,30 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt
 
+# Monkeypatch compatibility: allow xpath(..., namespaces=...) calls on
+# docx OXML elements where the underlying xpath implementation does not
+# accept the `namespaces` keyword (some docx/lxml versions differ).
+try:
+    # use the concrete BaseOxmlElement used by CT_* classes
+    from docx.oxml.shared import BaseOxmlElement
+    from lxml import etree
+
+    _orig_xpath = BaseOxmlElement.xpath
+
+    def _xpath_compat(self, path, *args, **kwargs):
+        try:
+            return _orig_xpath(self, path, *args, **kwargs)
+        except TypeError:
+            namespaces = kwargs.get("namespaces")
+            if namespaces is not None:
+                tree = etree.ElementTree(self)
+                return tree.xpath(path, namespaces=namespaces)
+            return _orig_xpath(self, path, *args)
+
+    BaseOxmlElement.xpath = _xpath_compat
+except Exception:
+    pass
+
 from calb_sizing_tool.config import AC_DATA_PATH, DC_DATA_PATH, PROJECT_ROOT
 
 # ----------------------------------------
@@ -508,13 +532,6 @@ def _append_dc_report_sections(doc: Document, dc_output: dict, ctx: dict, chapte
         dc_view._docx_add_lifetime_table(doc, s3_df)
         doc.add_paragraph("")
 
-    p_final = doc.add_paragraph()
-    p_fmt = p_final.paragraph_format
-    p_fmt.space_before = Pt(0)
-    p_fmt.space_after = Pt(0)
-    p_fmt.line_spacing = Pt(0)
-    run_final = p_final.add_run()
-    run_final.font.size = Pt(1)
     return True
 
 
