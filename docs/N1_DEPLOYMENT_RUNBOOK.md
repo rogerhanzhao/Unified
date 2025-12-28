@@ -228,4 +228,65 @@ Suggested safer publish workflow (short):
 
 ---
 
-*Report generated automatically from on-host inspection commands executed by ops engineer. Values that might contain secrets were masked (e.g., env values).* 
+*Report generated automatically from on-host inspection commands executed by ops engineer. Values that might contain secrets were masked (e.g., env values).*
+
+---
+
+## 18) ngrok: common errors & recovery (explicit) ⚠️
+
+- ERR_NGROK_313 — "Only paid plans may create endpoints with custom subdomains."
+  - Cause: your ngrok **Free** plan does not allow reserving custom `subdomain:` values in config. Attempts to start a tunnel requesting `subdomain:` will fail with ERR_NGROK_313.
+  - Quick recovery options:
+    1. **Remove or comment** the `subdomain:` lines in `/home/calb/.config/ngrok/ngrok.yml` and restart the intended instance(s):
+       - sudo cp /home/calb/.config/ngrok/ngrok.yml /home/calb/.config/ngrok/ngrok.yml.bak
+       - edit and comment the `subdomain:` lines, then: `sudo systemctl restart calb-ngrok@prod`
+    2. **Upgrade** the ngrok account to a paid plan (recommended if you need stable reserved subdomains). After account upgrade you may re-enable `subdomain:` and restart services.
+
+- ERR_NGROK_334 — "The endpoint '<url>' is already online." (endpoint conflict)
+  - Cause: two ngrok tunnels attempted to create the same public endpoint (common on Free plan where subdomain reservation is not available or when a single tunnel is already running on the account).
+  - Recovery:
+    - Stop the conflicting instance: `sudo systemctl stop calb-ngrok@<instance>` and then start the other.
+    - If you need both active with the same public host, **pooling** is supported only on some plans/binaries (`--pooling-enabled`). Confirm your ngrok binary and plan support pooling before using it.
+    - Alternate approach (no account upgrade needed): expose multiple local backends through a single public URL via a local reverse proxy (see Deploy options below).
+
+- ERR_NGROK_6030 / HTTP 400 on public URL — indicates the public endpoint exists but is returning a bad request; confirm local app is healthy and the ngrok tunnel maps to the expected local port.
+  - Steps: `curl -Is $PUBLIC_URL` and `curl -Is http://127.0.0.1:<PORT>` to compare upstream and local responses. Check `journalctl -u calb-ngrok@<instance> -n 200 --no-pager` for ngrok-side errors.
+
+- Useful commands:
+  - Show tunnels from local ngrok web API: `curl -s http://127.0.0.1:4040/api/tunnels | jq -r '.tunnels[] | .name + " -> " + .public_url'` (replace 4040 with 4041 for other instance if available)
+  - Validate tunnel logs: `journalctl -u calb-ngrok@prod -n 200 --no-pager`
+
+## 19) Deploy to PROD (non-interactive recommended flow) ✅
+
+Recommended safe steps to promote a validated commit from `test` to `prod`:
+
+1. On the test host (where you've verified tests pass), create an annotated release tag for the current tested commit:
+
+   - `cd /opt/calb/test/CALB_SIZINGTOOL`
+   - `git tag -a v$(date +%Y.%m.%d)-rc1 -m "release: tested on N1"`
+   - `git push origin --tags`
+
+2. On the PROD host (or the same host if co-located), update the prod checkout and run the deploy helper (non-interactive):
+
+   - `cd /opt/calb/prod/CALB_SIZINGTOOL`
+   - `git fetch --tags origin`
+   - `git checkout tags/<tag-name> -f`  # use the tag created in step 1
+   - `./tools/deploy.sh prod`  # this script will install requirements, restart services, and print the public URL line
+
+   If you prefer to keep using branch heads instead of tags (not recommended), you can instead `git fetch origin && git reset --hard origin/<branch>` and then run `./tools/deploy.sh prod`.
+
+3. Verify after deploy:
+
+   - `systemctl status calb-sizingtool@prod --no-pager`
+   - `journalctl -u calb-sizingtool@prod -n 200 --no-pager`
+   - `curl -Is http://127.0.0.1:8511` (or the PORT in `/etc/calb-sizingtool/prod.env`)
+   - `journalctl -u calb-ngrok@prod -n 200 --no-pager` (if ngrok present) and extract public URL: `journalctl -u calb-ngrok@prod -n 200 --no-pager | egrep -o 'https?://[A-Za-z0-9.-]+\.ngrok\.' | head -n1`
+
+### Fallbacks & notes
+- If `calb-ngrok@prod` or `calb-ngrok@test` conflicts continue and you do not want or cannot upgrade the ngrok account, consider:
+  - Running a local reverse-proxy (nginx) that listens on a single port and proxies `/` to prod and `/test` to test (or use separate hostnames behind a single public endpoint). This keeps only a single ngrok tunnel active.
+  - Using SSH remote port forwarding for temporary testing instead of ngrok.
+
+---
+
+*Updated: added ngrok limitations (ERR_NGROK_313/334/6030), explicit recovery steps, and a recommended non-interactive prod deploy flow.* 
