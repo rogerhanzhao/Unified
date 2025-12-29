@@ -127,27 +127,37 @@ def _draw_dc_interior(dwg, x, y, w, h, mirrored: bool = False):
         )
     )
 
-    grill_w = door_w * 0.6
-    grill_h = h * 0.4
-    grill_x = x + w - grill_w - pad if not mirrored else x + pad
-    grill_y = y + h * 0.15
-    dwg.add(dwg.rect(insert=(grill_x, grill_y), size=(grill_w, grill_h), class_="thin"))
-    for i in range(3):
-        gy = grill_y + (i + 1) * grill_h / 4
-        dwg.add(dwg.line((grill_x + 2, gy), (grill_x + grill_w - 2, gy), class_="thin"))
+    # Liquid cooling strip on the right side (15% width)
+    cooling_w = w * 0.15
+    cooling_h = h - 2 * pad
+    cooling_x = x + w - cooling_w - pad
+    cooling_y = y + pad
+    dwg.add(dwg.rect(insert=(cooling_x, cooling_y), size=(cooling_w, cooling_h), class_="thin", fill="lightblue", opacity="0.3"))
+    dwg.add(dwg.text("Liquid\nCooling", insert=(cooling_x + cooling_w * 0.5, cooling_y + cooling_h * 0.5), class_="small", text_anchor="middle"))
 
-    rack_x = x + pad + (door_w + pad if not mirrored else grill_w + pad)
-    rack_w = w - (pad * 3 + door_w + grill_w)
+    # Battery racks: 2 columns x 3 rows (6 total modules)
+    rack_x = x + pad + door_w + pad
+    rack_w = w - (pad * 3 + door_w + cooling_w)
     rack_y = y + pad
-    rack_h = h - 2 * pad
+    rack_h = cooling_h
+    
     if rack_w <= 2 or rack_h <= 2:
         return
-    cols = 3
-    rack_gap = max(2.0, rack_w * 0.05)
-    cell_w = max(1.0, (rack_w - rack_gap * (cols - 1)) / cols)
-    for c in range(cols):
-        cx = rack_x + c * (cell_w + rack_gap)
-        dwg.add(dwg.rect(insert=(cx, rack_y), size=(cell_w, rack_h), class_="thin"))
+    
+    cols = 2
+    rows = 3
+    rack_gap_x = max(2.0, rack_w * 0.05)
+    rack_gap_y = max(2.0, rack_h * 0.05)
+    cell_w = max(1.0, (rack_w - rack_gap_x * (cols - 1)) / cols)
+    cell_h = max(1.0, (rack_h - rack_gap_y * (rows - 1)) / rows)
+    
+    for r in range(rows):
+        for c in range(cols):
+            cx = rack_x + c * (cell_w + rack_gap_x)
+            cy = rack_y + r * (cell_h + rack_gap_y)
+            dwg.add(dwg.rect(insert=(cx, cy), size=(cell_w, cell_h), class_="thin"))
+            # Add small label for each module
+            dwg.add(dwg.text(f"M{r*cols+c+1}", insert=(cx + cell_w*0.5, cy + cell_h*0.5), class_="tiny", text_anchor="middle", dominant_baseline="middle"))
 
 
 def _draw_ac_interior(dwg, x, y, w, h, skid_text: str):
@@ -268,27 +278,37 @@ def _draw_dc_interior_raw(lines, x, y, w, h, mirrored: bool = False):
         class_name="thin",
     )
 
-    grill_w = door_w * 0.6
-    grill_h = h * 0.4
-    grill_x = x + w - grill_w - pad if not mirrored else x + pad
-    grill_y = y + h * 0.15
-    _svg_rect(lines, grill_x, grill_y, grill_w, grill_h, class_name="thin")
-    for i in range(3):
-        gy = grill_y + (i + 1) * grill_h / 4
-        _svg_line(lines, grill_x + 2, gy, grill_x + grill_w - 2, gy, class_name="thin")
+    # Liquid cooling strip on the right side (15% width)
+    cooling_w = w * 0.15
+    cooling_h = h - 2 * pad
+    cooling_x = x + w - cooling_w - pad
+    cooling_y = y + pad
+    _svg_rect(lines, cooling_x, cooling_y, cooling_w, cooling_h, class_name="thin")
+    _svg_text(lines, "Liquid Cooling", cooling_x + cooling_w * 0.5, cooling_y + cooling_h * 0.5, class_name="small")
 
-    rack_x = x + pad + (door_w + pad if not mirrored else grill_w + pad)
-    rack_w = w - (pad * 3 + door_w + grill_w)
+    # Battery racks: 2 columns x 3 rows (6 total modules)
+    rack_x = x + pad + door_w + pad
+    rack_w = w - (pad * 3 + door_w + cooling_w)
     rack_y = y + pad
-    rack_h = h - 2 * pad
+    rack_h = cooling_h
+    
     if rack_w <= 2 or rack_h <= 2:
         return
-    cols = 3
-    rack_gap = max(2.0, rack_w * 0.05)
-    cell_w = max(1.0, (rack_w - rack_gap * (cols - 1)) / cols)
-    for c in range(cols):
-        cx = rack_x + c * (cell_w + rack_gap)
-        _svg_rect(lines, cx, rack_y, cell_w, rack_h, class_name="thin")
+    
+    cols = 2
+    rows = 3
+    rack_gap_x = max(2.0, rack_w * 0.05)
+    rack_gap_y = max(2.0, rack_h * 0.05)
+    cell_w = max(1.0, (rack_w - rack_gap_x * (cols - 1)) / cols)
+    cell_h = max(1.0, (rack_h - rack_gap_y * (rows - 1)) / rows)
+    
+    for r in range(rows):
+        for c in range(cols):
+            cx = rack_x + c * (cell_w + rack_gap_x)
+            cy = rack_y + r * (cell_h + rack_gap_y)
+            _svg_rect(lines, cx, cy, cell_w, cell_h, class_name="thin")
+            # Add small label for each module
+            _svg_text(lines, f"M{r*cols+c+1}", cx + cell_w*0.5, cy + cell_h*0.5, class_name="small")
 
 
 def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str):

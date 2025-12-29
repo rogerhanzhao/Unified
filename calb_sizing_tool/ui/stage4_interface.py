@@ -11,6 +11,7 @@ def pack_stage13_output(
     selected_scenario: str,
     poi_nominal_voltage_kv: float,
     poi_frequency_hz: Any = None,
+    stage3_df: Any = None,
 ) -> Dict[str, Any]:
     """
     Helper to package Stage 1-3 results into a standardized dictionary
@@ -74,5 +75,7 @@ def pack_stage13_output(
     # Raw passthroughs for reference
     output["stage2_raw"] = stage2
     output["stage3_meta"] = stage3
+    if stage3_df is not None:
+        output["stage3_df"] = stage3_df
 
     return output
