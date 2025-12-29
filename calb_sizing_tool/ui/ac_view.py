@@ -129,34 +129,50 @@ def show():
         ac_inputs["pcs_lv_v"] = pcs_lv
 
         st.subheader("Configuration")
-        block_sizes = [2.5, 3.44, 5.0, 6.88]
-        block_default = ac_inputs.get("block_size_mw") or ac_results.get("block_size_mw")
-        try:
-            block_index = block_sizes.index(float(block_default))
-        except Exception:
-            block_index = 0
-        block_size = st.selectbox(
-            "Standard AC Block Size (MW)",
-            block_sizes,
-            index=block_index,
-            key=_init_input("block_size_mw", block_sizes[block_index]),
+        
+        # PCS Specifications (standard sizes)
+        pcs_specs = {
+            "1250 kW": 1250,
+            "1500 kW": 1500,
+            "1725 kW": 1725,
+            "2000 kW": 2000,
+            "2500 kW": 2500,
+        }
+        pcs_default_name = ac_inputs.get("pcs_model", "2500 kW")
+        if pcs_default_name not in pcs_specs:
+            pcs_default_name = "2500 kW"
+        
+        pcs_model = st.selectbox(
+            "PCS Module Rating",
+            list(pcs_specs.keys()),
+            index=list(pcs_specs.keys()).index(pcs_default_name),
+            key=_init_input("pcs_model", pcs_default_name),
+            help="Select standard PCS module size (kW)",
         )
-        ac_inputs["block_size_mw"] = block_size
-
-        pcs_default = (
-            ac_inputs.get("pcs_per_block")
-            or ac_results.get("pcs_count_per_ac_block")
-            or ac_results.get("pcs_per_block")
-            or 2
-        )
-        pcs_per_block = st.number_input(
+        ac_inputs["pcs_model"] = pcs_model
+        pcs_power_kw = pcs_specs[pcs_model]
+        
+        # PCS per AC Block - fixed to 2 or 4
+        pcs_per_block_options = [2, 4]
+        pcs_default = ac_inputs.get("pcs_per_block") or ac_results.get("pcs_per_block") or 4
+        if pcs_default not in pcs_per_block_options:
+            pcs_default = 4
+        
+        pcs_per_block = st.selectbox(
             "PCS per AC Block",
-            min_value=1,
-            step=1,
+            pcs_per_block_options,
+            index=pcs_per_block_options.index(int(pcs_default)),
             key=_init_input("pcs_per_block", int(pcs_default)),
-            help="Configure PCS count per AC block; default keeps current sizing behavior.",
+            help="AC Block composition: 2 or 4 PCS modules",
         )
         ac_inputs["pcs_per_block"] = int(pcs_per_block)
+        
+        # Calculate AC Block size from PCS specs
+        block_size_mw = (pcs_power_kw * pcs_per_block) / 1000.0
+        ac_inputs["block_size_mw"] = block_size_mw
+        
+        # Container size selector (auto-suggest based on total power)
+        st.write(f"**AC Block Size**: {block_size_mw:.2f} MW (from {int(pcs_per_block)} × {pcs_model})")
 
         submitted = st.form_submit_button("Run AC Sizing")
 
@@ -167,11 +183,11 @@ def show():
         ac_inputs["grid_kv"] = float(grid_kv)
         ac_inputs["lv_voltage_v"] = float(pcs_lv)
         ac_inputs["pcs_lv_v"] = float(pcs_lv)
-        ac_inputs["block_size_mw"] = float(block_size)
+        ac_inputs["block_size_mw"] = float(block_size_mw)  # From PCS specs calculation
         st.session_state["project_name"] = project_name
 
-        num_blocks = math.ceil(target_mw / block_size) if block_size > 0 else 0
-        total_ac_mw = num_blocks * block_size
+        num_blocks = math.ceil(target_mw / block_size_mw) if block_size_mw > 0 else 0
+        total_ac_mw = num_blocks * block_size_mw
         overhead = total_ac_mw - target_mw
 
         dc_per_ac = 0
@@ -179,8 +195,8 @@ def show():
             dc_per_ac = max(1, dc_model.count // num_blocks)
 
         pcs_per_block = int(pcs_per_block)
-        pcs_power_kw = block_size * 1000 / pcs_per_block if pcs_per_block > 0 else 0.0
-        transformer_kva = block_size * 1000 / 0.9
+        # pcs_power_kw is already set from PCS specs (not calculated)
+        transformer_kva = block_size_mw * 1000 / 0.9
         total_pcs = num_blocks * pcs_per_block
 
         pcs_count_by_block = evenly_distribute(total_pcs, num_blocks)
