@@ -257,7 +257,7 @@ def show():
             "lv_voltage_v": pcs_lv,
             "mv_kv": grid_kv,
             "lv_v": pcs_lv,
-            "block_size_mw": block_size,
+            "block_size_mw": block_size_mw,
             "num_blocks": num_blocks,
             "total_ac_mw": total_ac_mw,
             "overhead_mw": overhead,
