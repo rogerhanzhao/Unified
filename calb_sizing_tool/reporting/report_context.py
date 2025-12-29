@@ -124,8 +124,13 @@ def _get_stage3_df(stage1: dict, stage2: dict):
     try:
         _, _, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve = dc_view.load_data(DC_DATA_PATH)
         return dc_view.run_stage3(stage1, stage2, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve)
-    except Exception:
-        return None, {}
+    except Exception as exc:
+        # Capture and return an error message so the report can surface the root cause
+        try:
+            msg = str(exc)
+        except Exception:
+            msg = "Unknown error while computing Stage 3"
+        return None, {"error": msg}
 
 
 def build_report_context(
