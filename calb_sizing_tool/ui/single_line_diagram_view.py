@@ -362,9 +362,9 @@ def show():
         st.session_state.pop(dc_df_key)
     st.session_state.setdefault(dc_df_key, dc_df)
 
+    # Use a simpler key that doesn't conflict with session_state assignment
     dc_df = st.data_editor(
         st.session_state[dc_df_key],
-        key="diagram_inputs.dc_blocks_table",
         use_container_width=True,
         hide_index=True,
         num_rows="fixed",

@@ -174,10 +174,24 @@ def show():
             dc_output["report_order"] = dc_results.get("report_order")
 
         if report_template.startswith("V2.1"):
+            # Build comprehensive project inputs from stage13_output
+            project_inputs_for_report = {
+                "project_name": project_name,
+                "poi_power_mw": stage13_output.get("poi_power_req_mw"),
+                "poi_energy_mwh": stage13_output.get("poi_energy_req_mwh"),
+                "poi_energy_guarantee_mwh": stage13_output.get("poi_energy_req_mwh"),
+                "poi_guarantee_year": stage13_output.get("poi_guarantee_year"),
+                "poi_frequency_hz": stage13_output.get("poi_frequency_hz"),
+            }
             ctx = build_report_context(
                 session_state=st.session_state,
-                stage_outputs={"stage13_output": stage13_output, "ac_output": ac_output},
-                project_inputs={"poi_energy_guarantee_mwh": stage13_output.get("poi_energy_req_mwh")},
+                stage_outputs={
+                    "stage13_output": stage13_output,
+                    "stage2": stage13_output.get("stage2_raw", {}),
+                    "ac_output": ac_output,
+                    "sld_snapshot": st.session_state.get("sld_snapshot"),
+                },
+                project_inputs=project_inputs_for_report,
                 scenario_ids=stage13_output.get("selected_scenario", "container_only"),
             )
             comb_bytes = export_report_v2_1(ctx)

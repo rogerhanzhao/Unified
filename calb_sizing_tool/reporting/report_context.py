@@ -406,3 +406,46 @@ def build_report_context(
         ac_output=ac_output,
         project_inputs=project_inputs or {},
     )
+
+
+def validate_report_context(ctx: ReportContext) -> list[str]:
+    """
+    Validate a ReportContext for internal consistency.
+    Returns a list of warning strings (empty if valid).
+    """
+    warnings = []
+    
+    # Check AC sizing power consistency
+    if ctx.ac_blocks_total > 0 and ctx.ac_block_size_mw is not None and ctx.ac_block_size_mw > 0:
+        ac_total_mw = ctx.ac_blocks_total * ctx.ac_block_size_mw
+        if abs(ac_total_mw - ctx.poi_power_requirement_mw) > 0.1:
+            warnings.append(
+                f"AC total power ({ac_total_mw:.2f} MW) does not match POI requirement ({ctx.poi_power_requirement_mw:.2f} MW). "
+                f"Difference: {abs(ac_total_mw - ctx.poi_power_requirement_mw):.2f} MW."
+            )
+    
+    # Check guarantee year is within project life
+    if ctx.poi_guarantee_year > ctx.project_life_years:
+        warnings.append(
+            f"Guarantee year ({ctx.poi_guarantee_year}) exceeds project life ({ctx.project_life_years} years)."
+        )
+    
+    # Check POI usable energy at guarantee year
+    if (ctx.poi_usable_energy_mwh_at_guarantee_year is not None and 
+        ctx.poi_energy_guarantee_mwh is not None and 
+        ctx.poi_usable_energy_mwh_at_guarantee_year + 1e-6 < ctx.poi_energy_guarantee_mwh):
+        warnings.append(
+            f"POI usable energy at guarantee year ({ctx.poi_usable_energy_mwh_at_guarantee_year:.2f} MWh) "
+            f"is below the guarantee target ({ctx.poi_energy_guarantee_mwh:.2f} MWh)."
+        )
+    
+    # Check PCS module count
+    if ctx.ac_blocks_total > 0 and ctx.pcs_per_block > 0:
+        expected_pcs = ctx.ac_blocks_total * ctx.pcs_per_block
+        if ctx.pcs_modules_total and ctx.pcs_modules_total != expected_pcs:
+            warnings.append(
+                f"PCS module count mismatch: expected {expected_pcs} (blocks × per_block), got {ctx.pcs_modules_total}."
+            )
+    
+    return warnings
+
