@@ -113,51 +113,56 @@ def _draw_v_dimension(dwg, y1, y2, x, ext_x, text):
 
 
 def _draw_dc_interior(dwg, x, y, w, h, mirrored: bool = False):
+    """
+    Draw DC Block (BESS) interior with vertical battery stacks and cooling unit.
+    Matches the design shown in the reference image.
+    """
     pad = min(10.0, max(4.0, w * 0.06))
-    door_w = max(6.0, w * 0.12)
-    door_h = h * 0.35
-    door_x = x + pad if not mirrored else x + w - door_w - pad
-    door_y = y + h * 0.15
-    dwg.add(dwg.rect(insert=(door_x, door_y), size=(door_w, door_h), class_="thin"))
-    dwg.add(
-        dwg.line(
-            (door_x + door_w * 0.75, door_y + door_h * 0.25),
-            (door_x + door_w * 0.75, door_y + door_h * 0.75),
-            class_="thin",
-        )
-    )
-
-    # Liquid cooling strip on the right side (15% width)
-    cooling_w = w * 0.15
-    cooling_h = h - 2 * pad
-    cooling_x = x + w - cooling_w - pad
+    
+    # Battery stacks area - vertical lines to represent stacks (75% of width)
+    stack_x_start = x + pad
+    stack_x_end = x + w * 0.75
+    stack_width = stack_x_end - stack_x_start
+    stack_y_start = y + pad
+    stack_y_end = y + h - pad
+    
+    # Draw vertical stack lines (representing battery cells)
+    num_stacks = 12
+    if stack_width > 0 and num_stacks > 0:
+        stack_spacing = stack_width / (num_stacks + 1)
+        for i in range(1, num_stacks + 1):
+            stack_x = stack_x_start + i * stack_spacing
+            dwg.add(dwg.line((stack_x, stack_y_start), (stack_x, stack_y_end), class_="thin"))
+    
+    # Draw battery section border
+    dwg.add(dwg.line((stack_x_start, stack_y_start), (stack_x_end, stack_y_start), class_="thin"))
+    dwg.add(dwg.line((stack_x_start, stack_y_end), (stack_x_end, stack_y_end), class_="thin"))
+    dwg.add(dwg.line((stack_x_start, stack_y_start), (stack_x_start, stack_y_end), class_="thin"))
+    dwg.add(dwg.line((stack_x_end, stack_y_start), (stack_x_end, stack_y_end), class_="thin"))
+    
+    # Add "BATTERY" label
+    dwg.add(dwg.text("BATTERY", insert=(stack_x_start + stack_width * 0.5, stack_y_start - 8), class_="small", text_anchor="middle"))
+    
+    # Cooling unit on the right side (25% of width)
+    cooling_x = stack_x_end
     cooling_y = y + pad
-    dwg.add(dwg.rect(insert=(cooling_x, cooling_y), size=(cooling_w, cooling_h), class_="thin", fill="lightblue", opacity="0.3"))
-    dwg.add(dwg.text("Liquid\nCooling", insert=(cooling_x + cooling_w * 0.5, cooling_y + cooling_h * 0.5), class_="small", text_anchor="middle"))
-
-    # Battery racks: 2 columns x 3 rows (6 total modules)
-    rack_x = x + pad + door_w + pad
-    rack_w = w - (pad * 3 + door_w + cooling_w)
-    rack_y = y + pad
-    rack_h = cooling_h
+    cooling_w = x + w - cooling_x - pad
+    cooling_h = h - 2 * pad
     
-    if rack_w <= 2 or rack_h <= 2:
-        return
-    
-    cols = 2
-    rows = 3
-    rack_gap_x = max(2.0, rack_w * 0.05)
-    rack_gap_y = max(2.0, rack_h * 0.05)
-    cell_w = max(1.0, (rack_w - rack_gap_x * (cols - 1)) / cols)
-    cell_h = max(1.0, (rack_h - rack_gap_y * (rows - 1)) / rows)
-    
-    for r in range(rows):
-        for c in range(cols):
-            cx = rack_x + c * (cell_w + rack_gap_x)
-            cy = rack_y + r * (cell_h + rack_gap_y)
-            dwg.add(dwg.rect(insert=(cx, cy), size=(cell_w, cell_h), class_="thin"))
-            # Add small label for each module
-            dwg.add(dwg.text(f"M{r*cols+c+1}", insert=(cx + cell_w*0.5, cy + cell_h*0.5), class_="tiny", text_anchor="middle", dominant_baseline="middle"))
+    if cooling_w > 2 and cooling_h > 2:
+        # Draw cooling area border
+        dwg.add(dwg.rect(insert=(cooling_x, cooling_y), size=(cooling_w, cooling_h), class_="thin"))
+        
+        # Add horizontal lines to represent cooling channels
+        num_cooling_lines = 4
+        if cooling_h > 0:
+            cooling_line_spacing = cooling_h / (num_cooling_lines + 1)
+            for i in range(1, num_cooling_lines + 1):
+                line_y = cooling_y + i * cooling_line_spacing
+                dwg.add(dwg.line((cooling_x + 2, line_y), (cooling_x + cooling_w - 2, line_y), class_="thin"))
+        
+        # Add cooling label
+        dwg.add(dwg.text("COOLING", insert=(cooling_x + cooling_w * 0.5, cooling_y + cooling_h * 0.5), class_="small", text_anchor="middle", dominant_baseline="middle"))
 
 
 def _draw_ac_interior(dwg, x, y, w, h, skid_text: str):
@@ -263,52 +268,56 @@ def _draw_v_dimension_raw(lines, y1, y2, x, ext_x, text):
 
 
 def _draw_dc_interior_raw(lines, x, y, w, h, mirrored: bool = False):
+    """
+    Draw DC Block (BESS) interior with vertical battery stacks and cooling unit (raw SVG).
+    Matches the design shown in the reference image.
+    """
     pad = min(10.0, max(4.0, w * 0.06))
-    door_w = max(6.0, w * 0.12)
-    door_h = h * 0.35
-    door_x = x + pad if not mirrored else x + w - door_w - pad
-    door_y = y + h * 0.15
-    _svg_rect(lines, door_x, door_y, door_w, door_h, class_name="thin")
-    _svg_line(
-        lines,
-        door_x + door_w * 0.75,
-        door_y + door_h * 0.25,
-        door_x + door_w * 0.75,
-        door_y + door_h * 0.75,
-        class_name="thin",
-    )
-
-    # Liquid cooling strip on the right side (15% width)
-    cooling_w = w * 0.15
-    cooling_h = h - 2 * pad
-    cooling_x = x + w - cooling_w - pad
+    
+    # Battery stacks area - vertical lines to represent stacks (75% of width)
+    stack_x_start = x + pad
+    stack_x_end = x + w * 0.75
+    stack_width = stack_x_end - stack_x_start
+    stack_y_start = y + pad
+    stack_y_end = y + h - pad
+    
+    # Draw vertical stack lines
+    num_stacks = 12
+    if stack_width > 0 and num_stacks > 0:
+        stack_spacing = stack_width / (num_stacks + 1)
+        for i in range(1, num_stacks + 1):
+            stack_x = stack_x_start + i * stack_spacing
+            _svg_line(lines, stack_x, stack_y_start, stack_x, stack_y_end, class_name="thin")
+    
+    # Draw battery section border
+    _svg_line(lines, stack_x_start, stack_y_start, stack_x_end, stack_y_start, class_name="thin")
+    _svg_line(lines, stack_x_start, stack_y_end, stack_x_end, stack_y_end, class_name="thin")
+    _svg_line(lines, stack_x_start, stack_y_start, stack_x_start, stack_y_end, class_name="thin")
+    _svg_line(lines, stack_x_end, stack_y_start, stack_x_end, stack_y_end, class_name="thin")
+    
+    # Add "BATTERY" label
+    _svg_text(lines, "BATTERY", stack_x_start + stack_width * 0.5, stack_y_start - 8, class_name="small")
+    
+    # Cooling unit on the right side (25% of width)
+    cooling_x = stack_x_end
     cooling_y = y + pad
-    _svg_rect(lines, cooling_x, cooling_y, cooling_w, cooling_h, class_name="thin")
-    _svg_text(lines, "Liquid Cooling", cooling_x + cooling_w * 0.5, cooling_y + cooling_h * 0.5, class_name="small")
-
-    # Battery racks: 2 columns x 3 rows (6 total modules)
-    rack_x = x + pad + door_w + pad
-    rack_w = w - (pad * 3 + door_w + cooling_w)
-    rack_y = y + pad
-    rack_h = cooling_h
+    cooling_w = x + w - cooling_x - pad
+    cooling_h = h - 2 * pad
     
-    if rack_w <= 2 or rack_h <= 2:
-        return
-    
-    cols = 2
-    rows = 3
-    rack_gap_x = max(2.0, rack_w * 0.05)
-    rack_gap_y = max(2.0, rack_h * 0.05)
-    cell_w = max(1.0, (rack_w - rack_gap_x * (cols - 1)) / cols)
-    cell_h = max(1.0, (rack_h - rack_gap_y * (rows - 1)) / rows)
-    
-    for r in range(rows):
-        for c in range(cols):
-            cx = rack_x + c * (cell_w + rack_gap_x)
-            cy = rack_y + r * (cell_h + rack_gap_y)
-            _svg_rect(lines, cx, cy, cell_w, cell_h, class_name="thin")
-            # Add small label for each module
-            _svg_text(lines, f"M{r*cols+c+1}", cx + cell_w*0.5, cy + cell_h*0.5, class_name="small")
+    if cooling_w > 2 and cooling_h > 2:
+        # Draw cooling area border
+        _svg_rect(lines, cooling_x, cooling_y, cooling_w, cooling_h, class_name="thin")
+        
+        # Add horizontal lines for cooling channels
+        num_cooling_lines = 4
+        if cooling_h > 0:
+            cooling_line_spacing = cooling_h / (num_cooling_lines + 1)
+            for i in range(1, num_cooling_lines + 1):
+                line_y = cooling_y + i * cooling_line_spacing
+                _svg_line(lines, cooling_x + 2, line_y, cooling_x + cooling_w - 2, line_y, class_name="thin")
+        
+        # Add cooling label
+        _svg_text(lines, "COOLING", cooling_x + cooling_w * 0.5, cooling_y + cooling_h * 0.5, class_name="small")
 
 
 def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str):

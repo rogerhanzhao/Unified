@@ -375,56 +375,36 @@ def show():
         }
 
         st.subheader("Downloads")
-        report_template = st.selectbox(
-            "Report Template",
-            ["V1 (Stable)", "V2.1 (Beta)"],
-            index=0,
-            help="Default uses stable V1; V2.1 is beta and uses the new report structure.",
-        )
+        
+        # V2.1 is now the only report format
         c_d1, c_d2 = st.columns(2)
 
         with c_d1:
-            ac_bytes = create_ac_report(ac_output, report_context)
-
-            st.download_button(
-                "Download AC Report",
-                ac_bytes,
-                make_report_filename(project_name, "AC"),
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            )
+            st.info("Report downloads (V2.1 format only)")
 
         with c_d2:
             if not stage13_output:
                 st.info("Run DC sizing to enable the combined report.")
             else:
-                stage2_raw = stage13_output.get("stage2_raw", {})
-                block_code, block_name = _extract_block_identity(stage2_raw)
+                ctx = build_report_context(
+                    session_state=st.session_state,
+                    stage_outputs={
+                        "stage13_output": stage13_output,
+                        "stage2": stage13_output.get("stage2_raw", {}),
+                        "ac_output": ac_output,
+                    },
+                    project_inputs={
+                        "poi_power_mw": stage13_output.get("poi_power_req_mw"),
+                        "poi_energy_mwh": stage13_output.get("poi_energy_req_mwh"),
+                        "poi_energy_guarantee_mwh": stage13_output.get("poi_energy_req_mwh"),
+                        "poi_guarantee_year": stage13_output.get("poi_guarantee_year"),
+                    },
+                    scenario_ids=stage13_output.get("selected_scenario"),
+                )
+                comb_bytes = export_report_v2_1(ctx)
+                button_label = "Download Combined Report V2.1"
 
-                dc_output = {
-                    "stage1": stage13_output,
-                    "selected_scenario": stage13_output.get("selected_scenario", "container_only"),
-                    "dc_block_total_qty": stage13_output.get("dc_block_total_qty"),
-                    "container_count": stage13_output.get("container_count"),
-                    "block_code": block_code,
-                    "block_name": block_name,
-                }
-
-                if report_template.startswith("V2.1"):
-                    ctx = build_report_context(
-                        session_state=st.session_state,
-                        stage_outputs={"stage13_output": stage13_output, "ac_output": ac_output},
-                        project_inputs={"poi_energy_guarantee_mwh": stage13_output.get("poi_energy_req_mwh")},
-                        scenario_ids=stage13_output.get("selected_scenario"),
-                    )
-                    comb_bytes = export_report_v2_1(ctx)
-                    file_suffix = "Combined_V2_1_Beta"
-                    button_label = "Download Combined Report V2.1 (Beta)"
-                else:
-                    comb_bytes = create_combined_report(dc_output, ac_output, report_context)
-                    file_suffix = "Combined"
-                    button_label = "Download Combined Report (DC+AC)"
-
-                version = "V2.1" if report_template.startswith("V2.1") else "V1.0"
+                version = "V2.1"
                 proposal_filename = make_proposal_filename(project_name, version=version)
                 st.download_button(
                     button_label,

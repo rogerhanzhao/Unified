@@ -236,15 +236,6 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
     ]
     _add_table(doc, site_rows, ["Parameter", "Value"])
 
-    doc.add_heading("Battery & Degradation", level=3)
-    battery_rows = [
-        ("DoD", format_percent(ctx.stage1.get("dod_frac"), input_is_fraction=True)),
-        ("SC Loss", format_percent(ctx.stage1.get("sc_loss_frac"), input_is_fraction=True)),
-        ("Cycles per Year", f"{ctx.cycles_per_year:d}"),
-        ("Project Life (years)", f"{ctx.project_life_years:d}"),
-    ]
-    _add_table(doc, battery_rows, ["Parameter", "Value"])
-
     doc.add_heading("Efficiency Chain (one-way)", level=3)
     eff_rows = [
         ("Total Efficiency (one-way)", format_percent(ctx.efficiency_chain_oneway_frac, input_is_fraction=True)),
