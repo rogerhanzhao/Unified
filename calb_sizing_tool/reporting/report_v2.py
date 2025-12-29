@@ -378,9 +378,18 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
         if chart is not None and chart.getbuffer().nbytes > 0:
             doc.add_paragraph("")
             doc.add_picture(chart, width=Inches(6.7))
-    else:
-        doc.add_paragraph("Stage 3 data unavailable.")
-    doc.add_paragraph("")
+        else:
+            # Show diagnostic if recompute failed
+            err = None
+            try:
+                err = ctx.stage3_meta.get("error") if isinstance(ctx.stage3_meta, dict) else None
+            except Exception:
+                err = None
+            if err:
+                doc.add_paragraph(f"Stage 3 data unavailable: {err}")
+            else:
+                doc.add_paragraph("Stage 3 data unavailable.")
+        doc.add_paragraph("")
 
     doc.add_heading("Stage 4: AC Block Sizing", level=2)
     transformer_mva = None
