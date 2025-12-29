@@ -115,7 +115,7 @@ def _draw_v_dimension(dwg, y1, y2, x, ext_x, text):
 def _draw_dc_interior(dwg, x, y, w, h, mirrored: bool = False):
     """
     Draw DC Block (BESS) interior with vertical battery stacks and cooling unit.
-    Matches the design shown in the reference image.
+    Clean design without BATTERY/COOLING labels as per requirements.
     """
     pad = min(10.0, max(4.0, w * 0.06))
     
@@ -140,10 +140,7 @@ def _draw_dc_interior(dwg, x, y, w, h, mirrored: bool = False):
     dwg.add(dwg.line((stack_x_start, stack_y_start), (stack_x_start, stack_y_end), class_="thin"))
     dwg.add(dwg.line((stack_x_end, stack_y_start), (stack_x_end, stack_y_end), class_="thin"))
     
-    # Add "BATTERY" label
-    dwg.add(dwg.text("BATTERY", insert=(stack_x_start + stack_width * 0.5, stack_y_start - 8), class_="small", text_anchor="middle"))
-    
-    # Cooling unit on the right side (25% of width)
+    # Cooling unit on the right side (25% of width) - NO TEXT LABELS
     cooling_x = stack_x_end
     cooling_y = y + pad
     cooling_w = x + w - cooling_x - pad
@@ -270,7 +267,7 @@ def _draw_v_dimension_raw(lines, y1, y2, x, ext_x, text):
 def _draw_dc_interior_raw(lines, x, y, w, h, mirrored: bool = False):
     """
     Draw DC Block (BESS) interior with vertical battery stacks and cooling unit (raw SVG).
-    Matches the design shown in the reference image.
+    Clean design without BATTERY/COOLING labels as per requirements.
     """
     pad = min(10.0, max(4.0, w * 0.06))
     
@@ -295,10 +292,7 @@ def _draw_dc_interior_raw(lines, x, y, w, h, mirrored: bool = False):
     _svg_line(lines, stack_x_start, stack_y_start, stack_x_start, stack_y_end, class_name="thin")
     _svg_line(lines, stack_x_end, stack_y_start, stack_x_end, stack_y_end, class_name="thin")
     
-    # Add "BATTERY" label
-    _svg_text(lines, "BATTERY", stack_x_start + stack_width * 0.5, stack_y_start - 8, class_name="small")
-    
-    # Cooling unit on the right side (25% of width)
+    # Cooling unit on the right side (25% of width) - NO TEXT LABELS
     cooling_x = stack_x_end
     cooling_y = y + pad
     cooling_w = x + w - cooling_x - pad
@@ -315,9 +309,6 @@ def _draw_dc_interior_raw(lines, x, y, w, h, mirrored: bool = False):
             for i in range(1, num_cooling_lines + 1):
                 line_y = cooling_y + i * cooling_line_spacing
                 _svg_line(lines, cooling_x + 2, line_y, cooling_x + cooling_w - 2, line_y, class_name="thin")
-        
-        # Add cooling label
-        _svg_text(lines, "COOLING", cooling_x + cooling_w * 0.5, cooling_y + cooling_h * 0.5, class_name="small")
 
 
 def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str):
