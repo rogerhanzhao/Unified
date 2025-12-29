@@ -114,10 +114,21 @@ def _draw_v_dimension(dwg, y1, y2, x, ext_x, text):
 
 def _draw_dc_interior(dwg, x, y, w, h, mirrored: bool = False):
     """
-    Draw DC Block (BESS) interior with vertical battery stacks and cooling unit.
+    Draw DC Block (BESS) interior with vertical battery stacks, cooling unit, and door.
     Clean design without BATTERY/COOLING labels as per requirements.
+    Door indication shows container access point.
     """
     pad = min(10.0, max(4.0, w * 0.06))
+    
+    # Door indication (simple rectangle outline on left side)
+    door_w = max(8.0, w * 0.15)
+    door_h = h * 0.4
+    door_x = x + pad if not mirrored else x + w - door_w - pad
+    door_y = y + h * 0.3
+    dwg.add(dwg.rect(insert=(door_x, door_y), size=(door_w, door_h), class_="thin"))
+    # Add door handle line
+    dwg.add(dwg.line((door_x + door_w * 0.8, door_y + door_h * 0.2), 
+                     (door_x + door_w * 0.8, door_y + door_h * 0.8), class_="thin"))
     
     # Battery stacks area - vertical lines to represent stacks (75% of width)
     stack_x_start = x + pad
@@ -163,6 +174,10 @@ def _draw_dc_interior(dwg, x, y, w, h, mirrored: bool = False):
 
 
 def _draw_ac_interior(dwg, x, y, w, h, skid_text: str):
+    """
+    Draw AC Block (PCS&MVT SKID) interior.
+    Represents power conversion and transformation area.
+    """
     pcs_w = w * 0.55
     tr_w = w * 0.3
     rmu_w = w - pcs_w - tr_w
@@ -175,17 +190,25 @@ def _draw_ac_interior(dwg, x, y, w, h, skid_text: str):
     dwg.add(dwg.line((split_1, y), (split_1, y + h), class_="thin"))
     dwg.add(dwg.line((split_2, y), (split_2, y + h), class_="thin"))
 
-    dwg.add(dwg.text("PCS", insert=(x + 6, y + 16), class_="dim-text"))
+    dwg.add(dwg.text("PCS Unit", insert=(x + 6, y + 16), class_="dim-text"))
     dwg.add(dwg.text("Transformer", insert=(split_1 + 6, y + 16), class_="dim-text"))
     dwg.add(dwg.text("RMU", insert=(split_2 + 6, y + 16), class_="dim-text"))
 
+    # PCS area: show 2 or 4 PCS modules depending on block config
     pcs_pad = max(4.0, pcs_w * 0.06)
-    cabinet_w = max(6.0, (pcs_w - pcs_pad * 4) / 3)
-    cabinet_h = h - pcs_pad * 2
-    for i in range(3):
-        cx = x + pcs_pad + i * (cabinet_w + pcs_pad)
-        dwg.add(dwg.rect(insert=(cx, y + pcs_pad), size=(cabinet_w, cabinet_h), class_="thin"))
+    # Typically 2 or 4 PCS per block
+    pcs_cols = 2
+    pcs_rows = 2
+    cabinet_w = (pcs_w - pcs_pad * (pcs_cols + 1)) / pcs_cols
+    cabinet_h = (h - pcs_pad * 2) / pcs_rows
+    
+    for row in range(pcs_rows):
+        for col in range(pcs_cols):
+            cx = x + pcs_pad + col * (cabinet_w + pcs_pad)
+            cy = y + pcs_pad + row * (cabinet_h + pcs_pad * 0.5)
+            dwg.add(dwg.rect(insert=(cx, cy), size=(cabinet_w, cabinet_h), class_="thin"))
 
+    # Transformer area: show transformer symbol
     tr_pad = max(5.0, tr_w * 0.08)
     dwg.add(
         dwg.rect(
@@ -266,10 +289,21 @@ def _draw_v_dimension_raw(lines, y1, y2, x, ext_x, text):
 
 def _draw_dc_interior_raw(lines, x, y, w, h, mirrored: bool = False):
     """
-    Draw DC Block (BESS) interior with vertical battery stacks and cooling unit (raw SVG).
+    Draw DC Block (BESS) interior with vertical battery stacks, cooling unit, and door (raw SVG).
     Clean design without BATTERY/COOLING labels as per requirements.
+    Door indication shows container access point.
     """
     pad = min(10.0, max(4.0, w * 0.06))
+    
+    # Door indication (simple rectangle outline on left side)
+    door_w = max(8.0, w * 0.15)
+    door_h = h * 0.4
+    door_x = x + pad if not mirrored else x + w - door_w - pad
+    door_y = y + h * 0.3
+    _svg_rect(lines, door_x, door_y, door_w, door_h, class_name="thin")
+    # Add door handle line
+    _svg_line(lines, door_x + door_w * 0.8, door_y + door_h * 0.2,
+              door_x + door_w * 0.8, door_y + door_h * 0.8, class_name="thin")
     
     # Battery stacks area - vertical lines to represent stacks (75% of width)
     stack_x_start = x + pad
@@ -312,6 +346,10 @@ def _draw_dc_interior_raw(lines, x, y, w, h, mirrored: bool = False):
 
 
 def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str):
+    """
+    Draw AC Block (PCS&MVT SKID) interior (raw SVG).
+    Represents power conversion and transformation area.
+    """
     pcs_w = w * 0.55
     tr_w = w * 0.3
     rmu_w = w - pcs_w - tr_w
@@ -323,17 +361,24 @@ def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str):
     split_2 = split_1 + tr_w
     _svg_line(lines, split_1, y, split_1, y + h, class_name="thin")
     _svg_line(lines, split_2, y, split_2, y + h, class_name="thin")
-    _svg_text(lines, "PCS", x + 6, y + 16, class_name="dim-text")
+    _svg_text(lines, "PCS Unit", x + 6, y + 16, class_name="dim-text")
     _svg_text(lines, "Transformer", split_1 + 6, y + 16, class_name="dim-text")
     _svg_text(lines, "RMU", split_2 + 6, y + 16, class_name="dim-text")
 
+    # PCS area: show 2x2 grid of PCS modules
     pcs_pad = max(4.0, pcs_w * 0.06)
-    cabinet_w = max(6.0, (pcs_w - pcs_pad * 4) / 3)
-    cabinet_h = h - pcs_pad * 2
-    for i in range(3):
-        cx = x + pcs_pad + i * (cabinet_w + pcs_pad)
-        _svg_rect(lines, cx, y + pcs_pad, cabinet_w, cabinet_h, class_name="thin")
+    pcs_cols = 2
+    pcs_rows = 2
+    cabinet_w = (pcs_w - pcs_pad * (pcs_cols + 1)) / pcs_cols
+    cabinet_h = (h - pcs_pad * 2) / pcs_rows
+    
+    for row in range(pcs_rows):
+        for col in range(pcs_cols):
+            cx = x + pcs_pad + col * (cabinet_w + pcs_pad)
+            cy = y + pcs_pad + row * (cabinet_h + pcs_pad * 0.5)
+            _svg_rect(lines, cx, cy, cabinet_w, cabinet_h, class_name="thin")
 
+    # Transformer area
     tr_pad = max(5.0, tr_w * 0.08)
     _svg_rect(lines, split_1 + tr_pad, y + tr_pad, tr_w - tr_pad * 2, h - tr_pad * 2, class_name="thin")
 
