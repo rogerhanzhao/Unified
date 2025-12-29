@@ -2,9 +2,6 @@ from pathlib import Path
 
 import streamlit as st
 from calb_sizing_tool.reporting.export_docx import (
-    create_ac_report,
-    create_combined_report,
-    make_report_filename,
     make_proposal_filename,
 )
 from calb_sizing_tool.reporting.report_context import build_report_context
@@ -93,7 +90,7 @@ def show():
             artifacts["layout_svg_bytes"] = layout_svg
 
     st.header("Report Export")
-    st.caption("Generate DOCX reports (V1 stable and V2.1 beta).")
+    st.caption("Generate unified V2.1 DOCX report with full AC and DC analysis.")
 
     stage13_output = (
         dc_results.get("stage13_output")
@@ -139,70 +136,44 @@ def show():
     }
 
     st.subheader("Downloads")
-    report_template = st.selectbox(
-        "Report Template",
-        ["V1 (Stable)", "V2.1 (Beta)"],
-        index=0,
-        help="V1 is stable; V2.1 embeds diagram PNGs when available.",
-    )
+    
+    # V2.1 is now the standard report format
+    report_template = "V2.1 (Beta)"
+    
     c_d1, c_d2 = st.columns(2)
 
     with c_d1:
-        ac_bytes = create_ac_report(ac_output, report_context)
-        st.download_button(
-            "Download AC Report",
-            ac_bytes,
-            make_report_filename(project_name, "AC"),
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        )
+        st.info("AC Report generation moved to V2.1 format only.")
 
     with c_d2:
         stage2_raw = stage13_output.get("stage2_raw", {})
         block_code, block_name = _extract_block_identity(stage2_raw)
 
-        dc_output = {
-            "stage1": stage13_output,
-            "selected_scenario": stage13_output.get("selected_scenario", "container_only"),
-            "dc_block_total_qty": stage13_output.get("dc_block_total_qty"),
-            "container_count": stage13_output.get("container_count"),
-            "block_code": block_code,
-            "block_name": block_name,
+        # Build comprehensive project inputs from stage13_output
+        project_inputs_for_report = {
+            "project_name": project_name,
+            "poi_power_mw": stage13_output.get("poi_power_req_mw"),
+            "poi_energy_mwh": stage13_output.get("poi_energy_req_mwh"),
+            "poi_energy_guarantee_mwh": stage13_output.get("poi_energy_req_mwh"),
+            "poi_guarantee_year": stage13_output.get("poi_guarantee_year"),
+            "poi_frequency_hz": stage13_output.get("poi_frequency_hz"),
         }
-        if dc_results.get("results_dict"):
-            dc_output["results_dict"] = dc_results.get("results_dict")
-        if dc_results.get("report_order"):
-            dc_output["report_order"] = dc_results.get("report_order")
+        ctx = build_report_context(
+            session_state=st.session_state,
+            stage_outputs={
+                "stage13_output": stage13_output,
+                "stage2": stage13_output.get("stage2_raw", {}),
+                "ac_output": ac_output,
+                "sld_snapshot": st.session_state.get("sld_snapshot"),
+            },
+            project_inputs=project_inputs_for_report,
+            scenario_ids=stage13_output.get("selected_scenario", "container_only"),
+        )
+        comb_bytes = export_report_v2_1(ctx)
+        file_suffix = "Combined_V2_1"
+        button_label = "Download Combined Report V2.1"
 
-        if report_template.startswith("V2.1"):
-            # Build comprehensive project inputs from stage13_output
-            project_inputs_for_report = {
-                "project_name": project_name,
-                "poi_power_mw": stage13_output.get("poi_power_req_mw"),
-                "poi_energy_mwh": stage13_output.get("poi_energy_req_mwh"),
-                "poi_energy_guarantee_mwh": stage13_output.get("poi_energy_req_mwh"),
-                "poi_guarantee_year": stage13_output.get("poi_guarantee_year"),
-                "poi_frequency_hz": stage13_output.get("poi_frequency_hz"),
-            }
-            ctx = build_report_context(
-                session_state=st.session_state,
-                stage_outputs={
-                    "stage13_output": stage13_output,
-                    "stage2": stage13_output.get("stage2_raw", {}),
-                    "ac_output": ac_output,
-                    "sld_snapshot": st.session_state.get("sld_snapshot"),
-                },
-                project_inputs=project_inputs_for_report,
-                scenario_ids=stage13_output.get("selected_scenario", "container_only"),
-            )
-            comb_bytes = export_report_v2_1(ctx)
-            file_suffix = "Combined_V2_1_Beta"
-            button_label = "Download Combined Report V2.1 (Beta)"
-        else:
-            comb_bytes = create_combined_report(dc_output, ac_output, report_context)
-            file_suffix = "Combined"
-            button_label = "Download Combined Report (DC+AC)"
-
-        version = "V2.1" if report_template.startswith("V2.1") else "V1.0"
+        version = "V2.1"
         proposal_filename = make_proposal_filename(project_name, version=version)
         st.download_button(
             button_label,

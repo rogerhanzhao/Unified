@@ -204,13 +204,13 @@ def build_report_context(
     cycles_per_year = int(stage1.get("cycles_per_year", 0) or 0)
 
     efficiency_components = {
-        "eff_dc_cables_frac": float(stage1.get("eff_dc_cables_frac", 0.0) or 0.0),
-        "eff_pcs_frac": float(stage1.get("eff_pcs_frac", 0.0) or 0.0),
-        "eff_mvt_frac": float(stage1.get("eff_mvt_frac", 0.0) or 0.0),
-        "eff_ac_cables_sw_rmu_frac": float(stage1.get("eff_ac_cables_sw_rmu_frac", 0.0) or 0.0),
-        "eff_hvt_others_frac": float(stage1.get("eff_hvt_others_frac", 0.0) or 0.0),
+        "eff_dc_cables_frac": float(stage1.get("eff_dc_cables_frac") or 0.97),  # 97% default
+        "eff_pcs_frac": float(stage1.get("eff_pcs_frac") or 0.97),  # 97% default
+        "eff_mvt_frac": float(stage1.get("eff_mvt_frac") or 0.985),  # 98.5% (Transformer/MVT) default
+        "eff_ac_cables_sw_rmu_frac": float(stage1.get("eff_ac_cables_sw_rmu_frac") or 0.98),  # 98% default
+        "eff_hvt_others_frac": float(stage1.get("eff_hvt_others_frac") or 0.98),  # 98% default
     }
-    efficiency_chain_oneway = float(stage1.get("eff_dc_to_poi_frac", 0.0) or 0.0)
+    efficiency_chain_oneway = float(stage1.get("eff_dc_to_poi_frac") or 0.85)  # 85% default
 
     avg_dc_blocks_per_ac_block = None
     dc_blocks_allocation = []

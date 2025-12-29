@@ -332,6 +332,11 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
             available_years = set(s3_df["Year_Index"].astype(int).tolist())
         except Exception:
             available_years = set()
+        
+        # Keep full data for chart (all years)
+        s3_df_full = s3_df.copy()
+        
+        # Filter to key years for table display only
         key_years = sorted(set([0, ctx.poi_guarantee_year, 5, 10, 15, 20]))
         selected_years = [year for year in key_years if year in available_years]
         if selected_years:
@@ -371,7 +376,7 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
             doc.add_picture(cap_chart, width=Inches(6.7))
 
         chart = _plot_poi_usable_png(
-            s3_df,
+            s3_df_full,
             poi_target=ctx.poi_energy_guarantee_mwh,
             title="POI Usable Energy vs Year",
         )
