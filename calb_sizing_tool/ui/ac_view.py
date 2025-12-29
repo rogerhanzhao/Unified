@@ -1,4 +1,8 @@
-﻿import math
+"""
+AC SIZING V2 - 基于DC Block数量的推荐引擎
+优先考虑 1:1, 1:2, 1:4 的搭配方案
+"""
+import math
 from pathlib import Path
 
 import pandas as pd
@@ -7,48 +11,45 @@ import streamlit as st
 from calb_sizing_tool.common.allocation import allocate_dc_blocks, evenly_distribute
 from calb_sizing_tool.models import DCBlockResult
 from calb_sizing_tool.reporting.export_docx import (
-    create_ac_report,
     create_combined_report,
     make_report_filename,
-    make_proposal_filename,
 )
-from calb_sizing_tool.reporting.report_context import build_report_context
 from calb_sizing_tool.reporting.report_v2 import export_report_v2_1
 from calb_sizing_tool.state.project_state import bump_run_id_ac, init_project_state
 from calb_sizing_tool.state.session_state import init_shared_state, set_run_time
+from calb_sizing_tool.ui.ac_sizing_config import (
+    ACBlockRatioOption,
+    generate_ac_sizing_options,
+    suggest_pcs_count_and_rating,
+)
 
 
-def _extract_block_identity(stage2_raw):
-    block_code = None
-    block_name = None
-    block_table = stage2_raw.get("block_config_table") if isinstance(stage2_raw, dict) else None
-    if isinstance(block_table, pd.DataFrame) and not block_table.empty:
-        first_row = block_table.iloc[0]
-        block_code = first_row.get("Block Code")
-        block_name = first_row.get("Block Name")
-    return block_code, block_name
+def _format_float(val, decimals=2) -> str:
+    try:
+        v = float(val or 0)
+        return f"{v:.{decimals}f}"
+    except Exception:
+        return str(val)
 
 
 def show():
+    """AC SIZING V2 主函数"""
     state = init_shared_state()
     init_project_state()
     dc_results = state.dc_results
     ac_inputs = state.ac_inputs
     ac_results = state.ac_results
 
-    st.header("AC Block Sizing")
+    st.header("⚡ AC Block Sizing (V2 - DC-First Approach)")
 
-    # 1. Dependency Check - DC Sizing必须先完成
+    # ========== STEP 1: Dependency & DC Summary ==========
     dc_data = st.session_state.get("dc_result_summary") or dc_results.get("dc_result_summary")
     stage13_output = st.session_state.get("stage13_output") or dc_results.get("stage13_output") or {}
+    
     if not dc_data:
-        st.warning("DC sizing results not found.")
-        st.info("Please run DC sizing first.")
+        st.warning("❌ DC sizing results not found.")
+        st.info("Please run DC sizing first to determine DC Block count and capacity.")
         return
-
-    # Retrieve data from session state
-    dc_data = dc_data or {}
-    stage13_output = stage13_output or {}
 
     try:
         dc_model = dc_data.get("dc_block")
@@ -60,13 +61,14 @@ def show():
                 voltage_v=1200,
             )
 
-        # 从DC Sizing获取基本参数
+        # 关键数据来自DC Sizing
+        dc_blocks_total = int(getattr(dc_model, "count", 0) or 0)  # ⭐ DC Block数量
+        dc_block_mwh = float(getattr(dc_model, "capacity_mwh", 5.0) or 5.0)
         target_mw = float(dc_data.get("target_mw", stage13_output.get("poi_power_req_mw", 10.0)))
         target_mwh = float(dc_data.get("mwh", stage13_output.get("poi_energy_req_mwh", 0.0)))
-        dc_blocks_total = int(getattr(dc_model, "count", 0) or 0)  # ⭐ DC Block总数
         
     except Exception as exc:
-        st.error(f"Data structure mismatch: {exc}. Please re-run DC sizing.")
+        st.error(f"Data structure mismatch: {exc}")
         return
 
     project_name = (
@@ -77,432 +79,197 @@ def show():
     )
     st.session_state["project_name"] = project_name
 
-    # Display DC System Context
-    st.info(
-        f"📊 **DC System Basis**: {dc_blocks_total} × {dc_model.container_model} "
-        f"({dc_model.capacity_mwh:.3f} MWh each) | POI Requirement: {target_mw:.1f} MW / {target_mwh:.0f} MWh"
-    )
+    # ========== Display DC System Summary ==========
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("DC Blocks", f"{dc_blocks_total} × 20ft")
+    col2.metric("DC Capacity", f"{dc_blocks_total * dc_block_mwh:.1f} MWh")
+    col3.metric("POI Power Req.", f"{target_mw:.1f} MW")
+    col4.metric("POI Energy Req.", f"{target_mwh:.0f} MWh")
 
-    def _init_input(field: str, default_value):
-        key = f"ac_inputs.{field}"
-        if key not in st.session_state:
-            st.session_state[key] = default_value
-        if field not in ac_inputs:
-            ac_inputs[field] = st.session_state[key]
-        return key
+    st.divider()
 
-    # 2. Inputs Form
-    with st.form("ac_sizing_form"):
-        st.subheader("Electrical Parameters")
-        c1, c2 = st.columns(2)
+    # ========== STEP 2: Generate Options ==========
+    st.subheader("📊 AC Block Sizing Options")
+    st.markdown("""
+    Based on your DC Block count, three standard configurations are recommended:
+    """)
 
-        grid_kv = c1.number_input(
-            "Grid Voltage (kV)",
-            min_value=1.0,
-            key=_init_input(
-                "grid_kv",
-                float(
-                    ac_inputs.get("grid_kv")
-                    or ac_results.get("mv_kv")
-                    or stage13_output.get("poi_nominal_voltage_kv", 33.0)
-                ),
-            ),
-            step=0.1,
-            help="Medium Voltage (MV) at the collection bus / POI.",
-        )
-        ac_inputs["grid_kv"] = grid_kv
+    options = generate_ac_sizing_options(dc_blocks_total, target_mw, target_mwh, dc_block_mwh)
 
-        pcs_lv = c2.number_input(
-            "PCS AC Output Voltage (LV bus, V_LL,rms)",
-            min_value=200.0,
-            key=_init_input(
-                "lv_voltage_v",
-                float(
-                    ac_inputs.get("lv_voltage_v")
-                    or ac_inputs.get("pcs_lv_v")
-                    or ac_results.get("lv_voltage_v")
-                    or ac_results.get("lv_v")
-                    or 690.0
-                ),
-            ),
-            step=10.0,
-            help="AC-side low-voltage bus voltage at PCS output.",
-        )
-        ac_inputs["lv_voltage_v"] = pcs_lv
-        ac_inputs["pcs_lv_v"] = pcs_lv
+    # Display options as tabs
+    tabs = st.tabs([opt.ratio for opt in options])
 
-        st.subheader("Configuration")
+    selected_option = None
+    selected_option_index = 1  # Default to Option B (1:2)
+
+    for tab_idx, (tab, option) in enumerate(zip(tabs, options)):
+        with tab:
+            # Option details
+            col_left, col_right = st.columns([2, 1])
+            
+            with col_left:
+                st.write(f"**{option.readable_description}**")
+                st.write(option.description)
+                
+                # AC Block数量
+                st.metric("AC Blocks Required", f"{option.ac_block_count}")
+                
+                # 每个AC Block的DC Block数 (带分配详情)
+                dc_distribution = f"Distribution: {option.dc_blocks_per_ac}"
+                st.write(f"**DC Block Distribution**: {dc_distribution}")
+                
+                # PCS推荐
+                st.write("**PCS Recommendations:**")
+                for i, rec in enumerate(option.pcs_recommendations):
+                    st.write(f"  • Option {chr(97+i)}: {rec.readable}")
+            
+            with col_right:
+                if option.is_recommended:
+                    st.success("✅ RECOMMENDED")
+                    if selected_option is None:
+                        selected_option = option
+                        selected_option_index = tab_idx
+                else:
+                    st.info("Alternative")
+            
+            # Select button
+            if st.button(f"Select {option.ratio}", key=f"select_option_{option.ratio}"):
+                selected_option = option
+                selected_option_index = tab_idx
+                st.session_state["selected_ac_ratio"] = option.ratio
+                st.rerun()
+
+    # If a ratio was previously selected, use it
+    if "selected_ac_ratio" in st.session_state:
+        selected_ratio = st.session_state["selected_ac_ratio"]
+        selected_option = next((o for o in options if o.ratio == selected_ratio), options[1])
+
+    st.divider()
+
+    # ========== STEP 3: Configuration for Selected Option ==========
+    if selected_option:
+        st.subheader(f"🔧 Configuration - Ratio {selected_option.ratio}")
         
-        # PCS Specifications (standard sizes)
-        pcs_specs = {
-            "1250 kW": 1250,
-            "1500 kW": 1500,
-            "1725 kW": 1725,
-            "2000 kW": 2000,
-            "2500 kW": 2500,
-        }
-        pcs_default_name = ac_inputs.get("pcs_model", "2500 kW")
-        if pcs_default_name not in pcs_specs:
-            pcs_default_name = "2500 kW"
-        
-        pcs_model = st.selectbox(
-            "PCS Module Rating",
-            list(pcs_specs.keys()),
-            index=list(pcs_specs.keys()).index(pcs_default_name),
-            key=_init_input("pcs_model", pcs_default_name),
-            help="Select standard PCS module size (kW)",
-        )
-        ac_inputs["pcs_model"] = pcs_model
-        pcs_power_kw = pcs_specs[pcs_model]
-        
-        # PCS per AC Block - fixed to 2 or 4
-        pcs_per_block_options = [2, 4]
-        pcs_default = ac_inputs.get("pcs_per_block") or ac_results.get("pcs_per_block") or 4
-        if pcs_default not in pcs_per_block_options:
-            pcs_default = 4
-        
-        pcs_per_block = st.selectbox(
-            "PCS per AC Block",
-            pcs_per_block_options,
-            index=pcs_per_block_options.index(int(pcs_default)),
-            key=_init_input("pcs_per_block", int(pcs_default)),
-            help="AC Block composition: 2 or 4 PCS modules",
-        )
-        ac_inputs["pcs_per_block"] = int(pcs_per_block)
-        
-        # Calculate AC Block size from PCS specs
-        block_size_mw = (pcs_power_kw * pcs_per_block) / 1000.0
-        ac_inputs["block_size_mw"] = block_size_mw
-        
-        # Container size selector (auto-suggest based on total power)
-        st.write(f"**AC Block Size**: {block_size_mw:.2f} MW (from {int(pcs_per_block)} × {pcs_model})")
-
-        submitted = st.form_submit_button("Run AC Sizing")
-
-    # 3. Calculation & Results
-    if submitted:
-        bump_run_id_ac()
-        ac_inputs["project_name"] = project_name
-        ac_inputs["grid_kv"] = float(grid_kv)
-        ac_inputs["lv_voltage_v"] = float(pcs_lv)
-        ac_inputs["pcs_lv_v"] = float(pcs_lv)
-        ac_inputs["block_size_mw"] = float(block_size_mw)
-        st.session_state["project_name"] = project_name
-
-        # ========== STEP 3: Calculate AC Block count needed ==========
-        num_blocks = math.ceil(target_mw / block_size_mw) if block_size_mw > 0 else 1
-        total_ac_mw = num_blocks * block_size_mw
-        overhead = total_ac_mw - target_mw
-        overhead_pct = (overhead / block_size_mw * 100) if block_size_mw > 0 else 0
-
-        # ========== STEP 4: DC Block均衡分配 ⭐ ==========
-        # 总的PCS数量
-        total_pcs = num_blocks * pcs_per_block
-        
-        # 均衡分配DC Block到各PCS
-        dc_blocks_per_pcs_count = dc_blocks_total // total_pcs if total_pcs > 0 else 0
-        remaining_dc_blocks = dc_blocks_total % total_pcs if total_pcs > 0 else 0
-        
-        # 构建每个PCS的DC Block分配数组
-        dc_blocks_allocation = []
-        for pcs_idx in range(total_pcs):
-            # 前 remaining_dc_blocks 个PCS各分配多一个
-            if pcs_idx < remaining_dc_blocks:
-                dc_blocks_allocation.append(dc_blocks_per_pcs_count + 1)
+        with st.form("ac_config_form"):
+            col1, col2, col3 = st.columns(3)
+            
+            # PCS功率选择
+            pcs_options = [f"{rec.readable}" for rec in selected_option.pcs_recommendations]
+            pcs_choice = col1.selectbox(
+                "PCS Configuration",
+                range(len(pcs_options)),
+                format_func=lambda i: pcs_options[i],
+                help="Select recommended PCS configuration"
+            )
+            chosen_rec = selected_option.pcs_recommendations[pcs_choice]
+            pcs_per_ac = chosen_rec.pcs_count
+            pcs_kw = chosen_rec.pcs_kw
+            
+            # 允许微调
+            allow_adjust = col2.checkbox("Allow manual adjustment?", value=False)
+            
+            if allow_adjust:
+                pcs_kw = col3.number_input(
+                    "PCS Rating (kW)",
+                    min_value=1000,
+                    max_value=5000,
+                    value=pcs_kw,
+                    step=100
+                )
             else:
-                dc_blocks_allocation.append(dc_blocks_per_pcs_count)
-        
-        # 验证分配
-        allocation_valid = sum(dc_blocks_allocation) == dc_blocks_total
-        allocation_balanced = max(dc_blocks_allocation) - min(dc_blocks_allocation) <= 1 if dc_blocks_allocation else True
-        
-        # ========== STEP 5: 功率和容量平衡验证 ==========
-        # 每个PCS连接的DC Block容量总和
-        total_energy_from_dc = dc_blocks_total * dc_model.capacity_mwh
-        
-        # 检查能量是否足够
-        energy_ratio = total_energy_from_dc / target_mwh if target_mwh > 0 else 0
-        energy_balanced = 0.95 <= energy_ratio <= 1.05  # ±5% 容差
-        
-        # Warnings and Errors
-        warnings = []
-        errors = []
-        
-        if not allocation_valid:
-            errors.append(f"❌ DC Block allocation failed: {sum(dc_blocks_allocation)} ≠ {dc_blocks_total}")
-        
-        if not allocation_balanced:
-            max_dc = max(dc_blocks_allocation) if dc_blocks_allocation else 0
-            min_dc = min(dc_blocks_allocation) if dc_blocks_allocation else 0
-            warnings.append(f"⚠️ DC Block distribution not perfectly balanced: max={max_dc}, min={min_dc}")
-        
-        if overhead_pct > 20:
-            warnings.append(f"⚠️ AC power overhead is {overhead_pct:.1f}% (> 20% threshold)")
-        
-        if not energy_balanced:
-            if energy_ratio < 0.95:
-                errors.append(f"❌ Energy insufficient: {total_energy_from_dc:.0f} MWh < {target_mwh:.0f} MWh required")
-            else:
-                warnings.append(f"⚠️ Energy oversized: {total_energy_from_dc:.0f} MWh > {target_mwh:.0f} MWh by {(energy_ratio-1)*100:.1f}%")
-        
-        # Display warnings and errors
-        if errors:
-            for error in errors:
-                st.error(error)
-            st.error("❌ Configuration cannot be completed. Please adjust:")
-            st.markdown("""
-            **Options:**
-            1. Return to DC Sizing and adjust DC Block count
-            2. Try different PCS per AC Block (2 instead of 4, or vice versa)
-            3. Select different PCS Module Rating
-            """)
-            # 不继续执行后续逻辑
-            st.stop()
-        
-        # Display warnings
-        for warning in warnings:
-            st.warning(warning)
-        
-        # ========== STEP 6: Proceed with results ==========
-        pcs_per_block = int(pcs_per_block)
-        transformer_kva = block_size_mw * 1000 / 0.9
-        
-        dc_per_ac = dc_blocks_total // num_blocks if num_blocks > 0 else 0
-        pcs_count_by_block = evenly_distribute(total_pcs, num_blocks)
-        dc_blocks_total_by_block = evenly_distribute(dc_blocks_total, num_blocks)
-        dc_blocks_per_feeder_by_block = []
-        for idx, block_pcs in enumerate(pcs_count_by_block):
-            block_dc_total = dc_blocks_total_by_block[idx] if idx < len(dc_blocks_total_by_block) else 0
-            dc_blocks_per_feeder_by_block.append(allocate_dc_blocks(block_dc_total, block_pcs))
+                col3.write(f"**Selected**: {pcs_kw} kW")
+            
+            # 容器大小 (自动)
+            total_ac_power = selected_option.ac_block_count * pcs_per_ac * pcs_kw / 1000
+            auto_container = "40ft" if total_ac_power > 5 else "20ft"
+            st.info(f"Container size: Auto {auto_container} based on total power {total_ac_power:.2f} MW")
+            
+            submitted = st.form_submit_button("✅ Run AC Sizing")
 
-        dc_block_mwh_each = float(getattr(dc_model, "capacity_mwh", 0.0) or 0.0)
-        pcs_count_primary = pcs_count_by_block[0] if pcs_count_by_block else pcs_per_block
-        pcs_units = [
-            {"id": f"PCS-{idx + 1}", "rating_kw_or_kva": pcs_power_kw}
-            for idx in range(max(1, int(pcs_count_primary)))
-        ]
-
-        per_ac_block = []
-        for block_index, feeder_counts in enumerate(dc_blocks_per_feeder_by_block, start=1):
-            block_total = int(sum(feeder_counts))
-            per_feeder = {
-                f"F{idx + 1}": int(count) for idx, count in enumerate(feeder_counts)
+        # ========== STEP 4: Calculation ==========
+        if submitted:
+            bump_run_id_ac()
+            
+            num_blocks = selected_option.ac_block_count
+            pcs_per_block = pcs_per_ac
+            block_size_mw = pcs_per_block * pcs_kw / 1000.0
+            total_ac_mw = num_blocks * block_size_mw
+            overhead = total_ac_mw - target_mw
+            
+            # Validation
+            errors = []
+            warnings = []
+            
+            # Check energy
+            total_energy = dc_blocks_total * dc_block_mwh
+            if total_energy < target_mwh * 0.95:
+                errors.append(f"❌ Insufficient energy: {total_energy:.0f} MWh < {target_mwh:.0f} MWh")
+            elif total_energy > target_mwh * 1.05:
+                warnings.append(f"⚠️ Excess energy: {total_energy:.0f} MWh > {target_mwh:.0f} MWh by {(total_energy/target_mwh-1)*100:.1f}%")
+            
+            # Check power
+            if total_ac_mw < target_mw * 0.95:
+                errors.append(f"❌ Insufficient power: {total_ac_mw:.1f} MW < {target_mw:.1f} MW")
+            elif overhead > block_size_mw * 0.3:
+                warnings.append(f"⚠️ Significant power overhead: {overhead:.1f} MW ({overhead/block_size_mw*100:.0f}% of one AC Block)")
+            
+            # Display validation results
+            if errors:
+                for err in errors:
+                    st.error(err)
+                st.stop()
+            
+            for warn in warnings:
+                st.warning(warn)
+            
+            # ========== STEP 5: Display Results ==========
+            st.success("✅ AC Configuration Complete!")
+            
+            # Summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("AC Block Count", num_blocks)
+            col2.metric("AC Block Size", f"{block_size_mw:.2f} MW")
+            col3.metric("Total AC Power", f"{total_ac_mw:.2f} MW")
+            col4.metric("Power Margin", f"{overhead:.2f} MW")
+            
+            # Configuration table
+            st.subheader("AC Block Configuration Table")
+            config_data = []
+            for block_idx in range(num_blocks):
+                dc_count = selected_option.dc_blocks_per_ac[block_idx] if block_idx < len(selected_option.dc_blocks_per_ac) else 1
+                config_data.append({
+                    "AC Block": f"Block {block_idx+1}",
+                    "PCS Count": pcs_per_block,
+                    "PCS Rating": f"{pcs_kw} kW",
+                    "AC Power": f"{block_size_mw:.2f} MW",
+                    "DC Blocks": dc_count,
+                    "DC Energy": f"{dc_count * dc_block_mwh:.1f} MWh"
+                })
+            
+            df_config = pd.DataFrame(config_data)
+            st.dataframe(df_config, use_container_width=True)
+            
+            # Store results
+            ac_output = {
+                "project_name": project_name,
+                "ac_ratio": selected_option.ratio,
+                "num_blocks": num_blocks,
+                "pcs_per_block": pcs_per_block,
+                "pcs_kw": pcs_kw,
+                "block_size_mw": block_size_mw,
+                "total_ac_mw": total_ac_mw,
+                "overhead_mw": overhead,
+                "poi_power_mw": target_mw,
+                "poi_energy_mwh": target_mwh,
+                "mv_kv": float(st.session_state.get("grid_kv", 33.0)),
+                "lv_v": float(st.session_state.get("pcs_lv_v", 690.0)),
+                "transformer_count": num_blocks,
+                "pcs_count_total": num_blocks * pcs_per_block,
             }
-            per_pcs_group = [
-                {"pcs_id": f"PCS-{idx + 1}", "dc_block_count": int(count)}
-                for idx, count in enumerate(feeder_counts)
-            ]
-            per_ac_block.append(
-                {
-                    "block_id": f"B{block_index}",
-                    "dc_blocks_total": block_total,
-                    "per_feeder": per_feeder,
-                    "per_pcs_group": per_pcs_group,
-                }
-            )
+            
+            st.session_state["ac_output"] = ac_output
+            ac_results.update(ac_output)
+            set_run_time("ac_results")
+            
+            st.info("✅ Configuration saved. Proceed to SLD generation and report export.")
 
-        primary_block = per_ac_block[0] if per_ac_block else {
-            "dc_blocks_total": 0,
-            "per_feeder": {},
-            "per_pcs_group": [],
-        }
-        dc_block_allocation = {
-            "total_dc_blocks": primary_block["dc_blocks_total"],
-            "per_feeder": primary_block["per_feeder"],
-            "per_pcs_group": primary_block["per_pcs_group"],
-            "per_ac_block": per_ac_block,
-            "site_total_dc_blocks": dc_blocks_total,
-        }
-        transformer_mva = round(transformer_kva / 1000.0, 1) if transformer_kva else 0.0
-
-        ac_output = {
-            "project_name": project_name,
-            "poi_power_mw": target_mw,
-            "poi_energy_mwh": target_mwh,
-            "grid_kv": grid_kv,
-            "inverter_lv_v": pcs_lv,
-            "mv_voltage_kv": grid_kv,
-            "lv_voltage_v": pcs_lv,
-            "mv_kv": grid_kv,
-            "lv_v": pcs_lv,
-            "block_size_mw": block_size_mw,
-            "num_blocks": num_blocks,
-            "total_ac_mw": total_ac_mw,
-            "overhead_mw": overhead,
-            "pcs_power_kw": pcs_power_kw,
-            "pcs_rating_kw_each": pcs_power_kw,
-            "pcs_per_block": pcs_per_block,
-            "pcs_count_per_ac_block": pcs_count_primary,
-            "pcs_units": pcs_units,
-            "pcs_count_by_block": pcs_count_by_block,
-            "total_pcs": total_pcs,
-            "pcs_count_total": total_pcs,
-            "transformer_kva": transformer_kva,
-            "transformer_mva": transformer_mva,
-            "transformer_count": num_blocks,
-            "dc_blocks_per_ac": dc_per_ac,
-            "dc_blocks_total_by_block": dc_blocks_total_by_block,
-            "dc_blocks_per_feeder_by_block": dc_blocks_per_feeder_by_block,
-            "dc_block_allocation": dc_block_allocation,
-            "dc_block_allocation_by_feeder": primary_block.get("per_feeder"),
-            "dc_block_mwh_each": dc_block_mwh_each,
-            "dc_block_energy_mwh_each": dc_block_mwh_each,
-            "mv_level_kv": grid_kv,
-        }
-
-        st.session_state["ac_output"] = ac_output
-        ac_results.update(ac_output)
-        set_run_time("ac_results")
-
-        st.divider()
-        st.subheader("AC Configuration Results")
-        k1, k2, k3 = st.columns(3)
-        k1.metric("AC Blocks", f"{num_blocks} x {block_size_mw:.2f} MW")
-        k2.metric("Total AC Power", f"{total_ac_mw:.2f} MW")
-        k3.metric("Overhead Margin", f"{overhead:.2f} MW")
-
-        st.info(
-            f"Topology: Each {block_size_mw:.2f} MW AC block connects to {dc_per_ac} "
-            "DC battery containers."
-        )
-
-        st.success("AC sizing complete. Reports are ready for download.")
-
-    # 4. Downloads
-    ac_output = st.session_state.get("ac_output") or ac_results or {}
-    if ac_output:
-
-        inputs = {
-            "Project Name": project_name,
-            "POI Power Requirement (MW)": _format_float(ac_output.get("poi_power_mw"), 2),
-            "POI Energy Requirement (MWh)": _format_float(ac_output.get("poi_energy_mwh"), 2),
-            "Grid Voltage (kV)": _format_float(ac_output.get("grid_kv"), 1),
-            "PCS AC Output Voltage (V_LL,rms)": _format_float(ac_output.get("inverter_lv_v"), 0),
-            "Standard AC Block Size (MW)": _format_float(ac_output.get("block_size_mw"), 2),
-        }
-        if stage13_output:
-            inputs["Selected DC Scenario"] = stage13_output.get("selected_scenario", "")
-            if "dc_nameplate_bol_mwh" in stage13_output:
-                inputs["DC Nameplate @BOL (MWh)"] = _format_float(
-                    stage13_output.get("dc_nameplate_bol_mwh"), 3
-                )
-
-        diagram_results = st.session_state.get("diagram_results", {}) or {}
-        layout_results = st.session_state.get("layout_results", {}) or {}
-        artifacts = state.artifacts
-        sld_entry = None
-        if isinstance(diagram_results, dict) and diagram_results:
-            preferred = diagram_results.get("last_style")
-            if preferred and isinstance(diagram_results.get(preferred), dict):
-                sld_entry = diagram_results.get(preferred)
-            if sld_entry is None:
-                for style_key in ("raw_v05", "pro_v10", "jp_v08"):
-                    entry = diagram_results.get(style_key)
-                    if isinstance(entry, dict) and (entry.get("png") or entry.get("svg")):
-                        sld_entry = entry
-                        break
-        sld_png = artifacts.get("sld_png_bytes") or (sld_entry.get("png") if sld_entry else None)
-        sld_svg = artifacts.get("sld_svg_bytes") or (sld_entry.get("svg") if sld_entry else None)
-        if sld_png is None:
-            sld_png = st.session_state.get("sld_pro_png_bytes")
-        if sld_svg is None:
-            sld_svg = (
-                st.session_state.get("sld_pro_jp_svg_bytes")
-                or st.session_state.get("sld_raw_svg_bytes")
-            )
-
-        outputs_dir = Path("outputs")
-        if sld_png is None:
-            candidate = outputs_dir / "sld_latest.png"
-            if candidate.exists():
-                sld_png = candidate.read_bytes()
-        if sld_svg is None:
-            candidate = outputs_dir / "sld_latest.svg"
-            if candidate.exists():
-                sld_svg = candidate.read_bytes()
-
-        layout_entry = None
-        if isinstance(layout_results, dict) and layout_results:
-            preferred = layout_results.get("last_style")
-            if preferred and isinstance(layout_results.get(preferred), dict):
-                layout_entry = layout_results.get(preferred)
-            if layout_entry is None:
-                for style_key in ("raw_v05", "top_v10"):
-                    entry = layout_results.get(style_key)
-                    if isinstance(entry, dict) and (entry.get("png") or entry.get("svg")):
-                        layout_entry = entry
-                        break
-        layout_png = artifacts.get("layout_png_bytes") or (layout_entry.get("png") if layout_entry else None)
-        layout_svg = artifacts.get("layout_svg_bytes") or (layout_entry.get("svg") if layout_entry else None)
-        if layout_png is None:
-            layout_png = st.session_state.get("layout_png_bytes")
-        if layout_svg is None:
-            layout_svg = st.session_state.get("layout_svg_bytes")
-
-        if layout_png is None:
-            candidate = outputs_dir / "layout_latest.png"
-            if candidate.exists():
-                layout_png = candidate.read_bytes()
-        if layout_svg is None:
-            candidate = outputs_dir / "layout_latest.svg"
-            if candidate.exists():
-                layout_svg = candidate.read_bytes()
-
-        report_context = {
-            "project_name": project_name,
-            "inputs": inputs,
-            "tool_version": "V1.0",
-            "sld_png_bytes": sld_png,
-            "sld_svg_bytes": sld_svg,
-            "layout_png_bytes": layout_png,
-            "layout_svg_bytes": layout_svg,
-        }
-
-        st.subheader("Downloads")
-        
-        # V2.1 is now the only report format
-        c_d1, c_d2 = st.columns(2)
-
-        with c_d1:
-            st.info("Report downloads (V2.1 format only)")
-
-        with c_d2:
-            if not stage13_output:
-                st.info("Run DC sizing to enable the combined report.")
-            else:
-                ctx = build_report_context(
-                    session_state=st.session_state,
-                    stage_outputs={
-                        "stage13_output": stage13_output,
-                        "stage2": stage13_output.get("stage2_raw", {}),
-                        "ac_output": ac_output,
-                    },
-                    project_inputs={
-                        "poi_power_mw": stage13_output.get("poi_power_req_mw"),
-                        "poi_energy_mwh": stage13_output.get("poi_energy_req_mwh"),
-                        "poi_energy_guarantee_mwh": stage13_output.get("poi_energy_req_mwh"),
-                        "poi_guarantee_year": stage13_output.get("poi_guarantee_year"),
-                    },
-                    scenario_ids=stage13_output.get("selected_scenario"),
-                )
-                comb_bytes = export_report_v2_1(ctx)
-                button_label = "Download Combined Report V2.1"
-
-                version = "V2.1"
-                proposal_filename = make_proposal_filename(project_name, version=version)
-                st.download_button(
-                    button_label,
-                    comb_bytes,
-                    proposal_filename,
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    type="primary",
-                )
-
-
-def _format_float(value, decimals):
-    if value is None:
-        return ""
-    try:
-        return f"{float(value):.{decimals}f}"
-    except Exception:
-        return str(value)
