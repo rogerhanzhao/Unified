@@ -38,7 +38,7 @@ def show():
 
     st.header("AC Block Sizing")
 
-    # 1. Dependency Check - DC Sizing必须先完成
+    # 1. Dependency Check
     dc_data = st.session_state.get("dc_result_summary") or dc_results.get("dc_result_summary")
     stage13_output = st.session_state.get("stage13_output") or dc_results.get("stage13_output") or {}
     if not dc_data:
@@ -60,11 +60,8 @@ def show():
                 voltage_v=1200,
             )
 
-        # 从DC Sizing获取基本参数
         target_mw = float(dc_data.get("target_mw", stage13_output.get("poi_power_req_mw", 10.0)))
         target_mwh = float(dc_data.get("mwh", stage13_output.get("poi_energy_req_mwh", 0.0)))
-        dc_blocks_total = int(getattr(dc_model, "count", 0) or 0)  # ⭐ DC Block总数
-        
     except Exception as exc:
         st.error(f"Data structure mismatch: {exc}. Please re-run DC sizing.")
         return
@@ -77,10 +74,10 @@ def show():
     )
     st.session_state["project_name"] = project_name
 
-    # Display DC System Context
+    # Display Context
     st.info(
-        f"📊 **DC System Basis**: {dc_blocks_total} × {dc_model.container_model} "
-        f"({dc_model.capacity_mwh:.3f} MWh each) | POI Requirement: {target_mw:.1f} MW / {target_mwh:.0f} MWh"
+        f"Basis: DC system has {dc_model.count} x {dc_model.container_model} "
+        f"({dc_model.capacity_mwh:.3f} MWh each)."
     )
 
     def _init_input(field: str, default_value):
@@ -186,89 +183,24 @@ def show():
         ac_inputs["grid_kv"] = float(grid_kv)
         ac_inputs["lv_voltage_v"] = float(pcs_lv)
         ac_inputs["pcs_lv_v"] = float(pcs_lv)
-        ac_inputs["block_size_mw"] = float(block_size_mw)
+        ac_inputs["block_size_mw"] = float(block_size_mw)  # From PCS specs calculation
         st.session_state["project_name"] = project_name
 
-        # ========== STEP 3: Calculate AC Block count needed ==========
-        num_blocks = math.ceil(target_mw / block_size_mw) if block_size_mw > 0 else 1
+        num_blocks = math.ceil(target_mw / block_size_mw) if block_size_mw > 0 else 0
         total_ac_mw = num_blocks * block_size_mw
         overhead = total_ac_mw - target_mw
-        overhead_pct = (overhead / block_size_mw * 100) if block_size_mw > 0 else 0
 
-        # ========== STEP 4: DC Block均衡分配 ⭐ ==========
-        # 总的PCS数量
-        total_pcs = num_blocks * pcs_per_block
-        
-        # 均衡分配DC Block到各PCS
-        dc_blocks_per_pcs_count = dc_blocks_total // total_pcs if total_pcs > 0 else 0
-        remaining_dc_blocks = dc_blocks_total % total_pcs if total_pcs > 0 else 0
-        
-        # 构建每个PCS的DC Block分配数组
-        dc_blocks_allocation = []
-        for pcs_idx in range(total_pcs):
-            # 前 remaining_dc_blocks 个PCS各分配多一个
-            if pcs_idx < remaining_dc_blocks:
-                dc_blocks_allocation.append(dc_blocks_per_pcs_count + 1)
-            else:
-                dc_blocks_allocation.append(dc_blocks_per_pcs_count)
-        
-        # 验证分配
-        allocation_valid = sum(dc_blocks_allocation) == dc_blocks_total
-        allocation_balanced = max(dc_blocks_allocation) - min(dc_blocks_allocation) <= 1 if dc_blocks_allocation else True
-        
-        # ========== STEP 5: 功率和容量平衡验证 ==========
-        # 每个PCS连接的DC Block容量总和
-        total_energy_from_dc = dc_blocks_total * dc_model.capacity_mwh
-        
-        # 检查能量是否足够
-        energy_ratio = total_energy_from_dc / target_mwh if target_mwh > 0 else 0
-        energy_balanced = 0.95 <= energy_ratio <= 1.05  # ±5% 容差
-        
-        # Warnings and Errors
-        warnings = []
-        errors = []
-        
-        if not allocation_valid:
-            errors.append(f"❌ DC Block allocation failed: {sum(dc_blocks_allocation)} ≠ {dc_blocks_total}")
-        
-        if not allocation_balanced:
-            max_dc = max(dc_blocks_allocation) if dc_blocks_allocation else 0
-            min_dc = min(dc_blocks_allocation) if dc_blocks_allocation else 0
-            warnings.append(f"⚠️ DC Block distribution not perfectly balanced: max={max_dc}, min={min_dc}")
-        
-        if overhead_pct > 20:
-            warnings.append(f"⚠️ AC power overhead is {overhead_pct:.1f}% (> 20% threshold)")
-        
-        if not energy_balanced:
-            if energy_ratio < 0.95:
-                errors.append(f"❌ Energy insufficient: {total_energy_from_dc:.0f} MWh < {target_mwh:.0f} MWh required")
-            else:
-                warnings.append(f"⚠️ Energy oversized: {total_energy_from_dc:.0f} MWh > {target_mwh:.0f} MWh by {(energy_ratio-1)*100:.1f}%")
-        
-        # Display warnings and errors
-        if errors:
-            for error in errors:
-                st.error(error)
-            st.error("❌ Configuration cannot be completed. Please adjust:")
-            st.markdown("""
-            **Options:**
-            1. Return to DC Sizing and adjust DC Block count
-            2. Try different PCS per AC Block (2 instead of 4, or vice versa)
-            3. Select different PCS Module Rating
-            """)
-            # 不继续执行后续逻辑
-            st.stop()
-        
-        # Display warnings
-        for warning in warnings:
-            st.warning(warning)
-        
-        # ========== STEP 6: Proceed with results ==========
+        dc_per_ac = 0
+        if num_blocks > 0:
+            dc_per_ac = max(1, dc_model.count // num_blocks)
+
         pcs_per_block = int(pcs_per_block)
+        # pcs_power_kw is already set from PCS specs (not calculated)
         transformer_kva = block_size_mw * 1000 / 0.9
-        
-        dc_per_ac = dc_blocks_total // num_blocks if num_blocks > 0 else 0
+        total_pcs = num_blocks * pcs_per_block
+
         pcs_count_by_block = evenly_distribute(total_pcs, num_blocks)
+        dc_blocks_total = int(getattr(dc_model, "count", 0) or 0)
         dc_blocks_total_by_block = evenly_distribute(dc_blocks_total, num_blocks)
         dc_blocks_per_feeder_by_block = []
         for idx, block_pcs in enumerate(pcs_count_by_block):
