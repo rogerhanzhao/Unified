@@ -1,336 +1,289 @@
-# CALB ESS Sizing Tool - Implementation Summary
-
-**Date**: 2025-12-29  
-**Branch**: ops/fix/report-stage3  
-**Status**: ✅ Complete
-
----
+# CALB ESS Sizing Tool - Report & Diagram Implementation Summary
 
 ## Overview
+This document summarizes the implementation of DOCX report generation with proper data plumbing, SLD/Layout diagram fixes, and AC Sizing enhancements for the CALB ESS Sizing Tool.
 
-This implementation fixes critical issues in the CALB ESS Sizing Tool's report generation and diagram rendering pipeline. The changes ensure that exported reports use correct data sources, improve user experience, and add validation to catch inconsistencies.
+## 1. Report Generation (V2.1 Only)
 
----
+### 1.1 Efficiency Chain Fix
+**Issue**: Report showed "0.00%" for all efficiency components except Total
+**Root Cause**: Components not being loaded from DC SIZING stage1 output
+**Solution**: 
+- Efficiency values are read from `stage1` (DC SIZING output) in `build_report_context()`
+- Fields extracted: `eff_dc_cables_frac`, `eff_pcs_frac`, `eff_mvt_frac`, `eff_ac_cables_sw_rmu_frac`, `eff_hvt_others_frac`, `eff_dc_to_poi_frac`
+- Report includes disclaimer: "Efficiencies do not include Auxiliary losses"
+- Validation ensures all values are present and within bounds
 
-## Critical Issues Fixed
+**Code Location**: 
+- `calb_sizing_tool/reporting/report_context.py` lines 210-224
+- `calb_sizing_tool/reporting/report_v2.py` lines 382-390
 
-### ✅ A) Report Data Plumbing
+**Test Coverage**: `tests/test_report_v2_fixes.py::test_efficiency_chain_uses_dc_sizing_values`
 
-**Problem**: Report sections referenced wrong data sources (DC results vs AC results), causing inconsistent numbers for the same metric across chapters.
-
+### 1.2 AC Block Configuration Aggregation
+**Issue**: Report might show repetitive per-block configurations
 **Solution**:
-- Enhanced `report_export_view.py` to pass complete project inputs to `build_report_context()`
-- Ensured `ReportContext` consolidates all data with clear source attribution
-- Added `validate_report_context()` function to check for consistency issues
+- Implemented `_aggregate_ac_block_configs()` function
+- Identical configurations are merged with block count
+- Format: "N × M PCS @ Ppower MW"
+- AC Sizing Section shows summary (not detailed per-block list)
 
-**Files Modified**:
-- `calb_sizing_tool/ui/report_export_view.py` (lines 176–196)
-- `calb_sizing_tool/reporting/report_context.py` (added validation function)
+**Code Location**: `calb_sizing_tool/reporting/report_v2.py` lines 222-256
 
-**Changes**:
+**Test Coverage**: `tests/test_report_v2_fixes.py::test_ac_block_config_not_verbose`
+
+### 1.3 Stage 3 Degradation Data Inclusion
+**Issue**: POI Usable Energy chart not showing full year-by-year degradation
+**Solution**:
+- Chart generation uses full `stage3_df` with all year indices
+- Data plotted with blue bars and red POI guarantee line
+- X-axis shows years 0 to project life
+- Y-axis shows POI Usable Energy in MWh
+
+**Code Location**: `calb_sizing_tool/reporting/report_v2.py` lines 71-96, 430-445
+
+### 1.4 Report Data Consistency Validation
+**Issue**: No validation to prevent mixing DC and AC sizing data
+**Solution**:
+- Implemented `_validate_report_consistency()` function
+- Checks power/energy balance, efficiency chain completeness, PCS count consistency
+- Returns warnings (non-blocking) for user review
+- All data sources come from single ReportContext
+
+**Code Location**: `calb_sizing_tool/reporting/report_v2.py` lines 258-281
+
+**Test Coverage**: `tests/test_report_v2_fixes.py::test_report_consistency_validation`
+
+## 2. AC Sizing Configuration
+
+### 2.1 Container Type Logic
+**Requirement**: Container type determined by single AC Block size, not total
+**Implementation**:
 ```python
-# Before (incorrect):
-project_inputs={"poi_energy_guarantee_mwh": stage13_output.get("poi_energy_req_mwh")}
+single_block_ac_power = pcs_per_ac * pcs_kw / 1000  # MW per block
+auto_container = "40ft" if single_block_ac_power > 5 else "20ft"
+```
+- Used in AC Sizing UI to inform user before calculation
+- Also used in final configuration summary
 
-# After (correct):
-project_inputs_for_report = {
-    "project_name": project_name,
-    "poi_power_mw": stage13_output.get("poi_power_req_mw"),
-    "poi_energy_mwh": stage13_output.get("poi_energy_req_mwh"),
-    "poi_energy_guarantee_mwh": stage13_output.get("poi_energy_req_mwh"),
-    "poi_guarantee_year": stage13_output.get("poi_guarantee_year"),
-    "poi_frequency_hz": stage13_output.get("poi_frequency_hz"),
-}
+**Code Location**: `calb_sizing_tool/ui/ac_view.py` lines 169-171
+
+### 2.2 AC:DC Ratio Selection
+**Configuration Options**:
+- 1:1 = 1 AC Block per 1 DC Block (maximum flexibility)
+- 1:2 = 1 AC Block per 2 DC Blocks (balanced approach)
+- 1:4 = 1 AC Block per 4 DC Blocks (compact design)
+
+**User Guidance**:
+- Auto-recommendation based on DC Block count
+- Help text explains the ratio meaning
+- Power overhead warning based on total POI requirement (not single block)
+
+**Code Location**: `calb_sizing_tool/ui/ac_view.py` lines 90-200
+
+### 2.3 PCS Configuration Options
+**Available PCS Ratings**: 1250 kW, 1500 kW, 1725 kW, 2000 kW, 2500 kW
+**PCS per AC Block**: 2 or 4 (no 3-module combinations)
+**Container Sizing**:
+- 20ft: Single block ≤ 5 MW
+- 40ft: Single block > 5 MW
+- Example: 4 × 1250 kW = 5 MW → 20ft
+
+## 3. SLD (Single Line Diagram) Improvements
+
+### 3.1 DC BUSBAR Independence
+**Requirement**: Each PCS must have independent DC BUSBAR (no sharing)
+**Implementation**:
+- Per-PCS DC BUSBAR A and DC BUSBAR B drawn separately
+- Each DC Block connects ONLY to its allocated PCS's BUSBAR
+- No cross-PCS connections at DC level
+
+**Code Location**: `calb_diagrams/sld_pro_renderer.py` lines 476-572
+- Line 476-490: Individual BUSBAR drawing per PCS
+- Line 514-572: DC Block allocation to independent BUSBARS
+
+**Key Code**:
+```python
+# DC BUSBAR A for this PCS (independent for each PCS)
+busbar_a_x1 = pcs_center_x - 35
+busbar_a_x2 = pcs_center_x + 35
+dwg.add(dwg.line((busbar_a_x1, dc_bus_a_y), (busbar_a_x2, dc_bus_a_y), class_="thick"))
+
+# Connect DC Block ONLY to this PCS's BUSBAR
+line_x_a = cell_x + dc_box_w * 0.35
+dwg.add(dwg.line((line_x_a, cell_y), (line_x_a, dc_bus_a_y), class_="thin"))
+dwg.add(dwg.line((line_x_a, dc_bus_a_y), (pcs_center_x, dc_bus_a_y), class_="thin"))
 ```
 
-### ✅ B) SLD Page First-Click Error
+### 3.2 AC Side Topology
+**Components**:
+- LV BUSBAR: Single horizontal bus for all PCS AC outputs
+- Transformer: Step-up to MV voltage
+- RMU/Switchgear: MV connections to grid
+- Circuit A/B separation maintained in DC domain
 
-**Problem**: StreamlitValueAssignmentNotAllowedError for key `diagram_inputs.dc_blocks_table`
+**Code Location**: `calb_diagrams/sld_pro_renderer.py` lines 250-420
 
-**Root Cause**: Widget key format `"parent.child"` conflicts with session state assignment after widget creation
+### 3.3 Electrical Accuracy
+**DC Side**:
+- Each PCS module has independent DC BUSBAR A & B
+- Fuse symbols between PCS and BUSBAR
+- Circuit labels (A/B) shown
+- DC Blocks explicitly connect to BUSBAR, not to Battery Bank
 
-**Solution**: Remove widget key; let Streamlit handle internal state management
+**AC Side**:
+- LV output from each PCS to common LV BUSBAR
+- PCS modules grouped (typically 2 or 4 per AC Block)
+- Voltage specifications noted (e.g., "690 V")
 
-**File Modified**:
-- `calb_sizing_tool/ui/single_line_diagram_view.py` (line 367)
+## 4. Layout Rendering
 
-**Changes**:
+### 4.1 DC Block Interior Design
+**Specification**:
+- 6 battery modules in 1×6 single row configuration
+- No "Cooling" or "Battery" text labels (as per requirements)
+- Simple rectangles with consistent spacing
+- Module width = (total_width - padding - gaps) / 6
+
+**Code Location**: `calb_diagrams/layout_block_renderer.py`
+- Lines 115-144: `_draw_dc_interior()` (svgwrite version)
+- Lines 261-291: `_draw_dc_interior_raw()` (raw SVG string version)
+
+**Key Code**:
 ```python
-# Before (causes error):
-dc_df = st.data_editor(
-    st.session_state[dc_df_key],
-    key="diagram_inputs.dc_blocks_table",  # ❌ This key format is problematic
-    ...
-)
+cols = 6  # Always 6 columns
+rows = 1  # Single row
+module_spacing = max(2.0, min(grid_w, grid_h) * 0.03)
+module_w = (grid_w - module_spacing * (cols - 1)) / cols
+module_h = grid_h
 
-# After (fixed):
-dc_df = st.data_editor(
-    st.session_state[dc_df_key],
-    # ✅ No key parameter; state is managed via st.session_state[dc_df_key]
-    ...
-)
+for row in range(rows):
+    for col in range(cols):
+        mod_x = grid_x_start + col * (module_w + module_spacing)
+        mod_y = grid_y_start + row * (module_h + module_spacing)
+        dwg.add(dwg.rect(insert=(mod_x, mod_y), size=(module_w, module_h), class_="thin"))
 ```
 
-### ✅ C) Report Consistency Checking
+### 4.2 AC Block (PCS&MVT SKID) Design
+**Interior Divisions**:
+- PCS Unit area (~55% width): Shows 2×2 grid of PCS modules
+- Transformer area (~30% width): Transformer symbol
+- RMU area (~15% width): RMU/switchgear symbol
+- Labels and voltage specs included
 
-**Problem**: No warnings for contradictory data (e.g., AC power doesn't match blocks × size)
+**Code Location**: `calb_diagrams/layout_block_renderer.py` lines 147-202
 
-**Solution**: Add `validate_report_context()` function that returns warnings (non-blocking)
+## 5. Report Context Data Model
 
-**File Modified**:
-- `calb_sizing_tool/reporting/report_context.py` (added at end)
+### 5.1 ReportContext Class
+**Purpose**: Single source of truth for all report data
+**Key Fields**:
+- Input parameters: `poi_power_requirement_mw`, `poi_energy_requirement_mwh`, `poi_energy_guarantee_mwh`
+- DC Configuration: `dc_blocks_total`, `dc_block_unit_mwh`, `dc_total_energy_mwh`
+- AC Configuration: `ac_blocks_total`, `pcs_per_block`, `ac_block_size_mw`
+- Efficiency: `efficiency_chain_oneway_frac`, `efficiency_components_frac` (dict)
+- Stage Data: `stage1`, `stage2`, `stage3_df`, `stage3_meta`
 
-**Checks Implemented**:
-- AC total power vs POI requirement mismatch
-- Guarantee year exceeding project life
-- POI usable energy below guarantee target
-- PCS module count mismatch
+**Code Location**: `calb_sizing_tool/reporting/report_context.py` lines 13-58
 
----
+### 5.2 Report Context Building
+**Function**: `build_report_context()` in `report_context.py`
+**Process**:
+1. Extract stage13_output (DC SIZING result)
+2. Read efficiency components from stage1
+3. Load AC output configuration
+4. Process Stage 3 degradation data
+5. Validate and construct ReportContext
 
-## Acceptance Criteria Status
+## 6. Testing & Validation
 
-### A) Report Internal Consistency ✅
+### 6.1 Test Suite
+All tests in `tests/test_report_v2_fixes.py` (3/3 passing):
 
-- **Executive Summary** shows:
-  - (i) POI Requirement (MW/MWh) — from inputs ✅
-  - (ii) Guarantee Target — from DC sizing ✅
-  - (iii) POI Usable @ Guarantee Year — from Stage 3 ✅
-  
-- **No stray debug text** ("aa") — verified ✅
+1. **test_efficiency_chain_uses_dc_sizing_values**
+   - Verifies efficiency chain reads from DC SIZING
+   - Checks all components are populated
+   - Validates report text includes efficiency disclaimer
 
-- **Data source separation**:
-  - DC section uses `ctx.stage1` (from dc_results) ✅
-  - AC section uses `ctx.ac_output` (from ac_results) ✅
-  - Combined summary uses both via `ReportContext` ✅
+2. **test_ac_block_config_not_verbose**
+   - Ensures AC configs are aggregated (not repeated per-block)
+   - Checks summary format is concise
 
-### B) Diagram Embedding ✅
+3. **test_report_consistency_validation**
+   - Validates power/energy consistency checks
+   - Ensures no data source mixing
 
-- **SLD/Layout PNG embedding** — `report_v2.py` lines 449–472 ✅
-- **SVG fallback** with cairosvg conversion ✅
-- **Clear note if missing**: "SLD/Layout not generated. Please generate in [page]." ✅
-
-### C) SLD First-Click Error ✅
-
-- **Fixed**: Removed problematic widget key
-- **Root cause addressed**: No more session state assignment after widget instantiation
-- **Testing**: App restarted successfully without errors ✅
-
-### D) SLD + Layout Readability
-
-**Status**: ✅ **Current implementation adequate; improvements noted for future**
-
-Current rendering:
-- Equipment labels positioned above/below components ✅
-- DC block labels inside container ✅
-- Allocation text in dedicated note box ✅
-- AC/DC sections clearly separated ✅
-
-Future improvements (planned but out of scope):
-- Auto text wrapping with `<tspan>` elements
-- Collision detection for label placement
-- Consistent font sizing and line widths
-
-### E) SLD Electrical Semantics
-
-**Status**: ✅ **Current implementation correct; DC block updates noted**
-
-Current SLD (sld_pro_renderer.py):
-- ✅ Two DC BUSBARS (A and B) labeled correctly (line 475–477)
-- ✅ Each DC block shows "2 circuits (A/B)" (line 521)
-- ✅ Circuits feed respective DC busbars (lines 523–526)
-- ✅ AC side shows LV BUSBAR connecting PCS outputs to transformer (line 468)
-
-Not in scope for this fix (noted as "DC Combiner" removal):
-- Association of specific PCS units with DC BUSBARS
-- More detailed DC circuit labeling (CH-A, CH-B)
-
-### F) Layout DC Block Icon
-
-**Status**: ✅ **Current implementation adequate; 6-module icon planned for future**
-
-Current layout (layout_block_renderer.py):
-- ✅ Shows DC Block container with label and capacity
-- ✅ Simple rectangles for blocks
-
-Future improvements (planned but out of scope):
-- Show 6 battery modules/rack groups (2×3 grid) inside container
-- Add narrow "Liquid Cooling" strip on right side (~15% width)
-- Avoid label overlaps with proper spacing
-
----
-
-## Implementation Details
-
-### 1. Report Context Module
-
-**File**: `calb_sizing_tool/reporting/report_context.py`
-
-**Changes**:
-- Added `validate_report_context(ctx: ReportContext) -> list[str]` function
-- Returns warnings for:
-  - AC power/block size inconsistencies
-  - Guarantee year out of range
-  - POI usable below guarantee
-  - PCS count mismatches
-
-**Non-Breaking**: Function is purely informational; no error raising
-
-### 2. Report Export View
-
-**File**: `calb_sizing_tool/ui/report_export_view.py`
-
-**Changes**:
-- Lines 176–196: Build comprehensive `project_inputs_for_report` dict
-- Pass complete context to `build_report_context()`
-- Include stage2_raw and sld_snapshot in stage_outputs
-
-**Impact**: Report now has all necessary data in one place
-
-### 3. SLD Page
-
-**File**: `calb_sizing_tool/ui/single_line_diagram_view.py`
-
-**Changes**:
-- Line 367: Removed `key="diagram_inputs.dc_blocks_table"`
-- State management: via `st.session_state[dc_df_key]` only
-
-**Impact**: No first-click error; widget works correctly on first interaction
-
-### 4. Documentation
-
-**Files Created**:
-- `docs/REPORTING_AND_DIAGRAMS.md` — Complete user guide
-- `docs/regression/master_vs_refactor_calc_diff.md` — Regression analysis
-
----
-
-## Testing
-
-### Manual Verification
-
-1. **SLD Page (First-Click Fix)**:
-   - Navigate to Single Line Diagram page
-   - First click on DC blocks table should work without error
-   - Table editable and updates correctly
-
-2. **Report Generation (Data Plumbing)**:
-   - Navigate to Report Export
-   - Select V2.1 (Beta)
-   - Verify Executive Summary shows correct values:
-     - POI Power Requirement (from stage1)
-     - POI Energy Requirement (from stage1)
-     - POI Energy Guarantee (same as requirement unless overridden)
-     - POI Usable @ Guarantee Year (from stage3_df)
-
-3. **Consistency Validation**:
-   - Create report with mismatched AC/DC data
-   - Check for validation warnings in QC section
-
-### Automated Tests
-
-**New Test Suite**: `tests/test_report_context_validation.py`
-
-Test coverage:
-- Basic context building
-- Stage 3 DataFrame storage
-- Power mismatch detection
-- Guarantee year validation
-- POI usable below guarantee detection
-- PCS count mismatch detection
-
-**Run Tests**:
+### 6.2 Test Execution
 ```bash
 cd /opt/calb/prod/CALB_SIZINGTOOL
-./.venv/bin/python -m pytest tests/test_report_context_validation.py -v
+source .venv/bin/activate
+python -m pytest tests/test_report_v2_fixes.py -v
 ```
 
----
+## 7. Version Notes
 
-## Regression Verification
+### V2.1 Only
+- V1 report generation code has been removed
+- All exports use V2.1 format
+- Report filename: `<ProjectName>_Combined_V2_1_<timestamp>.docx`
 
-✅ **No Calculation Logic Changes**
+### Auxiliary Loss Handling
+- **NO** auxiliary losses are included in any calculations
+- Efficiency values represent core losses only (cables, PCS, transformer, RMU, HVT)
+- Report explicitly states this in efficiency section
 
-Verified:
-- `dc_view.py` — unchanged (Stages 1–3 sizing)
-- `stage4_interface.py` — unchanged (Stage 4 sizing)
-- `ac_block.py` — unchanged (AC calculations)
-- `allocation.py` — unchanged (DC/AC distribution)
+## 8. Deployment Checklist
 
-See `docs/regression/master_vs_refactor_calc_diff.md` for detailed analysis.
+- [x] DC SIZING stage1 includes all efficiency components
+- [x] AC Sizing properly calculates container size
+- [x] SLD drawing creates independent DC BUSBARs per PCS
+- [x] Layout rendering shows 6 modules in 1×6 configuration
+- [x] Report aggregates identical AC configurations
+- [x] Report includes Stage 3 degradation data
+- [x] All tests pass
+- [x] No V1 report code present
+- [x] Efficiency disclaimer included in reports
+- [x] ReportContext properly validated
 
----
+## 9. Known Limitations
 
-## Deployment
+1. **Complex PCS Allocations**: 
+   - Recommended to use uniform PCS counts across AC Blocks
+   - Edge cases with highly uneven distributions may need manual review
 
-### Service Restart
+2. **Very Large Projects**:
+   - Projects with >100 AC Blocks may have rendering performance considerations
+   - SLD focuses on single AC Block group visualization
 
-```bash
-systemctl restart calb-sizingtool@prod
-```
+3. **Missing SLD/Layout**:
+   - If user exports without generating SLD/Layout, report notes their absence
+   - This is not an error, just informational
 
-**Status**: ✅ Service restarted successfully
+## 10. File Locations Reference
 
-### Backward Compatibility
+### Core Report Generation
+- `calb_sizing_tool/reporting/report_v2.py` - Main export function `export_report_v2_1()`
+- `calb_sizing_tool/reporting/report_context.py` - `build_report_context()`
+- `calb_sizing_tool/reporting/export_docx.py` - DOCX builder utilities
+- `calb_sizing_tool/reporting/formatter.py` - Value formatting functions
 
-- ✅ Existing session state keys unchanged
-- ✅ DC/AC sizing logic identical
-- ✅ Report format V1 unchanged
-- ✅ Report format V2.1 improved (but still beta)
+### Diagrams
+- `calb_diagrams/sld_pro_renderer.py` - SLD generation
+- `calb_diagrams/layout_block_renderer.py` - Layout generation
+- `calb_diagrams/specs.py` - Diagram specifications and utilities
 
----
+### UI Views
+- `calb_sizing_tool/ui/ac_view.py` - AC Sizing page
+- `calb_sizing_tool/ui/report_export_view.py` - Report export page
+- `calb_sizing_tool/ui/single_line_diagram_view.py` - SLD generation UI
 
-## Deliverables Checklist
-
-- [x] Fixed report data plumbing
-- [x] Fixed SLD first-click crash
-- [x] Added report context validation
-- [x] Verified diagram embedding
-- [x] Created comprehensive user documentation
-- [x] Added regression analysis report
-- [x] Added test suite for validation
-- [x] Committed all changes
-- [x] Verified application startup
-
----
-
-## Files Changed Summary
-
-| File | Type | Changes | Impact |
-|------|------|---------|--------|
-| `calb_sizing_tool/ui/single_line_diagram_view.py` | Fix | Remove widget key | First-click error resolved |
-| `calb_sizing_tool/ui/report_export_view.py` | Fix | Enhanced data passing | Correct report sources |
-| `calb_sizing_tool/reporting/report_context.py` | Enhancement | Add validation | Consistency warnings |
-| `docs/REPORTING_AND_DIAGRAMS.md` | Documentation | User guide | Complete workflow docs |
-| `docs/regression/master_vs_refactor_calc_diff.md` | Documentation | Regression analysis | Verified no drift |
-| `tests/test_report_context_validation.py` | Tests | Validation tests | Consistency verification |
-
----
-
-## Commits
-
-1. **7020fb3** — Main fixes (report context, SLD page, documentation)
-2. **cd02fb1** — Regression analysis report
+### Tests
+- `tests/test_report_v2_fixes.py` - Report generation tests
+- `tests/test_report_v2_stage3_inclusion.py` - Stage 3 data tests
+- `tests/test_sld_*.py` - Various SLD tests
 
 ---
 
-## Next Steps (Future Improvements)
-
-1. **SLD Rendering** — Text layout and collision avoidance
-2. **Layout Icons** — 6-module battery representation + liquid cooling strip
-3. **Performance** — Diagram caching for large projects
-4. **DC BUSBAR Association** — Link PCS units to specific busbars in diagram
-
----
-
-## Conclusion
-
-All critical issues have been fixed:
-- ✅ Report data sources are consistent and correct
-- ✅ SLD first-click error resolved
-- ✅ Validation added for consistency checks
-- ✅ Comprehensive documentation provided
-- ✅ No regression in sizing calculations
-- ✅ Application tested and running
-
-The implementation is **ready for production use** and can be merged to the main branch.
+**Last Updated**: 2025-12-31
+**Branch**: ops/fix/report-stage3
+**Status**: Ready for deployment ✅
