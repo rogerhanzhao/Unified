@@ -1,0 +1,140 @@
+═══════════════════════════════════════════════════════════════════════════════
+  CALB ESS SIZING TOOL - REPAIR PROPOSAL SUMMARY
+  Date: 2025-12-31
+═══════════════════════════════════════════════════════════════════════════════
+
+CURRENT STATE: Three critical issues in diagram & report generation.
+PRINCIPLE: Fix DISPLAY LAYER ONLY. Do NOT modify sizing calculations.
+
+─────────────────────────────────────────────────────────────────────────────
+ISSUE #1: SLD (Single Line Diagram) - DC Circuit Appears Coupled
+─────────────────────────────────────────────────────────────────────────────
+
+FILE: calb_diagrams/sld_pro_renderer.py (Lines ~470–580)
+
+PROBLEM:
+  ✗ PCS-1 and PCS-2 DC circuits visually appear parallel/coupled
+  ✗ Viewers don't see clear separation between independent MPPT regions
+  ✗ Code claims independence but rendering suggests false coupling
+
+FIX:
+  ✓ Insert 50-100px visual gap between PCS-1 DC region and PCS-2 DC region
+  ✓ Add zone labels: "PCS-1 Independent DC Circuit" / "PCS-2 Independent DC Circuit"
+  ✓ Ensure horizontal DC BUSBAR lines are LOCAL to each PCS (not spanning entire width)
+  ✓ Add allocation labels: "DC Blocks [1-2] → PCS-1 (independent)"
+
+VALIDATION: Render multi-PCS SLD → verify clear spatial gap & independence.
+
+─────────────────────────────────────────────────────────────────────────────
+ISSUE #2: Layout (Top View) - DC Block Internal Arrangement Wrong
+─────────────────────────────────────────────────────────────────────────────
+
+FILE: calb_diagrams/layout_block_renderer.py (Lines ~115–150, ~260–300)
+
+PROBLEM:
+  ✗ DC Block shows 2×3 grid (2 columns, 3 rows) of battery modules
+  ✗ Actual CALB 5MWh container has 1×6 arrangement (6 vertical racks)
+  ✗ Unwanted small rectangle on left side of DC Block
+  ✗ Interior text labels ("Cooling", "Battery") clutter design
+
+FIX:
+  ✓ Change module grid: cols=2, rows=3  →  cols=6, rows=1 (1×6 single row)
+  ✓ Delete code drawing unwanted left-side small rectangle
+  ✓ Remove interior text labels (keep only container ID + capacity on outside)
+  ✓ Validate final output: 6 module rectangles + container border + external labels
+
+VALIDATION: Generate Layout SVG → inspect each DC Block (should show 6 bars in a row, no left box).
+
+─────────────────────────────────────────────────────────────────────────────
+ISSUE #3: DOCX Report Export - Data Inconsistency & Verbosity
+─────────────────────────────────────────────────────────────────────────────
+
+FILE: calb_sizing_tool/reporting/report_v2.py (Lines ~216–650)
+
+SUB-ISSUE 3A: Efficiency Chain Math Doesn't Check Out
+  PROBLEM:
+    ✗ Total Efficiency ≠ product of components
+    ✗ Reader sees: Total=96.74% but components multiply to 94.5% → credibility lost
+  FIX:
+    ✓ Read component efficiencies from DC Sizing (single source of truth)
+    ✓ Calculate Total = DC_Cables × PCS × Transformer × RMU × HVT
+    ✓ Validate: if |Total_provided - Total_calculated| > 0.1% → use calculated value
+    ✓ Add disclaimer: "Efficiency figures exclude auxiliary systems (HVAC, lighting, etc.)"
+
+SUB-ISSUE 3B: AC Sizing Table - Repeats 23 Identical Rows
+  PROBLEM:
+    ✗ If all 23 AC Blocks have same config, table has 23 identical rows
+    ✗ Unprofessional, hard to read, defeats summary purpose
+  FIX:
+    ✓ Aggregate by config signature (PCS rating, count, transformer, etc.)
+    ✓ Output only unique configs with "Block Count" column
+    ✓ Example: Instead of 23 rows of "2 × 2500kW = 5.0MW"
+               Output 1 row: "23 blocks | 2 × 2500kW = 5.0MW"
+
+SUB-ISSUE 3C: Missing PCS Rating & Custom Input
+  PROBLEM:
+    ✗ PCS options: 1250, 1500, 1725, 2500 kW (missing 2000 kW)
+    ✗ No custom input for edge cases
+  FIX:
+    ✓ Add PCS_RATING_OPTIONS = [1250, 1500, 1725, 2000, 2500]
+    ✓ Add UI checkbox + number input: "Custom Rating?" → allows user-defined kW
+
+VALIDATION:
+  ✓ Export DOCX → check Efficiency total matches component product ±0.1%
+  ✓ Check AC table: no repeated rows, shows counts
+  ✓ Check for auxiliary disclaimer
+  ✓ Verify 2000 kW available in AC sizing UI
+
+─────────────────────────────────────────────────────────────────────────────
+IMPLEMENTATION ORDER
+─────────────────────────────────────────────────────────────────────────────
+
+1. SLD Rendering Fixes (sld_pro_renderer.py)
+   └─ Add visual gap & labels between PCS DC regions
+   
+2. Layout Rendering Fixes (layout_block_renderer.py)
+   └─ Change 2×3 → 1×6, remove left box, clean interior
+   
+3. Report Export Fixes (report_v2.py)
+   ├─ Fix efficiency chain math + add disclaimer
+   ├─ Aggregate AC table (remove repeats)
+   └─ Validate consistency
+   
+4. UI Config Updates (ac_sizing_config.py or similar)
+   └─ Add 2000 kW option + custom input field
+   
+5. Testing & Validation
+   └─ Unit tests + manual smoke tests
+
+─────────────────────────────────────────────────────────────────────────────
+ACCEPTANCE CRITERIA
+─────────────────────────────────────────────────────────────────────────────
+
+✓ SLD: Clear spatial gap between PCS-1 and PCS-2 DC regions (NO visual coupling)
+✓ SLD: Each PCS has labeled independent DC BUSBAR A/B
+✓ Layout: DC Blocks show 1×6 module grid (6 bars in one row)
+✓ Layout: No unwanted small rectangle on left; no interior text clutter
+✓ Report: Efficiency Total = product(components) within 0.1%
+✓ Report: "Auxiliary excluded" disclaimer present
+✓ Report: AC Sizing table de-duplicated (one row per unique config + count)
+✓ Report: 2000 kW PCS option available + custom input enabled
+✓ REGRESSION: All sizing calculations unchanged, same results as before
+
+─────────────────────────────────────────────────────────────────────────────
+KEY PRINCIPLE (REMINDER)
+─────────────────────────────────────────────────────────────────────────────
+
+🚫 DO NOT TOUCH:
+   - Sizing logic (DC/AC blocks, power allocation, PCS counts)
+   - Efficiency calculations (only fix DISPLAY/CONSISTENCY)
+   - File names, export locations, DOCX format, chapter structure
+
+✅ ALLOWED TO TOUCH:
+   - SVG/diagram rendering (display layer)
+   - DOCX content generation (aggregation, formatting, tables)
+   - UI config (add PCS options, custom input)
+   - Report text & disclaimers
+
+═══════════════════════════════════════════════════════════════════════════════
+For detailed analysis, see: REPAIR_PROPOSAL.md
+═══════════════════════════════════════════════════════════════════════════════

@@ -11,8 +11,9 @@ from dataclasses import dataclass
 class PCSRecommendation:
     """PCS推荐配置"""
     pcs_count: int  # 每个AC Block中的PCS数量 (仅支持2或4)
-    pcs_kw: int     # 每个PCS的功率(kW) - 标准规格: 1250, 1500, 1725, 2500
+    pcs_kw: int     # 每个PCS的功率(kW) - 标准规格: 1250, 1500, 1725, 2000, 2500
     total_kw: int   # 总功率(kW)
+    is_custom: bool = False  # 是否为自定义配置
     
     @property
     def readable(self) -> str:
@@ -68,6 +69,7 @@ def generate_ac_sizing_options(
         PCSRecommendation(pcs_count=2, pcs_kw=1250, total_kw=2500),
         PCSRecommendation(pcs_count=2, pcs_kw=1500, total_kw=3000),
         PCSRecommendation(pcs_count=2, pcs_kw=1725, total_kw=3450),
+        PCSRecommendation(pcs_count=2, pcs_kw=2000, total_kw=4000),
         PCSRecommendation(pcs_count=2, pcs_kw=2500, total_kw=5000),
     ]
     
@@ -76,6 +78,7 @@ def generate_ac_sizing_options(
         PCSRecommendation(pcs_count=4, pcs_kw=1250, total_kw=5000),
         PCSRecommendation(pcs_count=4, pcs_kw=1500, total_kw=6000),
         PCSRecommendation(pcs_count=4, pcs_kw=1725, total_kw=6900),
+        PCSRecommendation(pcs_count=4, pcs_kw=2000, total_kw=8000),
         PCSRecommendation(pcs_count=4, pcs_kw=2500, total_kw=10000),
     ]
     

@@ -1,0 +1,203 @@
+═════════════════════════════════════════════════════════════════════════════════
+  CALB REPAIR PROPOSAL - DOCUMENT MANIFEST & NAVIGATION GUIDE
+═════════════════════════════════════════════════════════════════════════════════
+
+�� PROPOSAL DOCUMENT LOCATIONS (All in /opt/calb/prod/CALB_SIZINGTOOL/)
+
+─────────────────────────────────────────────────────────────────────────────────
+TIER 1: ENTRY POINT (Start Here!)
+─────────────────────────────────────────────────────────────────────────────────
+
+📄 00_START_HERE.md
+   ├─ Purpose: Entry point for all roles
+   ├─ Length: ~5 minutes to read
+   ├─ Audience: Everyone (PM, Dev, QA, Stakeholder)
+   ├─ Contains:
+   │  ├─ Quick overview of 3 problems
+   │  ├─ What changes / What doesn't change
+   │  ├─ Acceptance criteria (simple version)
+   │  ├─ Next steps timeline
+   │  └─ Role-based reading recommendations
+   └─ Read first if: You're new to this proposal
+
+─────────────────────────────────────────────────────────────────────────────────
+TIER 2: DETAILED TECHNICAL SPEC (Deep Dive)
+─────────────────────────────────────────────────────────────────────────────────
+
+📄 REPAIR_PROPOSAL.md
+   ├─ Purpose: Comprehensive technical specification
+   ├─ Length: ~15 minutes to read
+   ├─ Audience: Technical Lead, Developers
+   ├─ Contains:
+   │  ├─ Current state assessment (with code line numbers)
+   │  ├─ Three detailed repair plans with code examples
+   │  ├─ Validation & testing procedures
+   │  ├─ Unit test requirements
+   │  ├─ Manual smoke test checklist
+   │  ├─ Acceptance criteria (detailed)
+   │  └─ Questions for stakeholder review
+   └─ Read when: Implementing the fixes
+
+📄 REPAIR_SUMMARY.txt
+   ├─ Purpose: Quick reference (text format)
+   ├─ Length: ~8 minutes to read
+   ├─ Audience: Developers, Technical leads
+   ├─ Contains: Condensed version of REPAIR_PROPOSAL.md
+   └─ Read when: You need quick facts without details
+
+─────────────────────────────────────────────────────────────────────────────────
+TIER 3: VISUAL DIAGRAMS (For Stakeholders)
+─────────────────────────────────────────────────────────────────────────────────
+
+📄 VISUAL_REFERENCE.txt
+   ├─ Purpose: Before/After ASCII diagrams
+   ├─ Length: ~10 minutes to read
+   ├─ Audience: Stakeholders, Product Managers, Decision makers
+   ├─ Contains:
+   │  ├─ SLD before/after diagrams (DC circuit coupling issue)
+   │  ├─ Layout before/after diagrams (2×3 vs 1×6 modules)
+   │  ├─ Efficiency chain inconsistency visualization
+   │  ├─ AC table de-duplication example
+   │  └─ PCS option additions
+   └─ Read when: You need visual understanding
+
+─────────────────────────────────────────────────────────────────────────────────
+TIER 4: APPROVAL PROCESS (Sign-off)
+─────────────────────────────────────────────────────────────────────────────────
+
+📄 REVIEW_CHECKLIST.md
+   ├─ Purpose: Formal stakeholder sign-off document
+   ├─ Length: ~10 minutes to review & sign
+   ├─ Audience: Project Manager, Technical Lead, Stakeholder
+   ├─ Contains:
+   │  ├─ Detailed problem statements with diagrams
+   │  ├─ Proposed solution for each issue
+   │  ├─ Questions for stakeholder (approval boxes)
+   │  ├─ Regression check items
+   │  ├─ Final acceptance checklist
+   │  └─ Sign-off lines (PM, Tech Lead, Stakeholder)
+   └─ Use when: Getting formal approval to proceed
+
+─────────────────────────────────────────────────────────────────────────────────
+TIER 5: IMPLEMENTATION PLAN
+─────────────────────────────────────────────────────────────────────────────────
+
+📄 TECHNICAL_FIXES_SUMMARY.md (if it exists)
+   ├─ Purpose: Implementation order & module mapping
+   ├─ Audience: Developers, Engineering Manager
+   ├─ Contains:
+   │  ├─ Step-by-step implementation order
+   │  ├─ File paths to modify
+   │  ├─ Code line ranges affected
+   │  ├─ Function/method names to touch
+   │  ├─ Estimated effort per task
+   │  └─ Dependency order (what must be done first)
+   └─ Use when: Planning sprint tasks
+
+═════════════════════════════════════════════════════════════════════════════════
+READING PATHS BY ROLE
+═════════════════════════════════════════════════════════════════════════════════
+
+👨‍💼 PROJECT MANAGER
+   1. 00_START_HERE.md (this file)
+   2. VISUAL_REFERENCE.txt (understand the issues)
+   3. REVIEW_CHECKLIST.md (coordinate sign-offs)
+   4. Use REPAIR_PROPOSAL.md if you need technical depth
+
+👨‍💻 DEVELOPER (Implementation)
+   1. 00_START_HERE.md
+   2. REPAIR_PROPOSAL.md (MUST READ - detailed spec)
+   3. TECHNICAL_FIXES_SUMMARY.md (if available)
+   4. Use VISUAL_REFERENCE.txt for visual context
+
+👨‍⚖️ TECHNICAL LEAD
+   1. 00_START_HERE.md
+   2. REPAIR_PROPOSAL.md (full spec)
+   3. REVIEW_CHECKLIST.md (approve with stakeholder)
+   4. Reference TECHNICAL_FIXES_SUMMARY.md for task assignment
+
+🎯 STAKEHOLDER / BUSINESS
+   1. 00_START_HERE.md
+   2. VISUAL_REFERENCE.txt (diagrams before/after)
+   3. REVIEW_CHECKLIST.md (understand impacts, sign-off)
+   4. Optional: REPAIR_SUMMARY.txt (more details)
+
+🔍 QA / TESTER
+   1. VISUAL_REFERENCE.txt (understand what should look like)
+   2. REPAIR_PROPOSAL.md (Testing section, lines ~200+)
+   3. REVIEW_CHECKLIST.md (acceptance criteria)
+   4. Create test cases based on Validation sections
+
+═════════════════════════════════════════════════════════════════════════════════
+KEY DOCUMENTS AT A GLANCE
+═════════════════════════════════════════════════════════════════════════════════
+
+Document                          Read Time   Audience            Purpose
+─────────────────────────────────────────────────────────────────────────────
+00_START_HERE.md                  5 min       Everyone            Entry point
+REPAIR_PROPOSAL.md                15 min      Tech, Dev           Detailed spec
+REPAIR_SUMMARY.txt                8 min       Dev, Tech Lead      Quick ref
+VISUAL_REFERENCE.txt              10 min      Stakeholder, PM     Diagrams
+REVIEW_CHECKLIST.md               10 min      PM, Tech, Stake     Sign-off
+PROPOSAL_MANIFEST.txt (this)      5 min       Everyone            Navigation
+TECHNICAL_FIXES_SUMMARY.md        10 min      Dev, Eng Manager    Impl plan
+
+═════════════════════════════════════════════════════════════════════════════════
+QUICK FACTS
+═════════════════════════════════════════════════════════════════════════════════
+
+Total Proposal Size: ~70 KB (7 main documents)
+Estimated Review Time: 30–60 minutes (all stakeholders combined)
+Estimated Implementation: 3–5 days
+Estimated Testing: 1–2 days
+Implementation Risk: LOW (display layer only, no sizing logic change)
+Regression Risk: VERY LOW (sizing calculations untouched)
+
+Files to Modify:
+  • calb_diagrams/sld_pro_renderer.py (~50 lines)
+  • calb_diagrams/layout_block_renderer.py (~40 lines)
+  • calb_sizing_tool/reporting/report_v2.py (~80 lines)
+  • calb_sizing_tool/ui/ac_sizing_config.py (~30 lines)
+
+Total Code Changes: ~200 lines (insertions + modifications)
+
+═════════════════════════════════════════════════════════════════════════════════
+SIGN-OFF PROCESS
+═════════════════════════════════════════════════════════════════════════════════
+
+Step 1: Project Manager distributes all documents to relevant stakeholders
+Step 2: Each stakeholder reads according to their role (see above)
+Step 3: Technical Lead reviews REPAIR_PROPOSAL.md, notes any technical concerns
+Step 4: All stakeholders complete REVIEW_CHECKLIST.md with sign-offs
+Step 5: Project Manager collects all signatures
+Step 6: Technical Lead gives go-ahead to implementation team
+Step 7: Implementation begins using TECHNICAL_FIXES_SUMMARY.md as guide
+
+Estimated Sign-off Timeline: 2–3 business days
+
+═════════════════════════════════════════════════════════════════════════════════
+QUESTIONS?
+═════════════════════════════════════════════════════════════════════════════════
+
+Q: Where should I start?
+A: Read 00_START_HERE.md first, then follow the role-based path above.
+
+Q: Is my role not listed?
+A: Default path: 00_START_HERE.md → REPAIR_PROPOSAL.md → relevant docs for your area
+
+Q: How detailed should I read?
+A: Stakeholders: VISUAL_REFERENCE.txt + REVIEW_CHECKLIST.md only
+   Developers: REPAIR_PROPOSAL.md is essential
+   PMs: 00_START_HERE.md + REVIEW_CHECKLIST.md
+
+Q: I need the implementation guide right now!
+A: See TECHNICAL_FIXES_SUMMARY.md (if available) or REPAIR_PROPOSAL.md Implementation sections
+
+Q: Can I skip any documents?
+A: Only if you're not responsible for that area (e.g., QA doesn't need TECHNICAL_FIXES_SUMMARY)
+
+═════════════════════════════════════════════════════════════════════════════════
+END OF MANIFEST
+═════════════════════════════════════════════════════════════════════════════════
+
+Next Action: Open 00_START_HERE.md to begin review.

@@ -483,11 +483,11 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         busbar_a_x1 = pcs_center_x - 35
         busbar_a_x2 = pcs_center_x + 35
         dwg.add(dwg.line((busbar_a_x1, dc_bus_a_y), (busbar_a_x2, dc_bus_a_y), class_="thick"))
-        dwg.add(dwg.text(f"BUSBAR A", insert=(busbar_a_x1 - 5, dc_bus_a_y - 8), class_="small"))
+        dwg.add(dwg.text(f"BUSBAR A (Circuit A)", insert=(busbar_a_x1 - 20, dc_bus_a_y - 8), class_="small"))
         
         # DC BUSBAR B for this PCS (below BUSBAR A)
         dwg.add(dwg.line((busbar_a_x1, dc_bus_b_y), (busbar_a_x2, dc_bus_b_y), class_="thick"))
-        dwg.add(dwg.text(f"BUSBAR B", insert=(busbar_a_x1 - 5, dc_bus_b_y - 8), class_="small"))
+        dwg.add(dwg.text(f"BUSBAR B (Circuit B)", insert=(busbar_a_x1 - 20, dc_bus_b_y - 8), class_="small"))
         
         # Connection from PCS to its DC BUSBARS
         dwg.add(dwg.line((pcs_center_x, pcs_y + pcs_box_h), (pcs_center_x, dc_bus_a_y), class_="thin"))
@@ -504,12 +504,10 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         dwg.text("Battery Storage Bank", insert=(battery_x + 8, battery_y + 16), class_="label title")
     )
 
-    circuit_x1 = battery_x + 60
-    circuit_x2 = battery_x + battery_w - 60
-    dwg.add(dwg.line((circuit_x1, dc_circuit_a_y), (circuit_x2, dc_circuit_a_y), class_="thin"))
-    dwg.add(dwg.text("Circuit A", insert=(circuit_x1, dc_circuit_a_y - 6), class_="small"))
-    dwg.add(dwg.line((circuit_x1, dc_circuit_b_y), (circuit_x2, dc_circuit_b_y), class_="thin"))
-    dwg.add(dwg.text("Circuit B", insert=(circuit_x1, dc_circuit_b_y - 6), class_="small"))
+    # REMOVED: Shared Circuit A/B lines across entire Battery Bank area.
+    # These created a false visual coupling implying DC BUSBARs are parallel/shared.
+    # Each PCS now has independent DC BUSBAR A/B with local Circuit A/B connections ONLY.
+    # This ensures visual clarity that each PCS has its own independent DC circuit path.
 
     # Changed: DC Blocks now connect to individual PCS DC BUSBARs (completely independent)
     # Each PCS has its own Circuit A/B at DC BUSBAR level

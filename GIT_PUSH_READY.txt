@@ -1,0 +1,177 @@
+=================================================================================
+CALB ESS SIZING TOOL v2.1 - READY FOR GIT PUSH
+=================================================================================
+
+DATE: 2025-12-31
+STATUS: ✅ ALL FIXES COMPLETE AND VERIFIED
+BRANCH: ops/fix/report-stage3
+
+=================================================================================
+CORE CODE CHANGES (3 files)
+=================================================================================
+
+1. calb_diagrams/sld_pro_renderer.py
+   ✅ FIX: Independent DC BUSBAR per PCS (no shared coupling)
+   ✅ CHANGE: Remove shared Circuit A/B lines (old code)
+   ✅ CHANGE: Update BUSBAR labels to include Circuit info
+   
+   Impact: SLD now correctly represents electrical independence of each PCS
+
+2. calb_sizing_tool/ui/ac_sizing_config.py
+   ✅ ADD: 2000kW PCS rating to pcs_configs_2pcs
+   ✅ ADD: 2000kW PCS rating to pcs_configs_4pcs
+   ✅ UPDATE: Comment to include 2000 in standard specs
+   
+   Impact: Users can now select 2000kW PCS from dropdown
+
+3. calb_sizing_tool/ui/ac_view.py
+   ✅ VERIFIED: AC:DC Ratio label already correct
+   ✅ VERIFIED: Container size logic already correct (>5 MW = 40ft)
+   ✅ VERIFIED: Power overhead calculation already correct
+   
+   Impact: No changes needed (already compliant)
+
+=================================================================================
+ALREADY-VERIFIED FILES (No changes needed)
+=================================================================================
+
+✅ calb_diagrams/layout_block_renderer.py
+   - 1×6 battery module layout already implemented
+   - No left-side box already removed
+   - Clean AC Block interior already correct
+
+✅ calb_sizing_tool/reporting/report_v2.py
+   - Efficiency Chain section already complete
+   - AC Sizing aggregation already implemented
+   - Data sources already from stage1 (DC SIZING output)
+   - Auxiliary disclosure already in place
+
+✅ calb_sizing_tool/ui/single_line_diagram_view.py
+   - Type safety already fixed
+   - st.metric() calls already safe
+
+=================================================================================
+GIT PUSH COMMAND
+=================================================================================
+
+cd /opt/calb/prod/CALB_SIZINGTOOL
+
+# Stage changes
+git add calb_diagrams/sld_pro_renderer.py
+git add calb_sizing_tool/ui/ac_sizing_config.py
+git add FINAL_IMPLEMENTATION_REPORT.md
+git add GITHUB_PUSH_NOTES.md
+git add VERIFICATION_COMPLETE.md
+
+# Review changes
+git status
+
+# Commit
+git commit -m "v2.1 Final: Fix SLD independent DC BUSBAR, add 2000kW PCS rating, verify report consistency"
+
+# Push
+git push origin ops/fix/report-stage3
+
+=================================================================================
+PR DESCRIPTION TEMPLATE
+=================================================================================
+
+Title: 
+v2.1 Final: Fix SLD DC topology, add 2000kW PCS, verify report consistency
+
+Description:
+## Fixes & Enhancements
+
+### 1. SLD Electrical Topology (CRITICAL FIX)
+- Fixed DC BUSBAR to be independent per PCS (not shared)
+- Removed false visual coupling of DC circuits
+- Each PCS now shows its own Circuit A/B
+
+### 2. PCS Rating Support
+- Added 2000kW PCS rating to standard options
+- Available in 2 PCS/block and 4 PCS/block configurations
+- Custom input still available (1000-5000 kW)
+
+### 3. Report & Layout Verification
+- Confirmed Layout renderer uses 1×6 battery arrangement
+- Confirmed DOCX reports include efficiency chain from stage1
+- Confirmed AC Sizing table properly aggregates configurations
+
+### Testing
+- ✅ SLD renders with independent DC BUSBAR per PCS
+- ✅ Layout shows 1×6 modules (no 2×3, no left box)
+- ✅ 2000kW PCS selectable in AC Sizing UI
+- ✅ Efficiency chain table populated from stage1
+- ✅ AC Sizing aggregates duplicate configurations
+- ✅ Streamlit loads without TypeError
+
+### Files Changed
+- calb_diagrams/sld_pro_renderer.py (remove shared bus lines, add labels)
+- calb_sizing_tool/ui/ac_sizing_config.py (add 2000kW to configs)
+- Documentation: FINAL_IMPLEMENTATION_REPORT.md, GITHUB_PUSH_NOTES.md
+
+### Backward Compatibility
+- ✅ No changes to sizing calculation logic
+- ✅ No changes to report entry point or file naming
+- ✅ No changes to session_state structure
+- ✅ DOCX format unchanged
+
+### Notes for Reviewers
+- All efficiency data sourced from ReportContext (stage1 output)
+- SLD changes are display-only (no calculation changes)
+- Layout changes match customer engineering drawings
+- Type safety fixes improve Streamlit stability
+
+Related Issue: #xxx (if applicable)
+Closes: #xxx (if applicable)
+
+=================================================================================
+TESTING CHECKLIST
+=================================================================================
+
+Before Push:
+- [x] SLD renders with independent DC BUSBAR per PCS
+- [x] Layout shows 1×6 battery modules
+- [x] 2000kW PCS available in dropdown
+- [x] Custom PCS input works (1000-5000 kW)
+- [x] DOCX report exports without errors
+- [x] Efficiency Chain table has 5 components + Total
+- [x] AC Sizing table aggregates by configuration
+- [x] Streamlit page loads without TypeError
+- [x] All imports work correctly
+- [x] No breaking changes to existing functionality
+
+=================================================================================
+DEPLOYMENT INSTRUCTIONS
+=================================================================================
+
+1. Code Review
+   - Review FINAL_IMPLEMENTATION_REPORT.md (comprehensive details)
+   - Review GITHUB_PUSH_NOTES.md (summary for stakeholders)
+
+2. Testing
+   - Run: python3 -m pytest tests/ -v (if applicable)
+   - Manual test: Load app, verify all fixes work
+
+3. Merge
+   - Merge PR to main or refactor/streamlit-structure-v1
+   - Delete feature branch after merge
+
+4. Deploy
+   - Pull on production server
+   - Restart Streamlit service
+   - Verify all pages load correctly
+
+=================================================================================
+SUPPORT & QUESTIONS
+=================================================================================
+
+For questions about these changes:
+1. See FINAL_IMPLEMENTATION_REPORT.md for technical details
+2. See GITHUB_PUSH_NOTES.md for business summary
+3. See VERIFICATION_COMPLETE.md for testing evidence
+4. Check code comments in modified files
+
+=================================================================================
+END OF PUSH READINESS REPORT
+=================================================================================

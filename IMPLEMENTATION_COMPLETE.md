@@ -339,3 +339,103 @@ For detailed implementation information, see:
 - REPORT_EXPORT_FIX_PLAN.md
 - REPORT_EXPORT_IMPLEMENTATION_SUMMARY.md
 - IMPLEMENTATION_CHECKLIST.md
+
+---
+
+## 🆕 2025-12-31: PCS 2000 kW Support & Custom Rating Input
+
+### New Features Added ✅
+
+#### 1. PCS 2000 kW Standard Rating
+- Added to both 2-PCS and 4-PCS configurations
+- 2 × 2000 kW = 4.0 MW (20ft container)
+- 4 × 2000 kW = 8.0 MW (40ft container)
+- Available across all DC:AC ratios (1:1, 1:2, 1:4)
+
+#### 2. Custom PCS Rating Input Modal
+- New "🔧 Custom PCS Rating..." option in dropdown
+- Manual input for PCS count (1-6 per block)
+- Manual input for PCS rating (1000-5000 kW in 100 kW increments)
+- Real-time container size calculation
+- Full validation support
+
+### Files Updated
+
+```
+calb_sizing_tool/ui/
+├── ac_sizing_config.py     [+4 lines]
+│   ├── Added 2000 kW to 2-PCS configs: 2×2000 = 4000 kW
+│   ├── Added 2000 kW to 4-PCS configs: 4×2000 = 8000 kW
+│   └── Added is_custom field to PCSRecommendation
+│
+└── ac_view.py              [+40 lines refactored]
+    ├── Enhanced PCS selection UI
+    ├── Added custom input section
+    ├── Updated container logic
+    └── Improved user guidance
+```
+
+### Files Created
+
+```
+docs/
+├── PCS_RATING_GUIDE.md          [5.4 KB - User documentation]
+├── PCS_RATING_UPDATE.md         [4.8 KB - Technical summary]
+└── test_pcs_2000kw.py           [3.2 KB - Test suite]
+```
+
+### Test Results ✅
+
+```
+============================================================
+✅ ALL TESTS PASSED (5/5)
+============================================================
+✅ PCS 2000 kW in Configurations
+✅ Custom PCS Recommendation
+✅ Container Sizing Logic
+✅ All Standard Ratings (1250-2500 kW)
+
+Test File: test_pcs_2000kw.py
+Command: python3 test_pcs_2000kw.py
+Status: 100% Pass Rate
+```
+
+### Standard PCS Ratings (Now 5 Options)
+1. 1250 kW
+2. 1500 kW
+3. 1725 kW
+4. 2000 kW ✨ NEW
+5. 2500 kW
+
+### Configuration Examples
+
+| Scenario | PCS Config | AC Power | Container |
+|----------|-----------|----------|-----------|
+| Standard 2-PCS | 2×2000 | 4.0 MW | 20ft |
+| Standard 4-PCS | 4×2000 | 8.0 MW | 40ft |
+| Custom (3 units) | 3×1800 | 5.4 MW | 40ft |
+| Custom (5 units) | 5×1200 | 6.0 MW | 40ft |
+
+### Backward Compatibility ✅
+- ✅ All existing projects work unchanged
+- ✅ No breaking API changes
+- ✅ No database migrations needed
+- ✅ Seamless integration with sizing logic
+- ✅ Auto-adapts in report generation
+
+### How to Use
+
+1. **Navigate** to AC Sizing page (after DC Sizing)
+2. **Select** DC:AC ratio (1:1, 1:2, or 1:4)
+3. **Choose** PCS configuration:
+   - Option A: Select from 10 recommended configs (including 2×2000, 4×2000)
+   - Option B: Select "🔧 Custom PCS Rating..." and manually enter values
+4. **Run AC Sizing** - System validates and generates summary
+
+### Next Steps
+
+- [ ] Code review by team
+- [ ] Deploy to staging
+- [ ] QA validation testing
+- [ ] User training (optional)
+- [ ] Production deployment

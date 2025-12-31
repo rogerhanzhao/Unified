@@ -142,28 +142,47 @@ def show():
             
             # PCS功率选择 from recommendations
             pcs_options = [f"{rec.readable}" for rec in selected_option.pcs_recommendations]
+            pcs_options.append("🔧 Custom PCS Rating...")
+            
             with col1:
                 pcs_choice = st.selectbox(
-                    "Recommended PCS Configuration",
+                    "Select PCS Configuration",
                     range(len(pcs_options)),
                     format_func=lambda i: pcs_options[i],
-                    help="Recommended PCS modules per AC Block"
+                    help="Select from recommended configurations or enter custom PCS rating"
                 )
-                chosen_rec = selected_option.pcs_recommendations[pcs_choice]
-                pcs_per_ac = chosen_rec.pcs_count
-                pcs_kw = chosen_rec.pcs_kw
-                st.write(f"**Selected**: {pcs_per_ac} × {pcs_kw} kW")
+                
+                if pcs_choice < len(selected_option.pcs_recommendations):
+                    chosen_rec = selected_option.pcs_recommendations[pcs_choice]
+                    pcs_per_ac = chosen_rec.pcs_count
+                    pcs_kw = chosen_rec.pcs_kw
+                    st.write(f"**Selected**: {pcs_per_ac} × {pcs_kw} kW")
+                else:
+                    st.write("**Selected**: Custom configuration")
             
             with col2:
-                allow_adjust = st.checkbox("Override with custom PCS rating?", value=False)
-                if allow_adjust:
+                if pcs_choice >= len(selected_option.pcs_recommendations):
+                    st.write("**Enter Custom Values:**")
+                    pcs_per_ac = st.number_input(
+                        "PCS Count per AC Block",
+                        min_value=1,
+                        max_value=6,
+                        value=2,
+                        step=1,
+                        key="custom_pcs_count"
+                    )
                     pcs_kw = st.number_input(
-                        "Custom PCS Rating (kW)",
+                        "PCS Rating (kW)",
                         min_value=1000,
                         max_value=5000,
-                        value=pcs_kw,
-                        step=250
+                        value=1500,
+                        step=100,
+                        key="custom_pcs_kw"
                     )
+                else:
+                    chosen_rec = selected_option.pcs_recommendations[pcs_choice]
+                    pcs_per_ac = chosen_rec.pcs_count
+                    pcs_kw = chosen_rec.pcs_kw
             
             # Container size info - based on SINGLE AC Block size
             single_block_ac_power = pcs_per_ac * pcs_kw / 1000  # MW per block
