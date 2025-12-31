@@ -511,8 +511,10 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     dwg.add(dwg.line((circuit_x1, dc_circuit_b_y), (circuit_x2, dc_circuit_b_y), class_="thin"))
     dwg.add(dwg.text("Circuit B", insert=(circuit_x1, dc_circuit_b_y - 6), class_="small"))
 
-    # Changed: DC Blocks now connect to individual PCS DC BUSBARs (not shared)
-    # Evenly distribute DC blocks among PCS modules
+    # Changed: DC Blocks now connect to individual PCS DC BUSBARs (completely independent)
+    # Each PCS has its own Circuit A/B at DC BUSBAR level
+    # DC blocks are allocated to PCS, and each block connects ONLY to its assigned PCS
+    
     blocks_per_pcs = max(1, dc_blocks_total // pcs_count) if pcs_count > 0 else 1
     remaining_blocks = dc_blocks_total % pcs_count if pcs_count > 0 else 0
     
@@ -522,41 +524,55 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         blocks_for_this_pcs = blocks_per_pcs + (1 if pcs_idx < remaining_blocks else 0)
         pcs_center_x = pcs_start_x + pcs_idx * slot_w + pcs_box_w / 2
         
-        # Draw DC blocks for this PCS and connect to its BUSBAR
-        block_x_offset = 0
+        # Position for DC blocks belonging to this PCS
+        pcs_dc_blocks = []
         for b in range(blocks_for_this_pcs):
             if block_index >= blocks_to_draw:
                 break
-                
-            row = block_index // block_cols
-            col = block_index % block_cols
-            cell_x = dc_box_x_start + col * (dc_box_w + block_gap_x)
-            cell_y = dc_box_y + row * (dc_box_h + block_gap_y)
+            pcs_dc_blocks.append(block_index)
+            block_index += 1
+        
+        # Draw DC blocks for this PCS
+        # Position them near their PCS's DC BUSBAR
+        block_x_offset = 0
+        for block_num, b in enumerate(pcs_dc_blocks):
+            row = block_num // 2
+            col = block_num % 2
+            
+            # Position blocks below their PCS, arranged in a small grid
+            cell_x = pcs_center_x - 80 + col * 90
+            cell_y = dc_bus_b_y + 40 + row * 70
+            
+            if cell_y + dc_box_h > battery_y:
+                # Reflow to battery area
+                battery_block_index = b
+                row = battery_block_index // block_cols
+                col = battery_block_index % block_cols
+                cell_x = dc_box_x_start + col * (dc_box_w + block_gap_x)
+                cell_y = dc_box_y + row * (dc_box_h + block_gap_y)
+            
             dwg.add(dwg.rect(insert=(cell_x, cell_y), size=(dc_box_w, dc_box_h), class_="outline"))
 
             if show_individual_blocks:
-                label = f"DC Block #{block_index + 1} ({format_mwh(spec.dc_block_energy_mwh)})"
+                label = f"DC Block #{b + 1} ({format_mwh(spec.dc_block_energy_mwh)})"
             else:
                 label = f"DC Block ({format_mwh(spec.dc_block_energy_mwh)}) x {dc_blocks_total}"
             dwg.add(dwg.text(label, insert=(cell_x + 6, cell_y + 20), class_="small"))
             dwg.add(dwg.text("2 circuits (A/B)", insert=(cell_x + 6, cell_y + 38), class_="small"))
 
-            # Connect to this PCS's DC BUSBAR
-            line_x_a = cell_x + dc_box_w * 0.4
-            line_x_b = cell_x + dc_box_w * 0.6
-            # Connection goes up to the PCS's individual BUSBAR
-            dwg.add(dwg.line((line_x_a, cell_y), (line_x_a, dc_circuit_a_y), class_="thin"))
-            dwg.add(dwg.line((line_x_b, cell_y), (line_x_b, dc_circuit_b_y), class_="thin"))
+            # CRITICAL: Connect ONLY to this PCS's DC BUSBAR (INDEPENDENT connection)
+            # Circuit A connection
+            line_x_a = cell_x + dc_box_w * 0.35
+            dwg.add(dwg.line((line_x_a, cell_y), (line_x_a, dc_bus_a_y), class_="thin"))
+            dwg.add(dwg.line((line_x_a, dc_bus_a_y), (pcs_center_x, dc_bus_a_y), class_="thin"))
             
-            # Add connection from Battery circuits to this block
-            mid_x = (line_x_a + line_x_b) / 2
-            dwg.add(dwg.line((circuit_x1, dc_circuit_a_y), (mid_x, dc_circuit_a_y), class_="thin"))
-            dwg.add(dwg.line((circuit_x1, dc_circuit_b_y), (mid_x, dc_circuit_b_y), class_="thin"))
-
-            block_index += 1
+            # Circuit B connection
+            line_x_b = cell_x + dc_box_w * 0.65
+            dwg.add(dwg.line((line_x_b, cell_y), (line_x_b, dc_bus_b_y), class_="thin"))
+            dwg.add(dwg.line((line_x_b, dc_bus_b_y), (pcs_center_x, dc_bus_b_y), class_="thin"))
     
     # Add note about PCS-to-BUSBAR allocation
-    note_text = f"Each PCS has independent DC BUSBAR A & B; {dc_blocks_total} DC blocks evenly allocated."
+    note_text = f"Each PCS has independent DC BUSBAR A & B; {dc_blocks_total} DC blocks evenly allocated; each block connects independently to its assigned PCS."
     dwg.add(dwg.text(note_text, insert=(battery_x, battery_y + battery_h + 20), class_="small"))
 
     dwg.add(

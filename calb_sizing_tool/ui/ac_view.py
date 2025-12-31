@@ -11,7 +11,6 @@ import streamlit as st
 from calb_sizing_tool.common.allocation import allocate_dc_blocks, evenly_distribute
 from calb_sizing_tool.models import DCBlockResult
 from calb_sizing_tool.reporting.export_docx import (
-    create_combined_report,
     make_report_filename,
 )
 from calb_sizing_tool.reporting.report_v2 import export_report_v2_1
@@ -88,105 +87,92 @@ def show():
 
     st.divider()
 
-    # ========== STEP 2: Generate Options ==========
-    st.subheader("📊 AC Block Sizing Options")
+    # ========== STEP 2: Generate Options & Auto-select Best ==========
+    st.subheader("🔧 AC Block Sizing Configuration")
     st.markdown("""
-    Based on your DC Block count, three standard configurations are recommended:
+    System automatically recommends the best ratio based on your DC Block count.
     """)
 
     options = generate_ac_sizing_options(dc_blocks_total, target_mw, target_mwh, dc_block_mwh)
 
-    # Display options as tabs
-    tabs = st.tabs([opt.ratio for opt in options])
-
+    # Auto-select the recommended option, or use saved selection
     selected_option = None
-    selected_option_index = 1  # Default to Option B (1:2)
-
-    for tab_idx, (tab, option) in enumerate(zip(tabs, options)):
-        with tab:
-            # Option details
-            col_left, col_right = st.columns([2, 1])
-            
-            with col_left:
-                st.write(f"**{option.readable_description}**")
-                st.write(option.description)
-                
-                # AC Block数量
-                st.metric("AC Blocks Required", f"{option.ac_block_count}")
-                
-                # 每个AC Block的DC Block数 (带分配详情)
-                dc_distribution = f"Distribution: {option.dc_blocks_per_ac}"
-                st.write(f"**DC Block Distribution**: {dc_distribution}")
-                
-                # PCS推荐
-                st.write("**PCS Recommendations:**")
-                for i, rec in enumerate(option.pcs_recommendations):
-                    st.write(f"  • Option {chr(97+i)}: {rec.readable}")
-            
-            with col_right:
-                if option.is_recommended:
-                    st.success("✅ RECOMMENDED")
-                    if selected_option is None:
-                        selected_option = option
-                        selected_option_index = tab_idx
-                else:
-                    st.info("Alternative")
-            
-            # Select button
-            if st.button(f"Select {option.ratio}", key=f"select_option_{option.ratio}"):
-                selected_option = option
-                selected_option_index = tab_idx
-                st.session_state["selected_ac_ratio"] = option.ratio
-                st.rerun()
-
-    # If a ratio was previously selected, use it
     if "selected_ac_ratio" in st.session_state:
         selected_ratio = st.session_state["selected_ac_ratio"]
-        selected_option = next((o for o in options if o.ratio == selected_ratio), options[1])
+        selected_option = next((o for o in options if o.ratio == selected_ratio), None)
+    
+    if selected_option is None:
+        # Default to first recommended option
+        for opt in options:
+            if opt.is_recommended:
+                selected_option = opt
+                break
+    
+    if selected_option is None:
+        selected_option = options[1]  # Fallback to option B (1:2)
+    
+    # Show ratio selection
+    ratio_choices = [opt.ratio for opt in options]
+    selected_ratio_idx = ratio_choices.index(selected_option.ratio) if selected_option.ratio in ratio_choices else 1
+    
+    col_ratio, col_desc = st.columns([1, 3])
+    with col_ratio:
+        choice_idx = st.selectbox(
+            "AC:DC Ratio",
+            range(len(ratio_choices)),
+            index=selected_ratio_idx,
+            format_func=lambda i: ratio_choices[i],
+            help="Select the ratio of DC Blocks per AC Block (1:1, 1:2, or 1:4)"
+        )
+        if choice_idx != selected_ratio_idx:
+            selected_option = options[choice_idx]
+            st.session_state["selected_ac_ratio"] = selected_option.ratio
+    
+    with col_desc:
+        st.info(selected_option.description)
 
     st.divider()
 
-    # ========== STEP 3: Configuration for Selected Option ==========
+    # ========== STEP 3: Configure PCS for Selected Ratio ==========
     if selected_option:
-        st.subheader(f"🔧 Configuration - Ratio {selected_option.ratio}")
+        st.subheader(f"⚙️ PCS Configuration for {selected_option.ratio} Ratio")
         
         with st.form("ac_config_form"):
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns([2, 2])
             
-            # PCS功率选择
+            # PCS功率选择 from recommendations
             pcs_options = [f"{rec.readable}" for rec in selected_option.pcs_recommendations]
-            pcs_choice = col1.selectbox(
-                "PCS Configuration",
-                range(len(pcs_options)),
-                format_func=lambda i: pcs_options[i],
-                help="Select recommended PCS configuration"
-            )
-            chosen_rec = selected_option.pcs_recommendations[pcs_choice]
-            pcs_per_ac = chosen_rec.pcs_count
-            pcs_kw = chosen_rec.pcs_kw
-            
-            # 允许微调
-            allow_adjust = col2.checkbox("Allow manual adjustment?", value=False)
-            
-            if allow_adjust:
-                pcs_kw = col3.number_input(
-                    "PCS Rating (kW)",
-                    min_value=1000,
-                    max_value=5000,
-                    value=pcs_kw,
-                    step=100
+            with col1:
+                pcs_choice = st.selectbox(
+                    "Recommended PCS Configuration",
+                    range(len(pcs_options)),
+                    format_func=lambda i: pcs_options[i],
+                    help="Recommended PCS modules per AC Block"
                 )
-            else:
-                col3.write(f"**Selected**: {pcs_kw} kW")
+                chosen_rec = selected_option.pcs_recommendations[pcs_choice]
+                pcs_per_ac = chosen_rec.pcs_count
+                pcs_kw = chosen_rec.pcs_kw
+                st.write(f"**Selected**: {pcs_per_ac} × {pcs_kw} kW")
             
-            # 容器大小 (自动)
-            total_ac_power = selected_option.ac_block_count * pcs_per_ac * pcs_kw / 1000
-            auto_container = "40ft" if total_ac_power > 5 else "20ft"
-            st.info(f"Container size: Auto {auto_container} based on total power {total_ac_power:.2f} MW")
+            with col2:
+                allow_adjust = st.checkbox("Override with custom PCS rating?", value=False)
+                if allow_adjust:
+                    pcs_kw = st.number_input(
+                        "Custom PCS Rating (kW)",
+                        min_value=1000,
+                        max_value=5000,
+                        value=pcs_kw,
+                        step=250
+                    )
             
-            submitted = st.form_submit_button("✅ Run AC Sizing")
+            # Container size info - based on SINGLE AC Block size
+            single_block_ac_power = pcs_per_ac * pcs_kw / 1000  # MW per block
+            auto_container = "40ft" if single_block_ac_power > 5 else "20ft"
+            st.info(f"**AC Block Container**: {auto_container} (Single block: {single_block_ac_power:.2f} MW, Total AC: {selected_option.ac_block_count * single_block_ac_power:.2f} MW)")
+            
+            submitted = st.form_submit_button("✅ Run AC Sizing", use_container_width=True)
 
-        # ========== STEP 4: Calculation ==========
+        # ========== STEP 4: Calculation & Validation ==========
         if submitted:
             bump_run_id_ac()
             
@@ -205,60 +191,68 @@ def show():
             if total_energy < target_mwh * 0.95:
                 errors.append(f"❌ Insufficient energy: {total_energy:.0f} MWh < {target_mwh:.0f} MWh")
             elif total_energy > target_mwh * 1.05:
-                warnings.append(f"⚠️ Excess energy: {total_energy:.0f} MWh > {target_mwh:.0f} MWh by {(total_energy/target_mwh-1)*100:.1f}%")
+                warnings.append(f"⚠️ Excess energy: {total_energy:.0f} MWh > {target_mwh:.0f} MWh (+{(total_energy/target_mwh-1)*100:.1f}%)")
             
-            # Check power
+            # Check power - overhead based on POI requirement, not single block
             if total_ac_mw < target_mw * 0.95:
                 errors.append(f"❌ Insufficient power: {total_ac_mw:.1f} MW < {target_mw:.1f} MW")
-            elif overhead > block_size_mw * 0.3:
-                warnings.append(f"⚠️ Significant power overhead: {overhead:.1f} MW ({overhead/block_size_mw*100:.0f}% of one AC Block)")
+            elif overhead > target_mw * 0.3:
+                warnings.append(f"⚠️ Power overhead: {overhead:.1f} MW ({overhead/target_mw*100:.0f}% of POI requirement)")
             
-            # Display validation results
+            # Display errors
             if errors:
                 for err in errors:
                     st.error(err)
                 st.stop()
             
-            for warn in warnings:
-                st.warning(warn)
+            # Display warnings
+            if warnings:
+                with st.expander("⚠️ Warnings"):
+                    for warn in warnings:
+                        st.warning(warn)
             
-            # ========== STEP 5: Display Results ==========
+            # ========== Results Summary ==========
             st.success("✅ AC Configuration Complete!")
+            st.divider()
             
-            # Summary metrics
+            # Key metrics
             col1, col2, col3, col4 = st.columns(4)
-            col1.metric("AC Block Count", num_blocks)
-            col2.metric("AC Block Size", f"{block_size_mw:.2f} MW")
-            col3.metric("Total AC Power", f"{total_ac_mw:.2f} MW")
-            col4.metric("Power Margin", f"{overhead:.2f} MW")
+            col1.metric("AC Blocks", num_blocks)
+            col2.metric("PCS per Block", pcs_per_block)
+            col3.metric("AC Power per Block", f"{block_size_mw:.2f} MW")
+            col4.metric("Total AC Power", f"{total_ac_mw:.2f} MW")
             
-            # Configuration table
-            st.subheader("AC Block Configuration Table")
-            config_data = []
-            for block_idx in range(num_blocks):
-                dc_count = selected_option.dc_blocks_per_ac[block_idx] if block_idx < len(selected_option.dc_blocks_per_ac) else 1
-                config_data.append({
-                    "AC Block": f"Block {block_idx+1}",
-                    "PCS Count": pcs_per_block,
-                    "PCS Rating": f"{pcs_kw} kW",
-                    "AC Power": f"{block_size_mw:.2f} MW",
-                    "DC Blocks": dc_count,
-                    "DC Energy": f"{dc_count * dc_block_mwh:.1f} MWh"
-                })
+            # Configuration summary
+            st.subheader("📋 Sizing Summary")
+            summary_cols = st.columns(2)
             
-            df_config = pd.DataFrame(config_data)
-            st.dataframe(df_config, use_container_width=True)
+            with summary_cols[0]:
+                st.write("**DC Side:**")
+                st.write(f"- Total DC Blocks: {dc_blocks_total} × 20ft")
+                st.write(f"- DC Blocks per AC Block: ~{dc_blocks_total/num_blocks:.1f} avg")
+                st.write(f"- Total DC Energy: {dc_blocks_total * dc_block_mwh:.1f} MWh")
             
-            # Store results
+            with summary_cols[1]:
+                st.write("**AC Side:**")
+                st.write(f"- Total AC Blocks: {num_blocks}")
+                st.write(f"- PCS Configuration: {pcs_per_block} × {pcs_kw} kW")
+                st.write(f"- Total AC Power: {total_ac_mw:.2f} MW")
+            
+            st.write("**Container Type:** " + ("40ft" if block_size_mw > 5 else "20ft") + " per AC Block")
+            st.divider()
+            
+            
+            # Store results in session state
             ac_output = {
                 "project_name": project_name,
-                "ac_ratio": selected_option.ratio,
+                "selected_ratio": selected_option.ratio,
                 "num_blocks": num_blocks,
                 "pcs_per_block": pcs_per_block,
                 "pcs_kw": pcs_kw,
                 "block_size_mw": block_size_mw,
                 "total_ac_mw": total_ac_mw,
                 "overhead_mw": overhead,
+                "dc_blocks_per_ac": selected_option.dc_blocks_per_ac,
                 "poi_power_mw": target_mw,
                 "poi_energy_mwh": target_mwh,
                 "mv_kv": float(st.session_state.get("grid_kv", 33.0)),

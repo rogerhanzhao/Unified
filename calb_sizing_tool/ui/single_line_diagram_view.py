@@ -203,16 +203,27 @@ def show():
     lv_v_status = lv_v_value if lv_v_value is not None else "TBD"
     pcs_counts = _resolve_pcs_count_by_block(ac_output)
     pcs_count_status = pcs_counts[0] if pcs_counts else "TBD"
+    if isinstance(pcs_count_status, (list, tuple)):
+        pcs_count_status = sum(pcs_count_status) if pcs_count_status else "TBD"
     dc_blocks_status = ac_output.get("dc_block_allocation", {}).get("total_dc_blocks")
     if dc_blocks_status is None:
-        dc_blocks_status = ac_output.get("dc_blocks_per_ac")
+        dc_blocks_status_raw = ac_output.get("dc_blocks_per_ac")
+        # Ensure dc_blocks_status is a scalar, not a list
+        if isinstance(dc_blocks_status_raw, (list, tuple)):
+            # If it's a list, sum all numeric values to get total DC blocks
+            try:
+                dc_blocks_status = sum(int(x) for x in dc_blocks_status_raw if isinstance(x, (int, float)))
+            except (ValueError, TypeError):
+                dc_blocks_status = len(dc_blocks_status_raw) if dc_blocks_status_raw else "TBD"
+        else:
+            dc_blocks_status = dc_blocks_status_raw
     c_status1, c_status2, c_status3 = st.columns(3)
     c_status1.metric("DC Run", dc_time)
     c_status2.metric("AC Run", ac_time)
     c_status3.metric("MV/LV", f"{mv_kv_status} kV / {lv_v_status} V")
     c_status4, c_status5 = st.columns(2)
-    c_status4.metric("PCS Count (group)", pcs_count_status)
-    c_status5.metric("DC Blocks (group)", dc_blocks_status or "TBD")
+    c_status4.metric("PCS Count (group)", str(pcs_count_status) if pcs_count_status != "TBD" else pcs_count_status)
+    c_status5.metric("DC Blocks (group)", str(dc_blocks_status) if dc_blocks_status != "TBD" else "TBD")
 
     if not svgwrite_ok:
         st.error("Missing dependency: svgwrite. Install with `pip install -r requirements.txt`.")

@@ -156,7 +156,9 @@ def build_report_context(
     stage2 = outputs.get("stage2") or stage13_output.get("stage2_raw") or {}
     # Prefer an explicit stage3_df passed in outputs, then any stage3_df embedded in
     # the stage13_output (packaged by DC UI). If none, attempt to recompute.
-    stage3_df = outputs.get("stage3_df") or stage13_output.get("stage3_df")
+    stage3_df = outputs.get("stage3_df")
+    if stage3_df is None:
+        stage3_df = stage13_output.get("stage3_df")
     stage3_meta = outputs.get("stage3_meta") or stage13_output.get("stage3_meta") or {}
     if stage3_df is None:
         stage3_df, stage3_meta = _get_stage3_df(stage1, stage2)
@@ -203,14 +205,23 @@ def build_report_context(
     project_life_years = int(stage1.get("project_life_years", 0) or 0)
     cycles_per_year = int(stage1.get("cycles_per_year", 0) or 0)
 
+    # Read efficiency values from DC SIZING stage1 output (DC SIZING page computes these)
+    # Do NOT use fallback defaults for report - if values are missing, user needs to re-run DC SIZING
+    eff_dc_cables = float(stage1.get("eff_dc_cables_frac", 0.0) or 0.0)
+    eff_pcs = float(stage1.get("eff_pcs_frac", 0.0) or 0.0)
+    eff_mvt = float(stage1.get("eff_mvt_frac", 0.0) or 0.0)
+    eff_ac_cables_sw_rmu = float(stage1.get("eff_ac_cables_sw_rmu_frac", 0.0) or 0.0)
+    eff_hvt_others = float(stage1.get("eff_hvt_others_frac", 0.0) or 0.0)
+    eff_chain = float(stage1.get("eff_dc_to_poi_frac", 0.0) or 0.0)
+    
     efficiency_components = {
-        "eff_dc_cables_frac": float(stage1.get("eff_dc_cables_frac") or 0.97),  # 97% default
-        "eff_pcs_frac": float(stage1.get("eff_pcs_frac") or 0.97),  # 97% default
-        "eff_mvt_frac": float(stage1.get("eff_mvt_frac") or 0.985),  # 98.5% (Transformer/MVT) default
-        "eff_ac_cables_sw_rmu_frac": float(stage1.get("eff_ac_cables_sw_rmu_frac") or 0.98),  # 98% default
-        "eff_hvt_others_frac": float(stage1.get("eff_hvt_others_frac") or 0.98),  # 98% default
+        "eff_dc_cables_frac": eff_dc_cables,
+        "eff_pcs_frac": eff_pcs,
+        "eff_mvt_frac": eff_mvt,
+        "eff_ac_cables_sw_rmu_frac": eff_ac_cables_sw_rmu,
+        "eff_hvt_others_frac": eff_hvt_others,
     }
-    efficiency_chain_oneway = float(stage1.get("eff_dc_to_poi_frac") or 0.85)  # 85% default
+    efficiency_chain_oneway = eff_chain
 
     avg_dc_blocks_per_ac_block = None
     dc_blocks_allocation = []

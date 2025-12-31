@@ -114,63 +114,34 @@ def _draw_v_dimension(dwg, y1, y2, x, ext_x, text):
 
 def _draw_dc_interior(dwg, x, y, w, h, mirrored: bool = False):
     """
-    Draw DC Block (BESS) interior with vertical battery stacks, cooling unit, and door.
-    Clean design without BATTERY/COOLING labels as per requirements.
-    Door indication shows container access point.
+    Draw DC Block (BESS) interior with 6 battery module racks.
+    Clean design: 6 rectangles (1x6 single row) representing battery racks, no text labels, no door.
     """
     pad = min(10.0, max(4.0, w * 0.06))
     
-    # Door indication (simple rectangle outline on left side)
-    door_w = max(8.0, w * 0.15)
-    door_h = h * 0.4
-    door_x = x + pad if not mirrored else x + w - door_w - pad
-    door_y = y + h * 0.3
-    dwg.add(dwg.rect(insert=(door_x, door_y), size=(door_w, door_h), class_="thin"))
-    # Add door handle line
-    dwg.add(dwg.line((door_x + door_w * 0.8, door_y + door_h * 0.2), 
-                     (door_x + door_w * 0.8, door_y + door_h * 0.8), class_="thin"))
+    # Battery modules grid: 1 row x 6 columns = 6 modules
+    # Grid occupies main area (85% of width and height, with padding)
+    grid_x_start = x + pad
+    grid_y_start = y + pad
+    grid_w = w - 2 * pad
+    grid_h = h - 2 * pad
     
-    # Battery stacks area - vertical lines to represent stacks (75% of width)
-    stack_x_start = x + pad
-    stack_x_end = x + w * 0.75
-    stack_width = stack_x_end - stack_x_start
-    stack_y_start = y + pad
-    stack_y_end = y + h - pad
+    cols = 6
+    rows = 1
     
-    # Draw vertical stack lines (representing battery cells)
-    num_stacks = 12
-    if stack_width > 0 and num_stacks > 0:
-        stack_spacing = stack_width / (num_stacks + 1)
-        for i in range(1, num_stacks + 1):
-            stack_x = stack_x_start + i * stack_spacing
-            dwg.add(dwg.line((stack_x, stack_y_start), (stack_x, stack_y_end), class_="thin"))
+    # Calculate module dimensions with inter-module spacing
+    module_spacing = max(2.0, min(grid_w, grid_h) * 0.03)
+    module_w = (grid_w - module_spacing * (cols - 1)) / cols
+    module_h = grid_h
     
-    # Draw battery section border
-    dwg.add(dwg.line((stack_x_start, stack_y_start), (stack_x_end, stack_y_start), class_="thin"))
-    dwg.add(dwg.line((stack_x_start, stack_y_end), (stack_x_end, stack_y_end), class_="thin"))
-    dwg.add(dwg.line((stack_x_start, stack_y_start), (stack_x_start, stack_y_end), class_="thin"))
-    dwg.add(dwg.line((stack_x_end, stack_y_start), (stack_x_end, stack_y_end), class_="thin"))
-    
-    # Cooling unit on the right side (25% of width) - NO TEXT LABELS
-    cooling_x = stack_x_end
-    cooling_y = y + pad
-    cooling_w = x + w - cooling_x - pad
-    cooling_h = h - 2 * pad
-    
-    if cooling_w > 2 and cooling_h > 2:
-        # Draw cooling area border
-        dwg.add(dwg.rect(insert=(cooling_x, cooling_y), size=(cooling_w, cooling_h), class_="thin"))
-        
-        # Add horizontal lines to represent cooling channels
-        num_cooling_lines = 4
-        if cooling_h > 0:
-            cooling_line_spacing = cooling_h / (num_cooling_lines + 1)
-            for i in range(1, num_cooling_lines + 1):
-                line_y = cooling_y + i * cooling_line_spacing
-                dwg.add(dwg.line((cooling_x + 2, line_y), (cooling_x + cooling_w - 2, line_y), class_="thin"))
-        
-        # Add cooling label
-        dwg.add(dwg.text("COOLING", insert=(cooling_x + cooling_w * 0.5, cooling_y + cooling_h * 0.5), class_="small", text_anchor="middle", dominant_baseline="middle"))
+    # Draw 6 battery modules
+    for row in range(rows):
+        for col in range(cols):
+            mod_x = grid_x_start + col * (module_w + module_spacing)
+            mod_y = grid_y_start + row * (module_h + module_spacing)
+            
+            # Draw module rectangle
+            dwg.add(dwg.rect(insert=(mod_x, mod_y), size=(module_w, module_h), class_="thin"))
 
 
 def _draw_ac_interior(dwg, x, y, w, h, skid_text: str):
@@ -289,60 +260,34 @@ def _draw_v_dimension_raw(lines, y1, y2, x, ext_x, text):
 
 def _draw_dc_interior_raw(lines, x, y, w, h, mirrored: bool = False):
     """
-    Draw DC Block (BESS) interior with vertical battery stacks, cooling unit, and door (raw SVG).
-    Clean design without BATTERY/COOLING labels as per requirements.
-    Door indication shows container access point.
+    Draw DC Block (BESS) interior with 6 battery module racks (raw SVG).
+    Clean design: 6 rectangles (1x6 single row) representing battery racks, no text labels, no door.
     """
     pad = min(10.0, max(4.0, w * 0.06))
     
-    # Door indication (simple rectangle outline on left side)
-    door_w = max(8.0, w * 0.15)
-    door_h = h * 0.4
-    door_x = x + pad if not mirrored else x + w - door_w - pad
-    door_y = y + h * 0.3
-    _svg_rect(lines, door_x, door_y, door_w, door_h, class_name="thin")
-    # Add door handle line
-    _svg_line(lines, door_x + door_w * 0.8, door_y + door_h * 0.2,
-              door_x + door_w * 0.8, door_y + door_h * 0.8, class_name="thin")
+    # Battery modules grid: 1 row x 6 columns = 6 modules
+    # Grid occupies main area (85% of width and height, with padding)
+    grid_x_start = x + pad
+    grid_y_start = y + pad
+    grid_w = w - 2 * pad
+    grid_h = h - 2 * pad
     
-    # Battery stacks area - vertical lines to represent stacks (75% of width)
-    stack_x_start = x + pad
-    stack_x_end = x + w * 0.75
-    stack_width = stack_x_end - stack_x_start
-    stack_y_start = y + pad
-    stack_y_end = y + h - pad
+    cols = 6
+    rows = 1
     
-    # Draw vertical stack lines
-    num_stacks = 12
-    if stack_width > 0 and num_stacks > 0:
-        stack_spacing = stack_width / (num_stacks + 1)
-        for i in range(1, num_stacks + 1):
-            stack_x = stack_x_start + i * stack_spacing
-            _svg_line(lines, stack_x, stack_y_start, stack_x, stack_y_end, class_name="thin")
+    # Calculate module dimensions with inter-module spacing
+    module_spacing = max(2.0, min(grid_w, grid_h) * 0.03)
+    module_w = (grid_w - module_spacing * (cols - 1)) / cols
+    module_h = grid_h
     
-    # Draw battery section border
-    _svg_line(lines, stack_x_start, stack_y_start, stack_x_end, stack_y_start, class_name="thin")
-    _svg_line(lines, stack_x_start, stack_y_end, stack_x_end, stack_y_end, class_name="thin")
-    _svg_line(lines, stack_x_start, stack_y_start, stack_x_start, stack_y_end, class_name="thin")
-    _svg_line(lines, stack_x_end, stack_y_start, stack_x_end, stack_y_end, class_name="thin")
-    
-    # Cooling unit on the right side (25% of width) - NO TEXT LABELS
-    cooling_x = stack_x_end
-    cooling_y = y + pad
-    cooling_w = x + w - cooling_x - pad
-    cooling_h = h - 2 * pad
-    
-    if cooling_w > 2 and cooling_h > 2:
-        # Draw cooling area border
-        _svg_rect(lines, cooling_x, cooling_y, cooling_w, cooling_h, class_name="thin")
-        
-        # Add horizontal lines for cooling channels
-        num_cooling_lines = 4
-        if cooling_h > 0:
-            cooling_line_spacing = cooling_h / (num_cooling_lines + 1)
-            for i in range(1, num_cooling_lines + 1):
-                line_y = cooling_y + i * cooling_line_spacing
-                _svg_line(lines, cooling_x + 2, line_y, cooling_x + cooling_w - 2, line_y, class_name="thin")
+    # Draw 6 battery modules
+    for row in range(rows):
+        for col in range(cols):
+            mod_x = grid_x_start + col * (module_w + module_spacing)
+            mod_y = grid_y_start + row * (module_h + module_spacing)
+            
+            # Draw module rectangle
+            _svg_rect(lines, mod_x, mod_y, module_w, module_h, class_name="thin")
 
 
 def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str):

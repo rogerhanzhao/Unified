@@ -10,8 +10,8 @@ from dataclasses import dataclass
 @dataclass
 class PCSRecommendation:
     """PCS推荐配置"""
-    pcs_count: int  # 每个AC Block中的PCS数量
-    pcs_kw: int     # 每个PCS的功率(kW)
+    pcs_count: int  # 每个AC Block中的PCS数量 (仅支持2或4)
+    pcs_kw: int     # 每个PCS的功率(kW) - 标准规格: 1250, 1500, 1725, 2500
     total_kw: int   # 总功率(kW)
     
     @property
@@ -42,7 +42,14 @@ def generate_ac_sizing_options(
     dc_block_mwh: float = 5.0
 ) -> List[ACBlockRatioOption]:
     """
-    根据DC Block数量生成三种标准搭配方案
+    根据DC Block数量生成三种标准搭配方案 (1:1, 1:2, 1:4)
+    
+    关键原则:
+    - DC:AC 比例仅决定 DC Block 如何分配到 AC Block (1, 2, 或 4 个 DC Block/AC Block)
+    - PCS 配置独立:
+      * 2 PCS/AC Block: 2×1250, 2×1500, 2×1725, 2×2500
+      * 4 PCS/AC Block: 4×1250, 4×1500, 4×1725, 4×2500
+    - 不将 DC:AC 比例映射到 PCS 数量
     
     Args:
         dc_blocks_total: DC Block总数 (20ft container)
@@ -55,64 +62,70 @@ def generate_ac_sizing_options(
     """
     options = []
     
-    # ========== Option A: 1:1 搭配 ==========
+    # ===== 所有可能的 PCS 配置 (独立于 DC:AC 比例) =====
+    # 2 PCS per AC Block
+    pcs_configs_2pcs = [
+        PCSRecommendation(pcs_count=2, pcs_kw=1250, total_kw=2500),
+        PCSRecommendation(pcs_count=2, pcs_kw=1500, total_kw=3000),
+        PCSRecommendation(pcs_count=2, pcs_kw=1725, total_kw=3450),
+        PCSRecommendation(pcs_count=2, pcs_kw=2500, total_kw=5000),
+    ]
+    
+    # 4 PCS per AC Block
+    pcs_configs_4pcs = [
+        PCSRecommendation(pcs_count=4, pcs_kw=1250, total_kw=5000),
+        PCSRecommendation(pcs_count=4, pcs_kw=1500, total_kw=6000),
+        PCSRecommendation(pcs_count=4, pcs_kw=1725, total_kw=6900),
+        PCSRecommendation(pcs_count=4, pcs_kw=2500, total_kw=10000),
+    ]
+    
+    # ===== Option A: 1:1 (1 DC Block per AC Block) =====
     ac_blocks_a = dc_blocks_total
     dc_per_ac_a = [1] * ac_blocks_a if ac_blocks_a > 0 else []
     
-    # 推荐PCS配置: 小功率
-    pcs_recommendations_a = [
-        PCSRecommendation(pcs_count=1, pcs_kw=1250, total_kw=1250),
-        PCSRecommendation(pcs_count=2, pcs_kw=690, total_kw=1380),  # 非标准但参考
-    ]
+    # 1:1 时，推荐 2 PCS 或 4 PCS，用户自选
+    pcs_recommendations_a = pcs_configs_2pcs + pcs_configs_4pcs
     
     option_a = ACBlockRatioOption(
         ratio="1:1",
         ac_block_count=ac_blocks_a,
         dc_blocks_per_ac=dc_per_ac_a,
         pcs_recommendations=pcs_recommendations_a,
-        description="高灵活性，每个DC Block配一个AC Block。适合小型或分布式部署。",
+        description="1 AC Block per 1 DC Block. Maximum flexibility and modularity.",
         is_recommended=dc_blocks_total <= 4
     )
     options.append(option_a)
     
-    # ========== Option B: 1:2 搭配 ==========
+    # ===== Option B: 1:2 (2 DC Blocks per AC Block) =====
     ac_blocks_b = math.ceil(dc_blocks_total / 2)
     dc_per_ac_b = evenly_distribute(dc_blocks_total, ac_blocks_b)
     
-    # 推荐PCS配置: 中功率
-    # 每个AC Block应该有2-3个PCS
-    pcs_recommendations_b = [
-        PCSRecommendation(pcs_count=2, pcs_kw=1250, total_kw=2500),
-        PCSRecommendation(pcs_count=3, pcs_kw=900, total_kw=2700),   # 近似
-    ]
+    # 1:2 时，推荐 2 PCS 或 4 PCS，用户自选
+    pcs_recommendations_b = pcs_configs_2pcs + pcs_configs_4pcs
     
     option_b = ACBlockRatioOption(
         ratio="1:2",
         ac_block_count=ac_blocks_b,
         dc_blocks_per_ac=dc_per_ac_b,
         pcs_recommendations=pcs_recommendations_b,
-        description="成本优化，2个DC Block配1个AC Block。通常推荐方案，平衡可靠性和成本。",
-        is_recommended=True  # 默认推荐
+        description="1 AC Block per 2 DC Blocks. Balanced approach for most projects.",
+        is_recommended=True
     )
     options.append(option_b)
     
-    # ========== Option C: 1:4 搭配 ==========
+    # ===== Option C: 1:4 (4 DC Blocks per AC Block) =====
     ac_blocks_c = math.ceil(dc_blocks_total / 4)
     dc_per_ac_c = evenly_distribute(dc_blocks_total, ac_blocks_c)
     
-    # 推荐PCS配置: 大功率，需要更多PCS或更高功率
-    pcs_recommendations_c = [
-        PCSRecommendation(pcs_count=3, pcs_kw=1500, total_kw=4500),
-        PCSRecommendation(pcs_count=4, pcs_kw=1250, total_kw=5000),
-        PCSRecommendation(pcs_count=4, pcs_kw=1500, total_kw=6000),  # 有超配
-    ]
+    # 1:4 时，推荐 2 PCS 或 4 PCS，用户自选
+    pcs_recommendations_c = pcs_configs_2pcs + pcs_configs_4pcs
     
     option_c = ACBlockRatioOption(
         ratio="1:4",
         ac_block_count=ac_blocks_c,
         dc_blocks_per_ac=dc_per_ac_c,
         pcs_recommendations=pcs_recommendations_c,
-        description="高度集成，4个DC Block配1个AC Block。适合大型项目，占地最小。",
+        description="1 AC Block per 4 DC Blocks. Compact design for large-scale projects.",
         is_recommended=dc_blocks_total >= 8
     )
     options.append(option_c)
