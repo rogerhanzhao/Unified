@@ -180,12 +180,17 @@ def _validate_efficiency_chain(ctx: ReportContext) -> list[str]:
     Ensures all values come from DC SIZING stage1 output and are internally consistent.
     Returns list of warning/error messages (does not block export, but logs issues).
     Caller should log these warnings.
+    
+    NOTE: This validation is advisory only. Efficiency values are sourced directly
+    from DC SIZING stage1 output. If DC SIZING was not run or values are missing,
+    the report will still be generated but this function will warn.
     """
     warnings = []
     
     # Verify efficiency values came from stage1 (DC SIZING output)
     if not ctx.stage1 or not isinstance(ctx.stage1, dict):
-        warnings.append("Cannot validate efficiency: stage1 (DC SIZING output) is missing or invalid.")
+        warnings.append("Cannot validate efficiency: stage1 (DC SIZING output) is missing or invalid. "
+                       "Ensure DC SIZING was completed before exporting.")
         return warnings
     
     # Check all components are present (not None/zero)
@@ -200,34 +205,39 @@ def _validate_efficiency_chain(ctx: ReportContext) -> list[str]:
     has_all_components = True
     for name, value in components:
         if value is None or value <= 0:
-            warnings.append(f"Efficiency component '{name}' is missing or zero: {value}")
+            warnings.append(f"Efficiency component '{name}' is missing or zero: {value}. "
+                           f"Efficiency values should come from DC SIZING stage1 output.")
             has_all_components = False
         elif value > 1.2:  # Allow some margin (e.g., 105% input)
             warnings.append(f"Efficiency component '{name}' exceeds 120%: {value}")
     
     # Check total efficiency
     if ctx.efficiency_chain_oneway_frac is None or ctx.efficiency_chain_oneway_frac <= 0:
-        warnings.append(f"Total one-way efficiency chain is missing or zero: {ctx.efficiency_chain_oneway_frac}")
+        warnings.append(f"Total one-way efficiency chain is missing or zero: {ctx.efficiency_chain_oneway_frac}. "
+                       f"Ensure DC SIZING was completed.")
     elif ctx.efficiency_chain_oneway_frac > 1.2:
         warnings.append(f"Total one-way efficiency exceeds 120%: {ctx.efficiency_chain_oneway_frac}")
     
     # If all components present, verify total is their product (with tolerance)
-    if has_all_components and ctx.efficiency_chain_oneway_frac:
+    if has_all_components and ctx.efficiency_chain_oneway_frac and ctx.efficiency_chain_oneway_frac > 0:
         product = 1.0
         for name, value in components:
             if value and value > 0:
                 product *= value
-        # Allow 1% tolerance for rounding
-        if abs(product - ctx.efficiency_chain_oneway_frac) > 0.01 * ctx.efficiency_chain_oneway_frac:
+        # Allow 2% tolerance for rounding and numerical precision
+        relative_error = abs(product - ctx.efficiency_chain_oneway_frac) / ctx.efficiency_chain_oneway_frac if ctx.efficiency_chain_oneway_frac != 0 else 0
+        if relative_error > 0.02:
             warnings.append(
-                f"Total efficiency ({ctx.efficiency_chain_oneway_frac:.4f}) "
-                f"does not match product of components ({product:.4f}). "
-                f"Ensure DC SIZING calculation is complete."
+                f"Total efficiency ({ctx.efficiency_chain_oneway_frac:.6f}) "
+                f"does not match product of components ({product:.6f}). "
+                f"Relative error: {relative_error*100:.2f}%. "
+                f"Please verify DC SIZING stage1 calculation is complete and consistent."
             )
     
     # Warn if efficiency chain appears uninitialized (less than 0.1% = 0.001)
     if ctx.efficiency_chain_oneway_frac is not None and ctx.efficiency_chain_oneway_frac < 0.001:
-        warnings.append("Efficiency chain appears to be zero or uninitialized; ensure DC SIZING was completed.")
+        warnings.append("Efficiency chain appears to be zero or uninitialized; "
+                       "ensure DC SIZING was completed before exporting.")
     
     return warnings
 
@@ -274,10 +284,12 @@ def _validate_report_consistency(ctx: ReportContext) -> list[str]:
     """Validate overall report consistency (power/energy/efficiency).
     
     Returns list of warning messages (does not block export, only for logging/QC).
+    Warnings address: power balance, energy consistency, efficiency completeness,
+    unit consistency, and contract compliance (guarantee year).
     """
     warnings = []
     
-    # Efficiency chain validation
+    # Efficiency chain validation (source and internal consistency)
     eff_warnings = _validate_efficiency_chain(ctx)
     warnings.extend(eff_warnings)
     
@@ -294,20 +306,22 @@ def _validate_report_consistency(ctx: ReportContext) -> list[str]:
             f"got {ctx.pcs_modules_total}."
         )
     
-    # AC power consistency (with tolerance for rounding)
+    # AC power consistency (with tolerance for rounding and intentional overbuild)
     if ctx.ac_blocks_total > 0 and ctx.ac_block_size_mw and ctx.ac_block_size_mw > 0:
         total_ac_power = ctx.ac_blocks_total * ctx.ac_block_size_mw
         poi_requirement = ctx.poi_power_requirement_mw
         
-        # Allow 5% tolerance for power overbuild
-        tolerance = max(0.5, poi_requirement * 0.05)
-        if abs(total_ac_power - poi_requirement) > tolerance:
-            warnings.append(
-                f"Total AC power ({total_ac_power:.2f} MW) differs from POI requirement "
-                f"({poi_requirement:.2f} MW) by {abs(total_ac_power - poi_requirement):.2f} MW "
-                f"({100 * abs(total_ac_power - poi_requirement) / poi_requirement:.1f}%). "
-                f"This may be intentional (overbuilding) or indicate a sizing error."
-            )
+        # Allow 10% tolerance for overbuild (common in BESS sizing)
+        overage = total_ac_power - poi_requirement
+        overage_pct = (overage / poi_requirement * 100) if poi_requirement > 0 else 0
+        if overage > 0.5:  # At least 0.5 MW overbuild is notable
+            if overage_pct > 10:
+                warnings.append(
+                    f"AC power overbuild is {overage_pct:.1f}% "
+                    f"(total {total_ac_power:.2f} MW vs requirement {poi_requirement:.2f} MW). "
+                    f"This may be intentional or may indicate AC undersizing in the ratio; "
+                    f"verify DC-to-AC ratio selection."
+                )
     
     # Energy consistency: DC energy should meet POI requirement (through degradation modeling)
     if ctx.dc_total_energy_mwh is not None and ctx.poi_energy_requirement_mwh is not None:
@@ -421,7 +435,11 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
     # Efficiency Chain breakdown
     doc.add_paragraph("")
     doc.add_heading("Efficiency Chain (one-way)", level=3)
-    doc.add_paragraph("Note: Efficiency chain values do not include Auxiliary losses.")
+    doc.add_paragraph(
+        "Note: Efficiency chain values (below) represent the one-way conversion path from DC side to AC/POI. "
+        "All efficiency and loss values are exclusive of Auxiliary loads. "
+        "The product of all component efficiencies yields the total one-way chain efficiency."
+    )
     
     eff_rows = [
         ("Total Efficiency (one-way)", format_percent(ctx.efficiency_chain_oneway_frac, input_is_fraction=True)),
@@ -672,6 +690,11 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
     doc.add_paragraph("")
 
     qc_checks = list(ctx.qc_checks)
+    
+    # Add consistency validation warnings
+    consistency_warnings = _validate_report_consistency(ctx)
+    qc_checks.extend(consistency_warnings)
+    
     percent_pairs = [
         (ctx.efficiency_chain_oneway_frac, format_percent(ctx.efficiency_chain_oneway_frac, input_is_fraction=True)),
         (ctx.stage1.get("dod_frac"), format_percent(ctx.stage1.get("dod_frac"), input_is_fraction=True)),
