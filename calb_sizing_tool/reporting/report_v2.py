@@ -174,15 +174,6 @@ def _svg_bytes_to_png(svg_bytes: bytes, width_px: int = 900) -> Optional[bytes]:
         return None
 
 
-def _svg_bytes_to_png(svg_bytes: bytes, width_px: int = 900) -> Optional[bytes]:
-    if not svg_bytes or not CAIROSVG_AVAILABLE:
-        return None
-    try:
-        return cairosvg.svg2png(bytestring=svg_bytes, output_width=width_px)
-    except Exception:
-        return None
-
-
 def _validate_efficiency_chain(ctx: ReportContext) -> list[str]:
     """Validate that efficiency chain data is complete and self-consistent.
     
