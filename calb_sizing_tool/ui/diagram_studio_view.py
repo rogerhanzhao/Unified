@@ -3,7 +3,12 @@ from PIL import Image
 import streamlit.elements.image as st_image
 from streamlit.elements.lib.image_utils import image_to_url
 st_image.image_to_url = image_to_url
-from streamlit_drawable_canvas import st_canvas
+try:
+    from streamlit_drawable_canvas import st_canvas
+except ImportError:
+    st_canvas = None
+except Exception:
+    st_canvas = None
 import json
 import os
 from pathlib import Path

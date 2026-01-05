@@ -27,3 +27,4 @@ ngrok.yaml
 deploy/ngrok/ngrok.yml
 deploy/systemd/calb-ngrok@.service.d/override.conf
 **/.ngrok2/
+.vscode-server/
