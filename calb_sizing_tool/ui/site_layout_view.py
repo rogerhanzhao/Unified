@@ -9,6 +9,7 @@ import streamlit as st
 from calb_diagrams.layout_block_renderer import render_layout_block_svg
 from calb_diagrams.specs import build_layout_block_spec
 from calb_sizing_tool.common.dependencies import check_dependencies
+from calb_sizing_tool.common.preferences import load_preferences, save_preferences
 from calb_sizing_tool.state.project_state import get_project_state, init_project_state
 from calb_sizing_tool.state.session_state import init_shared_state
 
@@ -250,6 +251,35 @@ def show():
     )
     layout_inputs["skid_subtext"] = skid_subtext
 
+    with st.expander("Advanced Settings (Manual Debugging)"):
+        st.caption("Adjust layout parameters for the generated diagram.")
+        prefs = load_preferences()
+        default_scale = prefs.get("layout_scale", 0.04)
+        default_left = prefs.get("layout_left_margin", 40)
+        default_top = prefs.get("layout_top_margin", 40)
+
+        adv_c1, adv_c2, adv_c3 = st.columns(3)
+        scale_factor = adv_c1.number_input(
+            "Scale Factor", value=float(layout_inputs.get("scale", default_scale)), step=0.005, format="%.3f", key="layout_inputs.scale"
+        )
+        left_margin = adv_c2.number_input(
+            "Left Margin", value=int(layout_inputs.get("left_margin", default_left)), step=10, key="layout_inputs.left_margin"
+        )
+        top_margin = adv_c3.number_input(
+            "Top Margin", value=int(layout_inputs.get("top_margin", default_top)), step=10, key="layout_inputs.top_margin"
+        )
+        layout_inputs["scale"] = scale_factor
+        layout_inputs["left_margin"] = left_margin
+        layout_inputs["top_margin"] = top_margin
+
+        if st.button("Save Layout Settings as Default", key="save_layout_defaults"):
+            save_preferences({
+                "layout_scale": scale_factor,
+                "layout_left_margin": left_margin,
+                "layout_top_margin": top_margin
+            })
+            st.success("Layout settings saved as default.")
+
     labels = {
         "block_title": block_title,
         "bess_range_text": bess_range_text,
@@ -340,6 +370,9 @@ def show():
                 use_template=(style_id == "top_v10"),
                 dc_block_svg_path=str(dc_asset) if dc_asset.exists() else None,
                 ac_block_svg_path=str(ac_asset) if ac_asset.exists() else None,
+                scale=scale_factor,
+                left_margin=left_margin,
+                top_margin=top_margin,
             )
             with tempfile.TemporaryDirectory() as tmpdir:
                 tmp_path = Path(tmpdir)

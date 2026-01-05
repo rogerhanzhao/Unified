@@ -220,8 +220,14 @@ def render_sld_pro_svg(
         return None, "Missing dependency: svgwrite. Please install: pip install svgwrite"
     out_svg = Path(out_svg)
 
-    width = 1750
-    left_margin = 40
+    layout = spec.layout_params or {}
+    width = int(layout.get("svg_width", 1750))
+    height = int(layout.get("svg_height", 900))
+    left_margin = int(layout.get("left_margin", 40))
+    pcs_pad = int(layout.get("pcs_gap", 60))
+    dc_bus_gap = int(layout.get("busbar_gap", 22))
+    font_scale = float(layout.get("font_scale", 1.0))
+
     left_col_width = 420
     table_x = left_margin
     table_y = 40
@@ -230,9 +236,9 @@ def render_sld_pro_svg(
     diagram_right = width - 40
     diagram_width = diagram_right - diagram_left
 
-    row_h = 16
-    title_h = 20
-    header_h = 18
+    row_h = 16 * font_scale
+    title_h = 20 * font_scale
+    header_h = 18 * font_scale
     item_col_w = 150
     spec_col_w = table_w - item_col_w
     items = _build_equipment_list(spec)
@@ -345,14 +351,14 @@ def render_sld_pro_svg(
     dwg.add(
         dwg.style(
             f"""
-svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
+svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE * font_scale}px; }}
 .outline {{ stroke: #000000; stroke-width: {SLD_STROKE_OUTLINE}; fill: none; }}
 .thin {{ stroke: #000000; stroke-width: {SLD_STROKE_THIN}; fill: none; }}
 .thick {{ stroke: #000000; stroke-width: {SLD_STROKE_THICK}; fill: none; }}
 .dash {{ stroke: #000000; stroke-width: {SLD_STROKE_OUTLINE}; fill: none; stroke-dasharray: {SLD_DASH_ARRAY}; }}
 .label {{ fill: #000000; }}
-.title {{ font-size: {SLD_FONT_SIZE_TITLE}px; font-weight: bold; }}
-.small {{ font-size: {SLD_FONT_SIZE_SMALL}px; }}
+.title {{ font-size: {SLD_FONT_SIZE_TITLE * font_scale}px; font-weight: bold; }}
+.small {{ font-size: {SLD_FONT_SIZE_SMALL * font_scale}px; }}
 """
         )
     )

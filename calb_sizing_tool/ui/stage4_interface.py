@@ -51,6 +51,24 @@ def pack_stage13_output(
     output["poi_energy_req_mwh"] = _f(stage1.get("poi_energy_req_mwh"), 0.0)
     output["eff_dc_to_poi_frac"] = _f(stage1.get("eff_dc_to_poi_frac"), 0.0)
     output["dc_power_required_mw"] = _f(stage1.get("dc_power_required_mw"), 0.0)
+    output["poi_guarantee_year"] = _i(stage1.get("poi_guarantee_year"), 0)
+    output["project_life_years"] = _i(stage1.get("project_life_years"), 0)
+    output["cycles_per_year"] = _i(stage1.get("cycles_per_year"), 0)
+    # Preserve all efficiency values
+    output["eff_dc_cables_frac"] = _f(stage1.get("eff_dc_cables_frac"), 0.0)
+    output["eff_pcs_frac"] = _f(stage1.get("eff_pcs_frac"), 0.0)
+    output["eff_mvt_frac"] = _f(stage1.get("eff_mvt_frac"), 0.0)
+    output["eff_ac_cables_sw_rmu_frac"] = _f(stage1.get("eff_ac_cables_sw_rmu_frac"), 0.0)
+    output["eff_hvt_others_frac"] = _f(stage1.get("eff_hvt_others_frac"), 0.0)
+
+    # Missing Stage 1 parameters required for report
+    output["sc_loss_frac"] = _f(stage1.get("sc_loss_frac"), 0.0)
+    output["dod_frac"] = _f(stage1.get("dod_frac"), 0.0)
+    output["dc_round_trip_efficiency_frac"] = _f(stage1.get("dc_round_trip_efficiency_frac"), 0.0)
+    output["dc_energy_capacity_required_mwh"] = _f(stage1.get("dc_energy_capacity_required_mwh"), 0.0)
+    output["sc_time_months"] = _f(stage1.get("sc_time_months"), 0.0)
+    output["sc_loss_pct"] = _f(stage1.get("sc_loss_pct"), 0.0)
+    output["dc_usable_bol_frac"] = _f(stage1.get("dc_usable_bol_frac"), 0.0)
 
     # Merge Stage 2 (container / cabinet / block) values
     output["dc_block_total_qty"] = int(dc_block_total_qty)

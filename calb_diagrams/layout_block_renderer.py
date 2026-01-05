@@ -334,7 +334,7 @@ def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str):
 
 
 def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
-    scale = 0.04
+    scale = _safe_float(getattr(spec, "scale", 0.04), 0.04)
     container_len = max(1.0, _safe_float(spec.container_length_mm, 6058)) * scale
     container_w = max(1.0, _safe_float(spec.container_width_mm, 2438)) * scale
 
@@ -343,8 +343,8 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
     ac_gap = _gap_px(spec.dc_to_ac_clearance_m, scale, fallback_gap)
     perimeter_px = _m_to_px(spec.perimeter_clearance_m, scale)
 
-    left_margin = 40
-    top_margin = 40
+    left_margin = _safe_int(getattr(spec, "left_margin", 40), 40)
+    top_margin = _safe_int(getattr(spec, "top_margin", 40), 40)
     gap_y = 50
     inner_pad = 10
     title_h = 22
@@ -513,7 +513,7 @@ def render_layout_block_svg(
         return out_svg, "Pro renderer unavailable; fallback to raw SVG."
     out_svg = Path(out_svg)
 
-    scale = 0.04
+    scale = _safe_float(getattr(spec, "scale", 0.04), 0.04)
     container_len = max(1.0, _safe_float(spec.container_length_mm, 6058)) * scale
     container_w = max(1.0, _safe_float(spec.container_width_mm, 2438)) * scale
 
@@ -522,8 +522,8 @@ def render_layout_block_svg(
     ac_gap = _gap_px(spec.dc_to_ac_clearance_m, scale, fallback_gap)
     perimeter_px = _m_to_px(spec.perimeter_clearance_m, scale)
 
-    left_margin = 40
-    top_margin = 40
+    left_margin = _safe_int(getattr(spec, "left_margin", 40), 40)
+    top_margin = _safe_int(getattr(spec, "top_margin", 40), 40)
     gap_y = 50
     inner_pad = 10
     title_h = 22

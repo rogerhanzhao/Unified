@@ -416,19 +416,19 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
     doc.add_heading("Stage 1: Energy Requirement", level=2)
     doc.add_paragraph(
         "DC energy capacity required (MWh) = POI energy requirement / "
-        "((1 - SC loss) * DoD * sqrt(DC RTE) * eta_chain_oneway)."
+        "((1 - SC loss) * DoD * sqrt(DC RTE) * One-way Efficiency (DC to POI))."
     )
     doc.add_paragraph(
-        f"eta_chain_oneway = {_format_percent_with_fraction(ctx.efficiency_chain_oneway_frac, input_is_fraction=True)}"
+        f"One-way Efficiency (DC to POI) = {_format_percent_with_fraction(ctx.efficiency_chain_oneway_frac, input_is_fraction=True)}"
     )
     doc.add_paragraph(
-        f"SC loss = {_format_percent_with_fraction(ctx.stage1.get('sc_loss_frac'), input_is_fraction=True)}; "
-        f"DoD = {_format_percent_with_fraction(ctx.stage1.get('dod_frac'), input_is_fraction=True)}; "
-        f"DC RTE = {_format_percent_with_fraction(ctx.stage1.get('dc_round_trip_efficiency_frac'), input_is_fraction=True)}"
+        f"SC loss = {_format_percent_with_fraction(ctx.stage1.get('sc_loss_frac') or 0.0, input_is_fraction=True)}; "
+        f"DoD = {_format_percent_with_fraction(ctx.stage1.get('dod_frac') or 0.0, input_is_fraction=True)}; "
+        f"DC RTE = {_format_percent_with_fraction(ctx.stage1.get('dc_round_trip_efficiency_frac') or 0.0, input_is_fraction=True)}"
     )
     s1_rows = [
-        ("DC Energy Capacity Required (MWh)", format_value(ctx.stage1.get("dc_energy_capacity_required_mwh"), "MWh")),
-        ("DC Power Required (MW)", format_value(ctx.stage1.get("dc_power_required_mw"), "MW")),
+        ("DC Energy Capacity Required (MWh)", format_value(ctx.stage1.get("dc_energy_capacity_required_mwh") or 0.0, "MWh")),
+        ("DC Power Required (MW)", format_value(ctx.stage1.get("dc_power_required_mw") or 0.0, "MW")),
     ]
     _add_table(doc, s1_rows, ["Metric", "Value"])
     
@@ -476,7 +476,7 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
     doc.add_heading("Stage 3: Degradation & Deliverable at POI", level=2)
     s3_df = ctx.stage3_df
     if s3_df is not None and not s3_df.empty:
-        doc.add_paragraph("System RTE = DC RTE * (eta_chain_oneway)^2.")
+        doc.add_paragraph("System RTE = DC RTE * (One-way Efficiency)^2. Note: One-way Efficiency refers to DC-to-POI efficiency.")
         rte_dc = s3_df["DC_RTE_Pct"].astype(float)
         rte_sys = s3_df["System_RTE_Pct"].astype(float)
         rte_dc_min, rte_dc_max = float(rte_dc.min()), float(rte_dc.max())
@@ -511,34 +511,7 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
         # Keep full data for chart (all years)
         s3_df_full = s3_df.copy()
         
-        # Filter to key years for table display only
-        key_years = sorted(set([0, ctx.poi_guarantee_year, 5, 10, 15, 20]))
-        selected_years = [year for year in key_years if year in available_years]
-        if selected_years:
-            s3_df = s3_df[s3_df["Year_Index"].isin(selected_years)].copy()
 
-        s3_columns = [
-            "Year_Index",
-            "SOH_Absolute_Pct",
-            "DC_Usable_MWh",
-            "POI_Usable_Energy_MWh",
-            "Meets_Guarantee",
-        ]
-        headers_map = {
-            "Year_Index": "Year",
-            "SOH_Absolute_Pct": "SOH (%)",
-            "DC_Usable_MWh": "DC Usable (MWh)",
-            "POI_Usable_Energy_MWh": "POI Usable (MWh)",
-            "Meets_Guarantee": "Meets POI Guarantee",
-        }
-        formatters = {
-            "Year_Index": lambda v: f"{int(v)}",
-            "SOH_Absolute_Pct": lambda v: format_percent(v, input_is_fraction=False),
-            "DC_Usable_MWh": lambda v: format_value(v, "MWh"),
-            "POI_Usable_Energy_MWh": lambda v: format_value(v, "MWh"),
-            "Meets_Guarantee": lambda v: "Yes" if bool(v) else "No",
-        }
-        _add_dataframe_table(doc, s3_df, s3_columns, headers_map, formatters)
 
         cap_chart = _plot_dc_capacity_bar_png(
             bol_mwh=ctx.dc_total_energy_mwh,
@@ -569,6 +542,36 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
                 doc.add_paragraph(f"Stage 3 data unavailable: {err}")
             else:
                 doc.add_paragraph("Stage 3 data unavailable.")
+        # Add full year-by-year table after the chart
+        doc.add_paragraph("Year-by-Year Degradation & Deliverable at POI:")
+        s3_columns = [
+            "Year_Index",
+            "SOH_Display_Pct",
+            "SOH_Absolute_Pct",
+            "DC_Usable_MWh",
+            "POI_Usable_Energy_MWh",
+            "DC_RTE_Pct",
+            "System_RTE_Pct",
+        ]
+        headers_map = {
+            "Year_Index": "Year (From COD)",
+            "SOH_Display_Pct": "SOH @ COD Baseline (%)",
+            "SOH_Absolute_Pct": "SOH Vs FAT (%)",
+            "DC_Usable_MWh": "DC Usable (MWh)",
+            "POI_Usable_Energy_MWh": "POI Usable (MWh)",
+            "DC_RTE_Pct": "DC RTE (%)",
+            "System_RTE_Pct": "System RTE (%)",
+        }
+        formatters = {
+            "Year_Index": lambda v: f"{int(v)}",
+            "SOH_Display_Pct": lambda v: format_percent(v, input_is_fraction=False),
+            "SOH_Absolute_Pct": lambda v: format_percent(v, input_is_fraction=False),
+            "DC_Usable_MWh": lambda v: format_value(v, "MWh"),
+            "POI_Usable_Energy_MWh": lambda v: format_value(v, "MWh"),
+            "DC_RTE_Pct": lambda v: format_percent(v, input_is_fraction=False),
+            "System_RTE_Pct": lambda v: format_percent(v, input_is_fraction=False),
+        }
+        _add_dataframe_table(doc, s3_df_full, s3_columns, headers_map, formatters)
         doc.add_paragraph("")
 
     doc.add_heading("Stage 4: AC Block Sizing", level=2)

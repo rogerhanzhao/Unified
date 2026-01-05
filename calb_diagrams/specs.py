@@ -130,6 +130,7 @@ class SldGroupSpec:
     dc_blocks_total_in_group: int
     dc_blocks_per_feeder: List[int]
     equipment_list: Dict[str, Dict] = field(default_factory=dict)
+    layout_params: Dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -149,6 +150,9 @@ class LayoutBlockSpec:
     use_template: bool = False
     dc_block_svg_path: Optional[str] = None
     ac_block_svg_path: Optional[str] = None
+    scale: float = 0.04
+    left_margin: int = 40
+    top_margin: int = 40
 
 
 def build_sld_group_spec(
@@ -301,6 +305,18 @@ def build_sld_group_spec(
             "dc_fuse": sld_inputs.get("dc_fuse", {}) or {},
         }
 
+    layout_params = {
+        "svg_width": _safe_float(sld_inputs.get("svg_width"), 1750),
+        "svg_height": _safe_float(sld_inputs.get("svg_height"), 900),
+        "left_margin": _safe_float(sld_inputs.get("left_margin"), 40),
+        "top_margin": _safe_float(sld_inputs.get("top_margin"), 40),
+        "column_width": _safe_float(sld_inputs.get("column_width"), 420),
+        "row_height": _safe_float(sld_inputs.get("row_height"), 16),
+        "pcs_gap": _safe_float(sld_inputs.get("pcs_gap"), 60),
+        "busbar_gap": _safe_float(sld_inputs.get("busbar_gap"), 22),
+        "font_scale": _safe_float(sld_inputs.get("font_scale"), 1.0),
+    }
+
     return SldGroupSpec(
         group_index=group_index,
         mv_voltage_kv=mv_kv,
@@ -314,6 +330,7 @@ def build_sld_group_spec(
         dc_blocks_total_in_group=dc_blocks_total_in_group,
         dc_blocks_per_feeder=dc_blocks_per_feeder,
         equipment_list=equipment_list,
+        layout_params=layout_params,
     )
 
 
@@ -334,6 +351,9 @@ def build_layout_block_spec(
     use_template: bool = False,
     dc_block_svg_path: Optional[str] = None,
     ac_block_svg_path: Optional[str] = None,
+    scale: float = 0.04,
+    left_margin: int = 40,
+    top_margin: int = 40,
 ) -> LayoutBlockSpec:
     block_indices = block_indices_to_render or [1]
     normalized = []
@@ -371,4 +391,7 @@ def build_layout_block_spec(
         use_template=bool(use_template),
         dc_block_svg_path=dc_block_svg_path,
         ac_block_svg_path=ac_block_svg_path,
+        scale=scale,
+        left_margin=left_margin,
+        top_margin=top_margin,
     )

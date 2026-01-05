@@ -12,6 +12,7 @@ from calb_diagrams.sld_pro_renderer import render_sld_pro_svg
 from calb_diagrams.specs import build_sld_group_spec
 from calb_sizing_tool.common.allocation import allocate_dc_blocks, evenly_distribute
 from calb_sizing_tool.common.dependencies import check_dependencies
+from calb_sizing_tool.common.preferences import load_preferences, save_preferences
 from calb_sizing_tool.sld.iidm_builder import build_network_for_single_unit
 from calb_sizing_tool.sld.jp_pro_renderer import render_jp_pro_svg
 from calb_sizing_tool.sld.renderer import render_raw_svg
@@ -81,6 +82,7 @@ def _resolve_dc_blocks_per_feeder(
     dc_summary: dict,
     pcs_count: int,
     group_index: int,
+    override_total_blocks: int = 0,
 ) -> list[int]:
     direct = ac_output.get("dc_block_allocation_by_feeder")
     if isinstance(direct, dict) and direct:
@@ -135,7 +137,9 @@ def _resolve_dc_blocks_per_feeder(
         if dc_block is not None:
             total_dc_blocks = _safe_int(getattr(dc_block, "count", 0))
 
-    ac_blocks_total = _safe_int(ac_output.get("num_blocks"), 0) or 1
+    ac_blocks_total = override_total_blocks
+    if ac_blocks_total <= 0:
+        ac_blocks_total = _safe_int(ac_output.get("num_blocks"), 0) or 1
     per_block_total = evenly_distribute(total_dc_blocks, ac_blocks_total)
     idx = max(0, min(group_index - 1, len(per_block_total) - 1))
     return allocate_dc_blocks(per_block_total[idx], pcs_count)
@@ -352,8 +356,9 @@ def show():
     diagram_inputs["dc_block_energy_mwh"] = dc_block_energy_mwh
 
     st.subheader("DC Block Allocation (per feeder)")
+    ac_blocks_override = _safe_int(diagram_inputs.get("ac_blocks_total_override"), 0)
     default_dc_blocks = _resolve_dc_blocks_per_feeder(
-        stage13_output, ac_output, dc_summary, pcs_count or 0, group_index
+        stage13_output, ac_output, dc_summary, pcs_count or 0, group_index, ac_blocks_override
     )
     stored_blocks = diagram_inputs.get("dc_blocks_per_feeder")
     if isinstance(stored_blocks, list) and len(stored_blocks) == len(default_dc_blocks):
@@ -388,6 +393,65 @@ def show():
     ]
     diagram_inputs["dc_blocks_per_feeder"] = dc_blocks_per_feeder
 
+    with st.expander("Advanced Settings (Manual Debugging)"):
+        st.caption("Adjust layout parameters for the generated diagram.")
+        prefs = load_preferences()
+        default_width = prefs.get("sld_svg_width", 1400)
+        default_height = prefs.get("sld_svg_height", 900)
+
+        adv_c1, adv_c2 = st.columns(2)
+        svg_width = adv_c1.number_input(
+            "SVG Width", value=int(diagram_inputs.get("svg_width", default_width)), step=50, key="diagram_inputs.svg_width"
+        )
+        svg_height = adv_c2.number_input(
+            "SVG Height", value=int(diagram_inputs.get("svg_height", default_height)), step=50, key="diagram_inputs.svg_height"
+        )
+        diagram_inputs["svg_width"] = svg_width
+        diagram_inputs["svg_height"] = svg_height
+
+        st.caption("Layout Spacing & Scaling")
+        l1, l2, l3 = st.columns(3)
+        pcs_gap = l1.slider("PCS Gap (px)", 20, 100, int(diagram_inputs.get("pcs_gap", 60)), key="diagram_inputs.pcs_gap")
+        busbar_gap = l2.slider("Busbar Gap (px)", 10, 50, int(diagram_inputs.get("busbar_gap", 22)), key="diagram_inputs.busbar_gap")
+        font_scale = l3.slider("Font Scale", 0.5, 1.5, float(diagram_inputs.get("font_scale", 1.0)), 0.1, key="diagram_inputs.font_scale")
+        
+        diagram_inputs["pcs_gap"] = pcs_gap
+        diagram_inputs["busbar_gap"] = busbar_gap
+        diagram_inputs["font_scale"] = font_scale
+
+        st.caption("Override Calculations")
+        manual_ac_blocks = st.number_input(
+            "Total AC Blocks (for allocation)", 
+            min_value=1, 
+            value=int(diagram_inputs.get("ac_blocks_total_override") or ac_blocks_total),
+            key="diagram_inputs.ac_blocks_total_override"
+        )
+        diagram_inputs["ac_blocks_total_override"] = manual_ac_blocks
+
+        if st.button("Save SLD Settings as Default", key="save_sld_defaults"):
+            save_preferences({
+                "sld_svg_width": svg_width,
+                "sld_svg_height": svg_height
+            })
+            st.success("SLD settings saved as default.")
+
+        st.caption("Override Calculations")
+        manual_ac_blocks = st.number_input(
+            "Total AC Blocks (for allocation)", 
+            min_value=1, 
+            value=int(ac_blocks_total),
+            key="diagram_inputs.ac_blocks_total_override"
+        )
+        if manual_ac_blocks != ac_blocks_total:
+            # If user overrides, we might need to re-calculate defaults.
+            # But defaults are calculated before this.
+            # We can store it in session state and trigger rerun?
+            # Or just use it for next run.
+            # For now, let's just update the variable used for allocation logic if possible.
+            # But allocation logic is in `_resolve_dc_blocks_per_feeder` which is called earlier.
+            # So we need to move this input up or reload.
+            pass
+
     if "key_prefix" in inspect.signature(render_electrical_inputs).parameters:
         electrical_inputs = render_electrical_inputs(
             diagram_inputs, key_prefix="diagram_inputs"
@@ -405,6 +469,11 @@ def show():
         "pcs_rating_kw_list": [pcs_rating_each_kw for _ in range(pcs_count or 0)],
         "dc_block_energy_mwh": dc_block_energy_mwh,
         "dc_blocks_per_feeder": dc_blocks_per_feeder,
+        "svg_width": svg_width,
+        "svg_height": svg_height,
+        "pcs_gap": pcs_gap,
+        "busbar_gap": busbar_gap,
+        "font_scale": font_scale,
         **electrical_inputs,
     }
 
