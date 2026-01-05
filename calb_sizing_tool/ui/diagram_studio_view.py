@@ -21,32 +21,41 @@ def show():
     diagram_type = st.radio("Select Diagram Type", ["Single Line Diagram", "Site Layout"], horizontal=True)
 
     # 2. Load Background Image
-    # Determine path based on type
-    # Assuming outputs are in 'outputs/' relative to project root
-    # We need to find the absolute path or relative to where app.py is run
-    
-    # Try to find the latest generated image
-    # Based on previous context, images might be sld_latest.png or layout_latest.png
-    # If only SVG exists, we might need to convert or just use a placeholder if we can't render SVG in canvas background easily (canvas usually takes raster)
-    
+    import io
     base_path = Path("outputs")
-    if diagram_type == "Single Line Diagram":
-        img_path = base_path / "sld_latest.png"
-        json_path = base_path / "sld_template.json"
-    else:
-        img_path = base_path / "layout_latest.png"
-        json_path = base_path / "layout_template.json"
-
     bg_image = None
-    if img_path.exists():
-        try:
-            bg_image = Image.open(img_path)
-            st.success(f"Loaded background: {img_path}")
-        except Exception as e:
-            st.error(f"Error loading image: {e}")
+
+    if diagram_type == "Single Line Diagram":
+        json_path = base_path / "sld_template.json"
+        # Try session state first
+        if "sld_png_bytes" in st.session_state:
+            try:
+                bg_image = Image.open(io.BytesIO(st.session_state["sld_png_bytes"]))
+            except Exception:
+                pass
+        # Fallback to file
+        if bg_image is None:
+            img_path = base_path / "sld_latest.png"
+            if img_path.exists():
+                bg_image = Image.open(img_path)
     else:
-        st.warning(f"No generated image found at {img_path}. Please generate one in the respective page first.")
-        # Create a blank white image if none exists
+        json_path = base_path / "layout_template.json"
+        # Try session state first
+        if "layout_png_bytes" in st.session_state:
+            try:
+                bg_image = Image.open(io.BytesIO(st.session_state["layout_png_bytes"]))
+            except Exception:
+                pass
+        # Fallback to file
+        if bg_image is None:
+            img_path = base_path / "layout_latest.png"
+            if img_path.exists():
+                bg_image = Image.open(img_path)
+
+    if bg_image:
+        st.success(f"Loaded {diagram_type} background.")
+    else:
+        st.warning(f"No generated image found for {diagram_type}. Please generate one in the respective page first.")
         bg_image = Image.new("RGB", (800, 600), "white")
 
     # 3. Canvas Editor
