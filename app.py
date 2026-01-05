@@ -34,6 +34,7 @@ with st.sidebar:
             "AC Sizing",
             "Single Line Diagram",
             "Site Layout",
+            "Diagram Studio",
             "Report Export",
         ],
     )
@@ -73,6 +74,10 @@ elif nav == "Single Line Diagram":
 
 elif nav == "Site Layout":
     from calb_sizing_tool.ui.site_layout_view import show
+    show()
+
+elif nav == "Diagram Studio":
+    from calb_sizing_tool.ui.diagram_studio_view import show
     show()
 
 elif nav == "Report Export":

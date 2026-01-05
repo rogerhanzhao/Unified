@@ -186,7 +186,8 @@ def show():
             
             # Container size info - based on SINGLE AC Block size
             single_block_ac_power = pcs_per_ac * pcs_kw / 1000  # MW per block
-            auto_container = "40ft" if single_block_ac_power > 5 else "20ft"
+            # User requirement: > 5MW OR 4 PCS -> 40ft
+            auto_container = "40ft" if single_block_ac_power > 5 or pcs_per_ac >= 4 else "20ft"
             st.info(f"**AC Block Container**: {auto_container} (Single block: {single_block_ac_power:.2f} MW, Total AC: {selected_option.ac_block_count * single_block_ac_power:.2f} MW)")
             
             submitted = st.form_submit_button("✅ Run AC Sizing", use_container_width=True)
@@ -257,7 +258,7 @@ def show():
                 st.write(f"- PCS Configuration: {pcs_per_block} × {pcs_kw} kW")
                 st.write(f"- Total AC Power: {total_ac_mw:.2f} MW")
             
-            st.write("**Container Type:** " + ("40ft" if block_size_mw > 5 else "20ft") + " per AC Block")
+            st.write("**Container Type:** " + ("40ft" if block_size_mw > 5 or pcs_per_block >= 4 else "20ft") + " per AC Block")
             st.divider()
             
             

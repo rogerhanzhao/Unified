@@ -139,7 +139,18 @@ def _resolve_dc_blocks_per_feeder(
 
     ac_blocks_total = override_total_blocks
     if ac_blocks_total <= 0:
-        ac_blocks_total = _safe_int(ac_output.get("num_blocks"), 0) or 1
+        ac_blocks_total = _safe_int(ac_output.get("num_blocks"), 0)
+    if ac_blocks_total <= 0:
+        ac_blocks_total = _safe_int(ac_output.get("ac_blocks_total"), 0)
+    if ac_blocks_total <= 0:
+        # Try to infer from total PCS and PCS per block
+        total_pcs = _safe_int(ac_output.get("total_pcs"), 0)
+        pcs_per_block = _safe_int(ac_output.get("pcs_per_block"), 0)
+        if total_pcs > 0 and pcs_per_block > 0:
+            ac_blocks_total = total_pcs // pcs_per_block
+    if ac_blocks_total <= 0:
+        ac_blocks_total = 1
+
     per_block_total = evenly_distribute(total_dc_blocks, ac_blocks_total)
     idx = max(0, min(group_index - 1, len(per_block_total) - 1))
     return allocate_dc_blocks(per_block_total[idx], pcs_count)
@@ -393,64 +404,21 @@ def show():
     ]
     diagram_inputs["dc_blocks_per_feeder"] = dc_blocks_per_feeder
 
-    with st.expander("Advanced Settings (Manual Debugging)"):
-        st.caption("Adjust layout parameters for the generated diagram.")
-        prefs = load_preferences()
-        default_width = prefs.get("sld_svg_width", 1400)
-        default_height = prefs.get("sld_svg_height", 900)
-
-        adv_c1, adv_c2 = st.columns(2)
-        svg_width = adv_c1.number_input(
-            "SVG Width", value=int(diagram_inputs.get("svg_width", default_width)), step=50, key="diagram_inputs.svg_width"
-        )
-        svg_height = adv_c2.number_input(
-            "SVG Height", value=int(diagram_inputs.get("svg_height", default_height)), step=50, key="diagram_inputs.svg_height"
-        )
-        diagram_inputs["svg_width"] = svg_width
-        diagram_inputs["svg_height"] = svg_height
-
-        st.caption("Layout Spacing & Scaling")
-        l1, l2, l3 = st.columns(3)
-        pcs_gap = l1.slider("PCS Gap (px)", 20, 100, int(diagram_inputs.get("pcs_gap", 60)), key="diagram_inputs.pcs_gap")
-        busbar_gap = l2.slider("Busbar Gap (px)", 10, 50, int(diagram_inputs.get("busbar_gap", 22)), key="diagram_inputs.busbar_gap")
-        font_scale = l3.slider("Font Scale", 0.5, 1.5, float(diagram_inputs.get("font_scale", 1.0)), 0.1, key="diagram_inputs.font_scale")
-        
-        diagram_inputs["pcs_gap"] = pcs_gap
-        diagram_inputs["busbar_gap"] = busbar_gap
-        diagram_inputs["font_scale"] = font_scale
-
-        st.caption("Override Calculations")
-        manual_ac_blocks = st.number_input(
-            "Total AC Blocks (for allocation)", 
-            min_value=1, 
-            value=int(diagram_inputs.get("ac_blocks_total_override") or ac_blocks_total),
-            key="diagram_inputs.ac_blocks_total_override"
-        )
-        diagram_inputs["ac_blocks_total_override"] = manual_ac_blocks
-
-        if st.button("Save SLD Settings as Default", key="save_sld_defaults"):
-            save_preferences({
-                "sld_svg_width": svg_width,
-                "sld_svg_height": svg_height
-            })
-            st.success("SLD settings saved as default.")
-
-        st.caption("Override Calculations")
-        manual_ac_blocks = st.number_input(
-            "Total AC Blocks (for allocation)", 
-            min_value=1, 
-            value=int(ac_blocks_total),
-            key="diagram_inputs.ac_blocks_total_override"
-        )
-        if manual_ac_blocks != ac_blocks_total:
-            # If user overrides, we might need to re-calculate defaults.
-            # But defaults are calculated before this.
-            # We can store it in session state and trigger rerun?
-            # Or just use it for next run.
-            # For now, let's just update the variable used for allocation logic if possible.
-            # But allocation logic is in `_resolve_dc_blocks_per_feeder` which is called earlier.
-            # So we need to move this input up or reload.
-            pass
+    # Advanced Settings (Manual Debugging) removed as per user request.
+    # Setting default values for layout parameters.
+    prefs = load_preferences()
+    svg_width = int(diagram_inputs.get("svg_width", prefs.get("sld_svg_width", 1400)))
+    svg_height = int(diagram_inputs.get("svg_height", prefs.get("sld_svg_height", 900)))
+    pcs_gap = int(diagram_inputs.get("pcs_gap", 60))
+    busbar_gap = int(diagram_inputs.get("busbar_gap", 22))
+    font_scale = float(diagram_inputs.get("font_scale", 1.0))
+    
+    # Ensure these are in diagram_inputs for consistency
+    diagram_inputs["svg_width"] = svg_width
+    diagram_inputs["svg_height"] = svg_height
+    diagram_inputs["pcs_gap"] = pcs_gap
+    diagram_inputs["busbar_gap"] = busbar_gap
+    diagram_inputs["font_scale"] = font_scale
 
     if "key_prefix" in inspect.signature(render_electrical_inputs).parameters:
         electrical_inputs = render_electrical_inputs(

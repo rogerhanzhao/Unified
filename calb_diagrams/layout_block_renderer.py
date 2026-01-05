@@ -114,16 +114,28 @@ def _draw_v_dimension(dwg, y1, y2, x, ext_x, text):
 
 def _draw_dc_interior(dwg, x, y, w, h, mirrored: bool = False):
     """
-    Draw DC Block (BESS) interior with 6 battery module racks.
-    Clean design: 6 rectangles (1x6 single row) representing battery racks, no text labels, no door.
+    Draw DC Block (BESS) interior with 6 battery module racks + Liquid Cooling.
+    Clean design: 6 rectangles (1x6 single row) representing battery racks.
+    Right side: Liquid Cooling strip.
     """
     pad = min(10.0, max(4.0, w * 0.06))
     
+    # Liquid Cooling strip on the right (approx 15% width)
+    cooling_w = w * 0.15
+    cooling_x = x + w - pad - cooling_w
+    cooling_y = y + pad
+    cooling_h = h - 2 * pad
+    
+    dwg.add(dwg.rect(insert=(cooling_x, cooling_y), size=(cooling_w, cooling_h), class_="thin"))
+    # Add text "COOLING" vertically or small text
+    dwg.add(dwg.text("COOLING", insert=(cooling_x + cooling_w/2, cooling_y + cooling_h/2), 
+                     class_="dim-text", text_anchor="middle", transform=f"rotate(90, {cooling_x + cooling_w/2}, {cooling_y + cooling_h/2})"))
+
     # Battery modules grid: 1 row x 6 columns = 6 modules
-    # Grid occupies main area (85% of width and height, with padding)
+    # Grid occupies remaining area to the left
     grid_x_start = x + pad
     grid_y_start = y + pad
-    grid_w = w - 2 * pad
+    grid_w = w - 2 * pad - cooling_w - pad # Extra pad between modules and cooling
     grid_h = h - 2 * pad
     
     cols = 6
@@ -260,16 +272,30 @@ def _draw_v_dimension_raw(lines, y1, y2, x, ext_x, text):
 
 def _draw_dc_interior_raw(lines, x, y, w, h, mirrored: bool = False):
     """
-    Draw DC Block (BESS) interior with 6 battery module racks (raw SVG).
-    Clean design: 6 rectangles (1x6 single row) representing battery racks, no text labels, no door.
+    Draw DC Block (BESS) interior with 6 battery module racks + Liquid Cooling (raw SVG).
+    Clean design: 6 rectangles (1x6 single row) representing battery racks.
+    Right side: Liquid Cooling strip.
     """
     pad = min(10.0, max(4.0, w * 0.06))
     
+    # Liquid Cooling strip on the right (approx 15% width)
+    cooling_w = w * 0.15
+    cooling_x = x + w - pad - cooling_w
+    cooling_y = y + pad
+    cooling_h = h - 2 * pad
+    
+    _svg_rect(lines, cooling_x, cooling_y, cooling_w, cooling_h, class_name="thin")
+    # Add text "COOLING" vertically
+    cx = cooling_x + cooling_w/2
+    cy = cooling_y + cooling_h/2
+    # SVG transform rotate is around a point
+    lines.append(f'<text x="{cx:.1f}" y="{cy:.1f}" class="dim-text" text-anchor="middle" transform="rotate(90, {cx:.1f}, {cy:.1f})">COOLING</text>')
+
     # Battery modules grid: 1 row x 6 columns = 6 modules
-    # Grid occupies main area (85% of width and height, with padding)
+    # Grid occupies remaining area to the left
     grid_x_start = x + pad
     grid_y_start = y + pad
-    grid_w = w - 2 * pad
+    grid_w = w - 2 * pad - cooling_w - pad
     grid_h = h - 2 * pad
     
     cols = 6
@@ -459,7 +485,7 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
                 _draw_dc_interior_raw(
                     lines, cell_x, cell_y, container_len, container_w, mirrored=spec.dc_block_mirrored
                 )
-                _svg_text(lines, "DC Block", cell_x + 6, cell_y + 18)
+                # _svg_text(lines, "DC Block", cell_x + 6, cell_y + 18)
 
         bess_text = bess_text_template.format(start=start, end=end)
         _svg_text(lines, bess_text, dc_array_x, dc_array_y + dc_h + 18)
@@ -671,7 +697,7 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
                     _draw_dc_interior(
                         dwg, cell_x, cell_y, container_len, container_w, mirrored=spec.dc_block_mirrored
                     )
-                dwg.add(dwg.text("DC Block", insert=(cell_x + 6, cell_y + 18), class_="label"))
+                dwg.add(dwg.text("", insert=(cell_x + 6, cell_y + 18), class_="label"))
 
         bess_text = bess_text_template.format(start=start, end=end)
         dwg.add(dwg.text(bess_text, insert=(dc_array_x, dc_array_y + dc_h + 18), class_="label"))
