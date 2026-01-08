@@ -130,6 +130,7 @@ class SldGroupSpec:
     dc_blocks_total_in_group: int
     dc_blocks_per_feeder: List[int]
     equipment_list: Dict[str, Dict] = field(default_factory=dict)
+    layout_params: Dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -149,6 +150,9 @@ class LayoutBlockSpec:
     use_template: bool = False
     dc_block_svg_path: Optional[str] = None
     ac_block_svg_path: Optional[str] = None
+    scale: float = 0.04
+    left_margin: int = 40
+    top_margin: int = 40
 
 
 def build_sld_group_spec(
@@ -164,6 +168,12 @@ def build_sld_group_spec(
     sld_inputs = sld_inputs or {}
 
     ac_blocks_total = _safe_int(ac_output.get("num_blocks") or ac_output.get("ac_blocks_total"), 0)
+    if ac_blocks_total <= 0:
+        # Try to infer from total PCS and PCS per block
+        total_pcs = _safe_int(ac_output.get("total_pcs"), 0)
+        pcs_per_block = _safe_int(ac_output.get("pcs_per_block"), 0)
+        if total_pcs > 0 and pcs_per_block > 0:
+            ac_blocks_total = total_pcs // pcs_per_block
     if ac_blocks_total <= 0:
         ac_blocks_total = 1
 
@@ -235,13 +245,25 @@ def build_sld_group_spec(
     if dc_block_energy_mwh <= 0:
         dc_block_energy_mwh = 5.106
 
-    dc_blocks_per_feeder = None
-    allocation = ac_output.get("dc_block_allocation")
-    if isinstance(allocation, dict):
-        per_ac_block = allocation.get("per_ac_block")
-        if isinstance(per_ac_block, list) and per_ac_block:
-            if group_idx < len(per_ac_block):
-                per_feeder = per_ac_block[group_idx].get("per_feeder")
+    dc_blocks_per_feeder = _normalize_counts(sld_inputs.get("dc_blocks_per_feeder"), pcs_count)
+
+    if not dc_blocks_per_feeder:
+        allocation = ac_output.get("dc_block_allocation")
+        if isinstance(allocation, dict):
+            per_ac_block = allocation.get("per_ac_block")
+            if isinstance(per_ac_block, list) and per_ac_block:
+                if group_idx < len(per_ac_block):
+                    per_feeder = per_ac_block[group_idx].get("per_feeder")
+                    if isinstance(per_feeder, dict) and per_feeder:
+                        keys = sorted(
+                            per_feeder.keys(),
+                            key=lambda k: _safe_int(str(k).lstrip("Ff"), 0),
+                        )
+                        dc_blocks_per_feeder = [
+                            _safe_int(per_feeder.get(key), 0) for key in keys
+                        ]
+            if not dc_blocks_per_feeder:
+                per_feeder = allocation.get("per_feeder")
                 if isinstance(per_feeder, dict) and per_feeder:
                     keys = sorted(
                         per_feeder.keys(),
@@ -250,39 +272,29 @@ def build_sld_group_spec(
                     dc_blocks_per_feeder = [
                         _safe_int(per_feeder.get(key), 0) for key in keys
                     ]
-        if dc_blocks_per_feeder is None:
-            per_feeder = allocation.get("per_feeder")
-            if isinstance(per_feeder, dict) and per_feeder:
-                keys = sorted(
-                    per_feeder.keys(),
-                    key=lambda k: _safe_int(str(k).lstrip("Ff"), 0),
-                )
-                dc_blocks_per_feeder = [
-                    _safe_int(per_feeder.get(key), 0) for key in keys
-                ]
-        if dc_blocks_per_feeder is None:
-            per_pcs_group = allocation.get("per_pcs_group")
-            if isinstance(per_pcs_group, list) and per_pcs_group:
-                dc_blocks_per_feeder = [
-                    _safe_int(item.get("dc_block_count"), 0) for item in per_pcs_group
-                ]
-    dc_blocks_per_feeder_by_block = ac_output.get("dc_blocks_per_feeder_by_block")
-    if isinstance(dc_blocks_per_feeder_by_block, list) and dc_blocks_per_feeder_by_block:
-        if group_idx < len(dc_blocks_per_feeder_by_block):
-            candidate = dc_blocks_per_feeder_by_block[group_idx]
-            if isinstance(candidate, list) and candidate:
-                dc_blocks_per_feeder = _normalize_counts(candidate, pcs_count)
+            if not dc_blocks_per_feeder:
+                per_pcs_group = allocation.get("per_pcs_group")
+                if isinstance(per_pcs_group, list) and per_pcs_group:
+                    dc_blocks_per_feeder = [
+                        _safe_int(item.get("dc_block_count"), 0) for item in per_pcs_group
+                    ]
 
-    if dc_blocks_per_feeder is None:
-        dc_blocks_per_feeder = _normalize_counts(sld_inputs.get("dc_blocks_per_feeder"), pcs_count)
-        if not dc_blocks_per_feeder:
-            dc_totals_by_block = _resolve_dc_blocks_total_by_block(
-                ac_output, stage13_output, dc_summary, ac_blocks_total
-            )
-            dc_total_group = (
-                dc_totals_by_block[group_idx] if group_idx < len(dc_totals_by_block) else 0
-            )
-            dc_blocks_per_feeder = allocate_dc_blocks(dc_total_group, pcs_count)
+    if not dc_blocks_per_feeder:
+        dc_blocks_per_feeder_by_block = ac_output.get("dc_blocks_per_feeder_by_block")
+        if isinstance(dc_blocks_per_feeder_by_block, list) and dc_blocks_per_feeder_by_block:
+            if group_idx < len(dc_blocks_per_feeder_by_block):
+                candidate = dc_blocks_per_feeder_by_block[group_idx]
+                if isinstance(candidate, list) and candidate:
+                    dc_blocks_per_feeder = _normalize_counts(candidate, pcs_count)
+
+    if not dc_blocks_per_feeder:
+        dc_totals_by_block = _resolve_dc_blocks_total_by_block(
+            ac_output, stage13_output, dc_summary, ac_blocks_total
+        )
+        dc_total_group = (
+            dc_totals_by_block[group_idx] if group_idx < len(dc_totals_by_block) else 0
+        )
+        dc_blocks_per_feeder = allocate_dc_blocks(dc_total_group, pcs_count)
 
     dc_blocks_total_in_group = sum(dc_blocks_per_feeder)
 
@@ -301,6 +313,18 @@ def build_sld_group_spec(
             "dc_fuse": sld_inputs.get("dc_fuse", {}) or {},
         }
 
+    layout_params = {
+        "svg_width": _safe_float(sld_inputs.get("svg_width"), 1750),
+        "svg_height": _safe_float(sld_inputs.get("svg_height"), 900),
+        "left_margin": _safe_float(sld_inputs.get("left_margin"), 40),
+        "top_margin": _safe_float(sld_inputs.get("top_margin"), 40),
+        "column_width": _safe_float(sld_inputs.get("column_width"), 420),
+        "row_height": _safe_float(sld_inputs.get("row_height"), 16),
+        "pcs_gap": _safe_float(sld_inputs.get("pcs_gap"), 60),
+        "busbar_gap": _safe_float(sld_inputs.get("busbar_gap"), 22),
+        "font_scale": _safe_float(sld_inputs.get("font_scale"), 1.0),
+    }
+
     return SldGroupSpec(
         group_index=group_index,
         mv_voltage_kv=mv_kv,
@@ -314,6 +338,7 @@ def build_sld_group_spec(
         dc_blocks_total_in_group=dc_blocks_total_in_group,
         dc_blocks_per_feeder=dc_blocks_per_feeder,
         equipment_list=equipment_list,
+        layout_params=layout_params,
     )
 
 
@@ -334,6 +359,9 @@ def build_layout_block_spec(
     use_template: bool = False,
     dc_block_svg_path: Optional[str] = None,
     ac_block_svg_path: Optional[str] = None,
+    scale: float = 0.04,
+    left_margin: int = 40,
+    top_margin: int = 40,
 ) -> LayoutBlockSpec:
     block_indices = block_indices_to_render or [1]
     normalized = []
@@ -371,4 +399,7 @@ def build_layout_block_spec(
         use_template=bool(use_template),
         dc_block_svg_path=dc_block_svg_path,
         ac_block_svg_path=ac_block_svg_path,
+        scale=scale,
+        left_margin=left_margin,
+        top_margin=top_margin,
     )

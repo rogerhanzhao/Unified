@@ -9,21 +9,17 @@ import pandas as pd
 import streamlit as st
 
 from calb_diagrams.sld_pro_renderer import render_sld_pro_svg
-from calb_diagrams.specs import build_sld_group_spec
 from calb_sizing_tool.common.allocation import allocate_dc_blocks, evenly_distribute
 from calb_sizing_tool.common.dependencies import check_dependencies
-from calb_sizing_tool.sld.iidm_builder import build_network_for_single_unit
-from calb_sizing_tool.sld.jp_pro_renderer import render_jp_pro_svg
-from calb_sizing_tool.sld.renderer import render_raw_svg
+from calb_sizing_tool.common.preferences import load_preferences, save_preferences
 from calb_sizing_tool.sld.snapshot_single_unit import (
     build_single_unit_snapshot,
     validate_single_unit_snapshot,
 )
-from calb_sizing_tool.sld.svg_postprocess_margin import add_margins
-from calb_sizing_tool.sld.svg_postprocess_raw import apply_raw_style
 from calb_sizing_tool.ui.sld_inputs import render_electrical_inputs
 from calb_sizing_tool.state.project_state import get_project_state, init_project_state
 from calb_sizing_tool.state.session_state import init_shared_state
+from calb_sizing_tool.ui.template_store import load_active
 
 
 def _safe_float(value, default=0.0):
@@ -81,6 +77,7 @@ def _resolve_dc_blocks_per_feeder(
     dc_summary: dict,
     pcs_count: int,
     group_index: int,
+    override_total_blocks: int = 0,
 ) -> list[int]:
     direct = ac_output.get("dc_block_allocation_by_feeder")
     if isinstance(direct, dict) and direct:
@@ -135,7 +132,19 @@ def _resolve_dc_blocks_per_feeder(
         if dc_block is not None:
             total_dc_blocks = _safe_int(getattr(dc_block, "count", 0))
 
-    ac_blocks_total = _safe_int(ac_output.get("num_blocks"), 0) or 1
+    ac_blocks_total = override_total_blocks
+    if ac_blocks_total <= 0:
+        ac_blocks_total = _safe_int(ac_output.get("num_blocks"), 0)
+    if ac_blocks_total <= 0:
+        ac_blocks_total = _safe_int(ac_output.get("ac_blocks_total"), 0)
+    if ac_blocks_total <= 0:
+        total_pcs = _safe_int(ac_output.get("total_pcs"), 0)
+        pcs_per_block = _safe_int(ac_output.get("pcs_per_block"), 0)
+        if total_pcs > 0 and pcs_per_block > 0:
+            ac_blocks_total = total_pcs // pcs_per_block
+    if ac_blocks_total <= 0:
+        ac_blocks_total = 1
+
     per_block_total = evenly_distribute(total_dc_blocks, ac_blocks_total)
     idx = max(0, min(group_index - 1, len(per_block_total) - 1))
     return allocate_dc_blocks(per_block_total[idx], pcs_count)
@@ -149,10 +158,38 @@ def show():
     st.header("Single Line Diagram")
     st.caption("Engineering-readable SLD for one AC block group.")
 
+    # Manual template override from Diagram Studio
+    try:
+        manual = load_active("sld")
+        if isinstance(manual, dict):
+            meta = manual.get("__meta__", {})
+            st.info("🎨 Manual SLD Active: Using the custom diagram from Diagram Studio.")
+            preview_png = meta.get("preview_png_path")
+            
+            # Ensure outputs directory exists
+            outputs_dir = Path("outputs")
+            outputs_dir.mkdir(exist_ok=True)
+            
+            if preview_png and Path(preview_png).exists():
+                st.image(preview_png, use_container_width=True)
+                st.session_state["sld_png_path"] = str(preview_png)
+                
+                # Also read SVG if available for artifact completeness
+                # Note: Diagram Studio outputs JSON mainly, but might have saved an SVG
+                # Here we trust sld_png_path for the report.
+                
+                if st.button("Revert to Auto-Generation"):
+                    from calb_sizing_tool.ui.template_store import clear_active
+                    clear_active("sld")
+                    st.rerun()
+                return
+    except Exception as e:
+        # Fallback if template store fails
+        st.warning(f"Could not load manual template: {e}")
+
     deps = check_dependencies()
     svgwrite_ok = deps.get("svgwrite", False)
     cairosvg_ok = deps.get("cairosvg", False)
-    pypowsybl_ok = deps.get("pypowsybl", False)
 
     def _pick_value(*values):
         for value in values:
@@ -203,21 +240,89 @@ def show():
     lv_v_status = lv_v_value if lv_v_value is not None else "TBD"
     pcs_counts = _resolve_pcs_count_by_block(ac_output)
     pcs_count_status = pcs_counts[0] if pcs_counts else "TBD"
+    if isinstance(pcs_count_status, (list, tuple)):
+        pcs_count_status = sum(pcs_count_status) if pcs_count_status else "TBD"
     dc_blocks_status = ac_output.get("dc_block_allocation", {}).get("total_dc_blocks")
     if dc_blocks_status is None:
-        dc_blocks_status = ac_output.get("dc_blocks_per_ac")
+        dc_blocks_status_raw = ac_output.get("dc_blocks_per_ac")
+        if isinstance(dc_blocks_status_raw, (list, tuple)):
+            try:
+                dc_blocks_status = sum(int(x) for x in dc_blocks_status_raw if isinstance(x, (int, float)))
+            except (ValueError, TypeError):
+                dc_blocks_status = len(dc_blocks_status_raw) if dc_blocks_status_raw else "TBD"
+        else:
+            dc_blocks_status = dc_blocks_status_raw
+            
     c_status1, c_status2, c_status3 = st.columns(3)
     c_status1.metric("DC Run", dc_time)
     c_status2.metric("AC Run", ac_time)
     c_status3.metric("MV/LV", f"{mv_kv_status} kV / {lv_v_status} V")
     c_status4, c_status5 = st.columns(2)
-    c_status4.metric("PCS Count (group)", pcs_count_status)
-    c_status5.metric("DC Blocks (group)", dc_blocks_status or "TBD")
+    c_status4.metric("PCS Count (group)", str(pcs_count_status) if pcs_count_status != "TBD" else pcs_count_status)
+    c_status5.metric("DC Blocks (group)", str(dc_blocks_status) if dc_blocks_status != "TBD" else "TBD")
 
     if not svgwrite_ok:
-        st.error("Missing dependency: svgwrite. Install with `pip install -r requirements.txt`.")
-        if not pypowsybl_ok:
-            st.error("Raw fallback also requires pypowsybl. Install with `pip install pypowsybl`.")
+        st.error("Missing dependency: svgwrite. Install with Requirement already satisfied: streamlit>=1.30.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 1)) (1.51.0)
+Requirement already satisfied: pandas>=2.0.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 2)) (2.3.3)
+Requirement already satisfied: numpy>=1.24.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 3)) (2.2.6)
+Requirement already satisfied: openpyxl>=3.1.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 4)) (3.1.5)
+Requirement already satisfied: pydantic>=2.0.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 5)) (2.12.5)
+Requirement already satisfied: graphviz>=0.20.1 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 6)) (0.21)
+Requirement already satisfied: python-docx>=1.1.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 7)) (1.2.0)
+Requirement already satisfied: matplotlib>=3.7.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 8)) (3.10.7)
+Requirement already satisfied: svgwrite>=1.4.3 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 9)) (1.4.3)
+Requirement already satisfied: cairosvg>=2.7.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 10)) (2.8.2)
+Requirement already satisfied: typing-extensions<5,>=4.4.0 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (4.15.0)
+Requirement already satisfied: pyarrow<22,>=7.0 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (11.0.0)
+Requirement already satisfied: requests<3,>=2.27 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (2.32.5)
+Requirement already satisfied: gitpython!=3.1.19,<4,>=3.0.7 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (3.1.45)
+Requirement already satisfied: cachetools<7,>=4.0 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (6.2.2)
+Requirement already satisfied: tornado!=6.5.0,<7,>=6.0.3 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (6.5.2)
+Requirement already satisfied: blinker<2,>=1.5.0 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (1.9.0)
+Requirement already satisfied: altair!=5.4.0,!=5.4.1,<6,>=4.0 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (5.5.0)
+Requirement already satisfied: protobuf<7,>=3.20 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (6.33.1)
+Requirement already satisfied: toml<2,>=0.10.1 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (0.10.2)
+Requirement already satisfied: watchdog<7,>=2.1.5 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (6.0.0)
+Requirement already satisfied: pydeck<1,>=0.8.0b4 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (0.9.1)
+Requirement already satisfied: click<9,>=7.0 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (8.3.1)
+Requirement already satisfied: tenacity<10,>=8.1.0 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (9.1.2)
+Requirement already satisfied: packaging<26,>=20 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (25.0)
+Requirement already satisfied: pillow<13,>=7.1.0 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (12.0.0)
+Requirement already satisfied: tzdata>=2022.7 in /usr/local/lib/python3.10/dist-packages (from pandas>=2.0.0->-r requirements.txt (line 2)) (2025.2)
+Requirement already satisfied: pytz>=2020.1 in /usr/local/lib/python3.10/dist-packages (from pandas>=2.0.0->-r requirements.txt (line 2)) (2025.2)
+Requirement already satisfied: python-dateutil>=2.8.2 in /usr/local/lib/python3.10/dist-packages (from pandas>=2.0.0->-r requirements.txt (line 2)) (2.9.0.post0)
+Requirement already satisfied: et-xmlfile in /usr/local/lib/python3.10/dist-packages (from openpyxl>=3.1.0->-r requirements.txt (line 4)) (2.0.0)
+Requirement already satisfied: annotated-types>=0.6.0 in /usr/local/lib/python3.10/dist-packages (from pydantic>=2.0.0->-r requirements.txt (line 5)) (0.7.0)
+Requirement already satisfied: typing-inspection>=0.4.2 in /usr/local/lib/python3.10/dist-packages (from pydantic>=2.0.0->-r requirements.txt (line 5)) (0.4.2)
+Requirement already satisfied: pydantic-core==2.41.5 in /usr/local/lib/python3.10/dist-packages (from pydantic>=2.0.0->-r requirements.txt (line 5)) (2.41.5)
+Requirement already satisfied: lxml>=3.1.0 in /usr/local/lib/python3.10/dist-packages (from python-docx>=1.1.0->-r requirements.txt (line 7)) (6.0.2)
+Requirement already satisfied: kiwisolver>=1.3.1 in /usr/local/lib/python3.10/dist-packages (from matplotlib>=3.7.0->-r requirements.txt (line 8)) (1.4.9)
+Requirement already satisfied: fonttools>=4.22.0 in /usr/local/lib/python3.10/dist-packages (from matplotlib>=3.7.0->-r requirements.txt (line 8)) (4.61.0)
+Requirement already satisfied: contourpy>=1.0.1 in /usr/local/lib/python3.10/dist-packages (from matplotlib>=3.7.0->-r requirements.txt (line 8)) (1.3.2)
+Requirement already satisfied: pyparsing>=3 in /usr/local/lib/python3.10/dist-packages (from matplotlib>=3.7.0->-r requirements.txt (line 8)) (3.2.5)
+Requirement already satisfied: cycler>=0.10 in /usr/local/lib/python3.10/dist-packages (from matplotlib>=3.7.0->-r requirements.txt (line 8)) (0.12.1)
+Requirement already satisfied: defusedxml in /usr/local/lib/python3.10/dist-packages (from cairosvg>=2.7.0->-r requirements.txt (line 10)) (0.7.1)
+Requirement already satisfied: tinycss2 in /usr/local/lib/python3.10/dist-packages (from cairosvg>=2.7.0->-r requirements.txt (line 10)) (1.5.1)
+Requirement already satisfied: cairocffi in /usr/local/lib/python3.10/dist-packages (from cairosvg>=2.7.0->-r requirements.txt (line 10)) (1.7.1)
+Requirement already satisfied: cssselect2 in /usr/local/lib/python3.10/dist-packages (from cairosvg>=2.7.0->-r requirements.txt (line 10)) (0.8.0)
+Requirement already satisfied: jinja2 in /usr/local/lib/python3.10/dist-packages (from altair!=5.4.0,!=5.4.1,<6,>=4.0->streamlit>=1.30.0->-r requirements.txt (line 1)) (3.1.6)
+Requirement already satisfied: narwhals>=1.14.2 in /usr/local/lib/python3.10/dist-packages (from altair!=5.4.0,!=5.4.1,<6,>=4.0->streamlit>=1.30.0->-r requirements.txt (line 1)) (2.13.0)
+Requirement already satisfied: jsonschema>=3.0 in /usr/local/lib/python3.10/dist-packages (from altair!=5.4.0,!=5.4.1,<6,>=4.0->streamlit>=1.30.0->-r requirements.txt (line 1)) (4.25.1)
+Requirement already satisfied: gitdb<5,>=4.0.1 in /usr/local/lib/python3.10/dist-packages (from gitpython!=3.1.19,<4,>=3.0.7->streamlit>=1.30.0->-r requirements.txt (line 1)) (4.0.12)
+Requirement already satisfied: six>=1.5 in /usr/local/lib/python3.10/dist-packages (from python-dateutil>=2.8.2->pandas>=2.0.0->-r requirements.txt (line 2)) (1.17.0)
+Requirement already satisfied: urllib3<3,>=1.21.1 in /usr/local/lib/python3.10/dist-packages (from requests<3,>=2.27->streamlit>=1.30.0->-r requirements.txt (line 1)) (2.5.0)
+Requirement already satisfied: charset_normalizer<4,>=2 in /usr/local/lib/python3.10/dist-packages (from requests<3,>=2.27->streamlit>=1.30.0->-r requirements.txt (line 1)) (3.4.4)
+Requirement already satisfied: certifi>=2017.4.17 in /usr/local/lib/python3.10/dist-packages (from requests<3,>=2.27->streamlit>=1.30.0->-r requirements.txt (line 1)) (2025.11.12)
+Requirement already satisfied: idna<4,>=2.5 in /usr/local/lib/python3.10/dist-packages (from requests<3,>=2.27->streamlit>=1.30.0->-r requirements.txt (line 1)) (3.11)
+Requirement already satisfied: cffi>=1.1.0 in /usr/local/lib/python3.10/dist-packages (from cairocffi->cairosvg>=2.7.0->-r requirements.txt (line 10)) (2.0.0)
+Requirement already satisfied: webencodings in /usr/local/lib/python3.10/dist-packages (from cssselect2->cairosvg>=2.7.0->-r requirements.txt (line 10)) (0.5.1)
+Requirement already satisfied: pycparser in /usr/local/lib/python3.10/dist-packages (from cffi>=1.1.0->cairocffi->cairosvg>=2.7.0->-r requirements.txt (line 10)) (2.23)
+Requirement already satisfied: smmap<6,>=3.0.1 in /usr/local/lib/python3.10/dist-packages (from gitdb<5,>=4.0.1->gitpython!=3.1.19,<4,>=3.0.7->streamlit>=1.30.0->-r requirements.txt (line 1)) (5.0.2)
+Requirement already satisfied: MarkupSafe>=2.0 in /usr/local/lib/python3.10/dist-packages (from jinja2->altair!=5.4.0,!=5.4.1,<6,>=4.0->streamlit>=1.30.0->-r requirements.txt (line 1)) (3.0.3)
+Requirement already satisfied: rpds-py>=0.7.1 in /usr/local/lib/python3.10/dist-packages (from jsonschema>=3.0->altair!=5.4.0,!=5.4.1,<6,>=4.0->streamlit>=1.30.0->-r requirements.txt (line 1)) (0.30.0)
+Requirement already satisfied: referencing>=0.28.4 in /usr/local/lib/python3.10/dist-packages (from jsonschema>=3.0->altair!=5.4.0,!=5.4.1,<6,>=4.0->streamlit>=1.30.0->-r requirements.txt (line 1)) (0.37.0)
+Requirement already satisfied: attrs>=22.2.0 in /usr/local/lib/python3.10/dist-packages (from jsonschema>=3.0->altair!=5.4.0,!=5.4.1,<6,>=4.0->streamlit>=1.30.0->-r requirements.txt (line 1)) (25.4.0)
+Requirement already satisfied: jsonschema-specifications>=2023.03.6 in /usr/local/lib/python3.10/dist-packages (from jsonschema>=3.0->altair!=5.4.0,!=5.4.1,<6,>=4.0->streamlit>=1.30.0->-r requirements.txt (line 1)) (2025.9.1).")
 
     scenario_default = diagram_inputs.get("scenario_id")
     if scenario_default is None:
@@ -229,19 +334,9 @@ def show():
     )
     diagram_inputs["scenario_id"] = scenario_id
 
-    style_options = ["Raw V0.5 (Stable)", "Pro English V1.0"]
-    style_default = diagram_inputs.get("style")
-    if style_default is None:
-        style_default = style_options[0]
-    if style_default not in style_options:
-        style_default = style_options[0]
-    style = st.selectbox(
-        "Style",
-        style_options,
-        index=style_options.index(style_default),
-        key="diagram_inputs.style",
-    )
-    diagram_inputs["style"] = style
+    # Style selection removed. Defaulting to Pro renderer (now Stable).
+    style_id = "stable"
+    diagram_inputs["style"] = "Stable"
 
     ac_blocks_total = max(len(pcs_counts), _safe_int(ac_output.get("num_blocks"), 0), 1)
     group_default = _safe_int(diagram_inputs.get("group_index"), 1)
@@ -341,8 +436,9 @@ def show():
     diagram_inputs["dc_block_energy_mwh"] = dc_block_energy_mwh
 
     st.subheader("DC Block Allocation (per feeder)")
+    ac_blocks_override = _safe_int(diagram_inputs.get("ac_blocks_total_override"), 0)
     default_dc_blocks = _resolve_dc_blocks_per_feeder(
-        stage13_output, ac_output, dc_summary, pcs_count or 0, group_index
+        stage13_output, ac_output, dc_summary, pcs_count or 0, group_index, ac_blocks_override
     )
     stored_blocks = diagram_inputs.get("dc_blocks_per_feeder")
     if isinstance(stored_blocks, list) and len(stored_blocks) == len(default_dc_blocks):
@@ -364,7 +460,6 @@ def show():
 
     dc_df = st.data_editor(
         st.session_state[dc_df_key],
-        key="diagram_inputs.dc_blocks_table",
         use_container_width=True,
         hide_index=True,
         num_rows="fixed",
@@ -376,6 +471,19 @@ def show():
         _safe_int(row.get("dc_block_count"), 0) for row in dc_df.to_dict("records")
     ]
     diagram_inputs["dc_blocks_per_feeder"] = dc_blocks_per_feeder
+
+    prefs = load_preferences()
+    svg_width = int(diagram_inputs.get("svg_width", prefs.get("sld_svg_width", 1400)))
+    svg_height = int(diagram_inputs.get("svg_height", prefs.get("sld_svg_height", 900)))
+    pcs_gap = int(diagram_inputs.get("pcs_gap", 60))
+    busbar_gap = int(diagram_inputs.get("busbar_gap", 22))
+    font_scale = float(diagram_inputs.get("font_scale", 1.0))
+    
+    diagram_inputs["svg_width"] = svg_width
+    diagram_inputs["svg_height"] = svg_height
+    diagram_inputs["pcs_gap"] = pcs_gap
+    diagram_inputs["busbar_gap"] = busbar_gap
+    diagram_inputs["font_scale"] = font_scale
 
     if "key_prefix" in inspect.signature(render_electrical_inputs).parameters:
         electrical_inputs = render_electrical_inputs(
@@ -394,17 +502,19 @@ def show():
         "pcs_rating_kw_list": [pcs_rating_each_kw for _ in range(pcs_count or 0)],
         "dc_block_energy_mwh": dc_block_energy_mwh,
         "dc_blocks_per_feeder": dc_blocks_per_feeder,
+        "svg_width": svg_width,
+        "svg_height": svg_height,
+        "pcs_gap": pcs_gap,
+        "busbar_gap": busbar_gap,
+        "font_scale": font_scale,
         **electrical_inputs,
     }
 
-    style_id = "raw_v05" if style.startswith("Raw") else "pro_v10"
     if style_id not in diagram_results:
         diagram_results[style_id] = {}
 
     generate_disabled = not has_prereq
-    if style_id == "raw_v05" and not svgwrite_ok and not pypowsybl_ok:
-        generate_disabled = True
-    if style_id == "pro_v10" and not svgwrite_ok:
+    if not svgwrite_ok:
         generate_disabled = True
 
     generate = st.button(
@@ -414,94 +524,33 @@ def show():
     )
     if generate:
         try:
-            if style_id == "raw_v05":
-                if svgwrite_ok:
-                    spec = build_sld_group_spec(
-                        stage13_output, ac_output, dc_summary, sld_inputs, group_index
-                    )
-                    with tempfile.TemporaryDirectory() as tmpdir:
-                        tmp_path = Path(tmpdir)
-                        svg_path = tmp_path / "sld_raw_v05.svg"
-                        svg_result, warning = render_sld_pro_svg(spec, svg_path)
-                        if svg_result is None:
-                            st.error(warning or "SLD renderer unavailable.")
-                        else:
-                            if warning:
-                                st.warning(warning)
-                            svg_bytes = svg_path.read_bytes() if svg_path.exists() else None
-                            png_bytes = _svg_bytes_to_png(svg_bytes) if svg_bytes and cairosvg_ok else None
-                            if svg_bytes and png_bytes is None and not cairosvg_ok:
-                                st.warning("Missing dependency: cairosvg. PNG export skipped.")
-                elif not pypowsybl_ok:
-                    st.error("Raw fallback requires pypowsybl. Install with `pip install pypowsybl`.")
-                    svg_bytes = None
-                    png_bytes = None
-                else:
-                    dc_blocks_by_feeder = []
-                    for idx, count in enumerate(dc_blocks_per_feeder, start=1):
-                        dc_blocks_by_feeder.append(
-                            {
-                                "feeder_id": f"FDR-{idx:02d}",
-                                "dc_block_count": int(count),
-                                "dc_block_energy_mwh": float(count) * dc_block_energy_mwh,
-                            }
-                        )
-                    raw_inputs = dict(sld_inputs)
-                    raw_inputs["dc_blocks_by_feeder"] = dc_blocks_by_feeder
-                    raw_inputs["diagram_scope"] = "one_ac_block_group"
-                    snapshot = build_single_unit_snapshot(
-                        stage13_output, ac_output, dc_summary, raw_inputs, scenario_id
-                    )
-                    validate_single_unit_snapshot(snapshot)
-                    with tempfile.TemporaryDirectory() as tmpdir:
-                        tmp_path = Path(tmpdir)
-                        raw_svg_path = tmp_path / "sld_raw.svg"
-                        styled_svg_path = tmp_path / "sld_raw_styled.svg"
-                        final_svg_path = tmp_path / "sld_raw_final.svg"
-                        network = build_network_for_single_unit(snapshot)
-                        render_raw_svg(
-                            network,
-                            container_id="SUB_MV_NODE_01",
-                            out_svg=raw_svg_path,
-                        )
-                        labels = snapshot.get("mv", {}).get("labels", {})
-                        apply_raw_style(
-                            raw_svg_path,
-                            styled_svg_path,
-                            to_switchgear=labels.get("to_switchgear"),
-                            to_other_rmu=labels.get("to_other_rmu"),
-                        )
-                        add_margins(styled_svg_path, final_svg_path, left_margin_px=140, top_margin_px=40)
-                        svg_bytes = final_svg_path.read_bytes() if final_svg_path.exists() else None
-                        png_bytes = _svg_bytes_to_png(svg_bytes) if svg_bytes and cairosvg_ok else None
+            if not svgwrite_ok:
+                st.error("Rendering requires svgwrite. Install with Requirement already satisfied: svgwrite in /usr/local/lib/python3.10/dist-packages (1.4.3).")
+                svg_bytes = None
+                png_bytes = None
             else:
-                if style_id == "pro_v10" and not svgwrite_ok:
-                    st.error("Pro rendering requires svgwrite. Install with `pip install svgwrite`.")
-                    svg_bytes = None
-                    png_bytes = None
-                else:
-                    dc_blocks_by_feeder = []
-                    for idx, count in enumerate(dc_blocks_per_feeder, start=1):
-                        dc_blocks_by_feeder.append(
-                            {
-                                "feeder_id": f"FDR-{idx:02d}",
-                                "dc_block_count": int(count),
-                                "dc_block_energy_mwh": float(count) * dc_block_energy_mwh,
-                            }
-                        )
-                    jp_inputs = dict(sld_inputs)
-                    jp_inputs["dc_blocks_by_feeder"] = dc_blocks_by_feeder
-                    jp_inputs["diagram_scope"] = "one_ac_block_group"
-                    snapshot = build_single_unit_snapshot(
-                        stage13_output, ac_output, dc_summary, jp_inputs, scenario_id
+                dc_blocks_by_feeder = []
+                for idx, count in enumerate(dc_blocks_per_feeder, start=1):
+                    dc_blocks_by_feeder.append(
+                        {
+                            "feeder_id": f"FDR-{idx:02d}",
+                            "dc_block_count": int(count),
+                            "dc_block_energy_mwh": float(count) * dc_block_energy_mwh,
+                        }
                     )
-                    validate_single_unit_snapshot(snapshot)
-                    with tempfile.TemporaryDirectory() as tmpdir:
-                        tmp_path = Path(tmpdir)
-                        svg_path = tmp_path / "sld_pro_v10.svg"
-                        render_jp_pro_svg(snapshot, svg_path)
-                        svg_bytes = svg_path.read_bytes()
-                        png_bytes = _svg_bytes_to_png(svg_bytes) if svg_bytes and cairosvg_ok else None
+                jp_inputs = dict(sld_inputs)
+                jp_inputs["dc_blocks_by_feeder"] = dc_blocks_by_feeder
+                jp_inputs["diagram_scope"] = "one_ac_block_group"
+                snapshot = build_single_unit_snapshot(
+                    stage13_output, ac_output, dc_summary, jp_inputs, scenario_id
+                )
+                validate_single_unit_snapshot(snapshot)
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    tmp_path = Path(tmpdir)
+                    svg_path = tmp_path / "sld_pro_v10.svg"
+                    render_sld_pro_svg(snapshot, svg_path)
+                    svg_bytes = svg_path.read_bytes()
+                    png_bytes = _svg_bytes_to_png(svg_bytes) if svg_bytes and cairosvg_ok else None
 
             if svg_bytes or png_bytes:
                 dc_blocks_total = sum(dc_blocks_per_feeder) if dc_blocks_per_feeder else 0

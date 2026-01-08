@@ -220,6 +220,8 @@ def build_single_unit_snapshot(
             "cables": sld_inputs.get("cables", {}) or {},
             "dc_fuse": sld_inputs.get("dc_fuse", {}) or {},
         },
+        "svg_width": sld_inputs.get("svg_width"),
+        "svg_height": sld_inputs.get("svg_height"),
     }
 
     snapshot["snapshot_hash"] = _snapshot_hash(snapshot)

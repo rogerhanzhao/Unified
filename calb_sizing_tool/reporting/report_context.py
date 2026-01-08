@@ -124,8 +124,13 @@ def _get_stage3_df(stage1: dict, stage2: dict):
     try:
         _, _, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve = dc_view.load_data(DC_DATA_PATH)
         return dc_view.run_stage3(stage1, stage2, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve)
-    except Exception:
-        return None, {}
+    except Exception as exc:
+        # Capture and return an error message so the report can surface the root cause
+        try:
+            msg = str(exc)
+        except Exception:
+            msg = "Unknown error while computing Stage 3"
+        return None, {"error": msg}
 
 
 def build_report_context(
@@ -149,7 +154,11 @@ def build_report_context(
 
     stage1 = stage13_output
     stage2 = outputs.get("stage2") or stage13_output.get("stage2_raw") or {}
+    # Prefer an explicit stage3_df passed in outputs, then any stage3_df embedded in
+    # the stage13_output (packaged by DC UI). If none, attempt to recompute.
     stage3_df = outputs.get("stage3_df")
+    if stage3_df is None:
+        stage3_df = stage13_output.get("stage3_df")
     stage3_meta = outputs.get("stage3_meta") or stage13_output.get("stage3_meta") or {}
     if stage3_df is None:
         stage3_df, stage3_meta = _get_stage3_df(stage1, stage2)
@@ -196,14 +205,23 @@ def build_report_context(
     project_life_years = int(stage1.get("project_life_years", 0) or 0)
     cycles_per_year = int(stage1.get("cycles_per_year", 0) or 0)
 
+    # Read efficiency values from DC SIZING stage1 output (DC SIZING page computes these)
+    # Do NOT use fallback defaults for report - if values are missing, user needs to re-run DC SIZING
+    eff_dc_cables = float(stage1.get("eff_dc_cables_frac", 0.0) or 0.0)
+    eff_pcs = float(stage1.get("eff_pcs_frac", 0.0) or 0.0)
+    eff_mvt = float(stage1.get("eff_mvt_frac", 0.0) or 0.0)
+    eff_ac_cables_sw_rmu = float(stage1.get("eff_ac_cables_sw_rmu_frac", 0.0) or 0.0)
+    eff_hvt_others = float(stage1.get("eff_hvt_others_frac", 0.0) or 0.0)
+    eff_chain = float(stage1.get("eff_dc_to_poi_frac", 0.0) or 0.0)
+    
     efficiency_components = {
-        "eff_dc_cables_frac": float(stage1.get("eff_dc_cables_frac", 0.0) or 0.0),
-        "eff_pcs_frac": float(stage1.get("eff_pcs_frac", 0.0) or 0.0),
-        "eff_mvt_frac": float(stage1.get("eff_mvt_frac", 0.0) or 0.0),
-        "eff_ac_cables_sw_rmu_frac": float(stage1.get("eff_ac_cables_sw_rmu_frac", 0.0) or 0.0),
-        "eff_hvt_others_frac": float(stage1.get("eff_hvt_others_frac", 0.0) or 0.0),
+        "eff_dc_cables_frac": eff_dc_cables,
+        "eff_pcs_frac": eff_pcs,
+        "eff_mvt_frac": eff_mvt,
+        "eff_ac_cables_sw_rmu_frac": eff_ac_cables_sw_rmu,
+        "eff_hvt_others_frac": eff_hvt_others,
     }
-    efficiency_chain_oneway = float(stage1.get("eff_dc_to_poi_frac", 0.0) or 0.0)
+    efficiency_chain_oneway = eff_chain
 
     avg_dc_blocks_per_ac_block = None
     dc_blocks_allocation = []
@@ -399,3 +417,46 @@ def build_report_context(
         ac_output=ac_output,
         project_inputs=project_inputs or {},
     )
+
+
+def validate_report_context(ctx: ReportContext) -> list[str]:
+    """
+    Validate a ReportContext for internal consistency.
+    Returns a list of warning strings (empty if valid).
+    """
+    warnings = []
+    
+    # Check AC sizing power consistency
+    if ctx.ac_blocks_total > 0 and ctx.ac_block_size_mw is not None and ctx.ac_block_size_mw > 0:
+        ac_total_mw = ctx.ac_blocks_total * ctx.ac_block_size_mw
+        if abs(ac_total_mw - ctx.poi_power_requirement_mw) > 0.1:
+            warnings.append(
+                f"AC total power ({ac_total_mw:.2f} MW) does not match POI requirement ({ctx.poi_power_requirement_mw:.2f} MW). "
+                f"Difference: {abs(ac_total_mw - ctx.poi_power_requirement_mw):.2f} MW."
+            )
+    
+    # Check guarantee year is within project life
+    if ctx.poi_guarantee_year > ctx.project_life_years:
+        warnings.append(
+            f"Guarantee year ({ctx.poi_guarantee_year}) exceeds project life ({ctx.project_life_years} years)."
+        )
+    
+    # Check POI usable energy at guarantee year
+    if (ctx.poi_usable_energy_mwh_at_guarantee_year is not None and 
+        ctx.poi_energy_guarantee_mwh is not None and 
+        ctx.poi_usable_energy_mwh_at_guarantee_year + 1e-6 < ctx.poi_energy_guarantee_mwh):
+        warnings.append(
+            f"POI usable energy at guarantee year ({ctx.poi_usable_energy_mwh_at_guarantee_year:.2f} MWh) "
+            f"is below the guarantee target ({ctx.poi_energy_guarantee_mwh:.2f} MWh)."
+        )
+    
+    # Check PCS module count
+    if ctx.ac_blocks_total > 0 and ctx.pcs_per_block > 0:
+        expected_pcs = ctx.ac_blocks_total * ctx.pcs_per_block
+        if ctx.pcs_modules_total and ctx.pcs_modules_total != expected_pcs:
+            warnings.append(
+                f"PCS module count mismatch: expected {expected_pcs} (blocks × per_block), got {ctx.pcs_modules_total}."
+            )
+    
+    return warnings
+

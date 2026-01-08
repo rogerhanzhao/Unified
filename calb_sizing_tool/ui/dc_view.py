@@ -1323,6 +1323,7 @@ def show():
                             selected_scenario=mode,
                             poi_nominal_voltage_kv=poi_nominal_voltage_kv,
                             poi_frequency_hz=poi_frequency_hz,
+                            stage3_df=s3_df,
                         )
                         dc_results.update(
                             {

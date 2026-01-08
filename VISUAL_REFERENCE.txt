@@ -1,0 +1,238 @@
+═════════════════════════════════════════════════════════════════════════════════
+  CALB REPAIR PROPOSAL - VISUAL REFERENCE GUIDE
+═════════════════════════════════════════════════════════════════════════════════
+
+─────────────────────────────────────────────────────────────────────────────────
+PART 1: SLD (Single Line Diagram) - DC Circuit Independence Fix
+─────────────────────────────────────────────────────────────────────────────────
+
+BEFORE (Visually Coupled - WRONG):
+┌─────────────────────────────────────────────────────────────────┐
+│                         AC / MV Side                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│    [Switchgear]  [Transformer]  [RMU]  [PCS1]  [PCS2]         │
+│         |              |           |       |       |            │
+│         └──────────────┴───────────┴───────┴───────┘            │
+│                          (AC connections)                       │
+│                                                                  │
+├──────────────────────────────────────────────────────────────────┤
+│                      DC / Battery Side (PROBLEM!)               │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  PCS1              PCS2                                          │
+│   |                 |                                            │
+│   v                 v                                            │
+│ ┌──────┐         ┌──────┐                                       │
+│ │DC┐   │         │   DC┌│                                       │
+│ │  └───┼─────────┼─────┘│ ← VISUAL: Appears to share BUSBAR!  │
+│ │DC┐   │ ← Shared Line   │   WRONG!                            │
+│ │  └───┼─────────┼─────┘│                                       │
+│ └──────┘         └──────┘                                       │
+│   │ │               │ │                                         │
+│ [B1][B2]         [B3][B4]                                       │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+
+PROBLEM: Horizontal lines connecting PCS-1 and PCS-2 create 
+         visual illusion of parallel/coupled operation.
+         Viewers can't see electrical independence.
+
+─────────────────────────────────────────────────────────────────────────────────
+
+AFTER (Visually Independent - CORRECT):
+┌──────────────────────────────────────────────────────────────────────┐
+│                         AC / MV Side                                  │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                       │
+│    [Switchgear]  [Transformer]  [RMU]  [PCS1]    [PCS2]            │
+│         |              |           |       |        |               │
+│         └──────────────┴───────────┴───────┴────────┘               │
+│                          (AC connections)                            │
+│                                                                       │
+├───────────────────────────────────────────────────────────────────────┤
+│                      DC / Battery Side (FIXED!)                      │
+├───────────────────────────────────────────────────────────────────────┤
+│                                                                       │
+│  ┌─ PCS1 ZONE ─────────┐  [50-100px GAP]  ┌─ PCS2 ZONE ─────────┐  │
+│  │                     │                   │                     │  │
+│  │   [PCS1]            │                   │   [PCS2]            │  │
+│  │     |               │                   │     |               │  │
+│  │  ┌─────┐           │                   │  ┌─────┐           │  │
+│  │  │DC A │           │                   │  │DC A │           │  │
+│  │  ├─────┤           │                   │  ├─────┤           │  │
+│  │  │DC B │           │                   │  │DC B │           │  │
+│  │  └─────┘           │                   │  └─────┘           │  │
+│  │    │ │             │                   │    │ │             │  │
+│  │  [B1][B2]          │                   │  [B3][B4]          │  │
+│  │  (Indep)           │                   │  (Indep)           │  │
+│  │                    │                   │                     │  │
+│  └────────────────────┘                   └─────────────────────┘  │
+│     ↑                                          ↑                    │
+│     NO horizontal line coupling              NO horizontal line   │
+│     (physically & visually)                   (physically & visually)
+│                                                                       │
+└───────────────────────────────────────────────────────────────────────┘
+
+FIXED: Clear spatial gap between PCS-1 and PCS-2 regions.
+       No horizontal line crossing the gap.
+       Visual independence matches electrical independence.
+
+─────────────────────────────────────────────────────────────────────────────────
+PART 2: Layout (Top View) - DC Block Module Arrangement Fix
+─────────────────────────────────────────────────────────────────────────────────
+
+BEFORE (2×3 Grid - WRONG):
+┌─────────────────────────────┐
+│ Block 1 (5 MWh)             │
+│                             │
+│  ┌─────┬─────┐             │
+│  │  M1 │  M2 │  ← 2x3 grid │  PROBLEM: Physical container
+│  ├─────┼─────┤    3 rows   │  has 6 vertical racks (1×6),
+│  │  M3 │  M4 │    2 columns│  not 2×3!
+│  ├─────┼─────┤             │
+│  │  M5 │  M6 │             │
+│  └─────┴─────┘             │
+│                             │
+│  ┌──────┐  ← Small box      │  PROBLEM: Unwanted left-side
+│  │ ???  │  (unnecessary)    │  box clutter (purpose unknown)
+│  └──────┘                   │
+│                             │
+│ ID: Block-1  5.0 MWh        │
+│ Capacity: 450 MWh           │
+└─────────────────────────────┘
+
+AFTER (1×6 Single Row - CORRECT):
+┌─────────────────────────────────────────────┐
+│ Block 1 (5 MWh)                             │
+│                                             │
+│ ┌──┬──┬──┬──┬──┬──┐                        │
+│ │M1│M2│M3│M4│M5│M6│  ← 1x6 grid           │  FIXED: Matches actual
+│ └──┴──┴──┴──┴──┴──┘     6 columns          │  container design
+│                         (single row)       │  (6 vertical racks)
+│                                             │
+│                                             │  FIXED: No left box,
+│                                             │  no interior clutter
+│                                             │
+│ ID: Block-1  Capacity: 5.0 MWh             │  Labels outside
+│ Total: 450 MWh                             │  container (clean)
+│                                             │
+└─────────────────────────────────────────────┘
+
+ACTUAL PHYSICAL DESIGN:
+┌────────────────────────────────────────────────┐
+│ CALB 5MWh Container (Top View)                 │
+│                                                │
+│  Rack  Rack  Rack  Rack  Rack  Rack           │
+│  │ 1 │  │ 2 │  │ 3 │  │ 4 │  │ 5 │  │ 6 │   │
+│  └───┘  └───┘  └───┘  └───┘  └───┘  └───┘   │
+│                                                │
+│  (6 VERTICAL RACKS IN SINGLE ROW)             │
+│                                                │
+└────────────────────────────────────────────────┘
+
+─────────────────────────────────────────────────────────────────────────────────
+PART 3: DOCX Report - Efficiency Chain & AC Table Fix
+─────────────────────────────────────────────────────────────────────────────────
+
+EFFICIENCY CHAIN FIX:
+
+BEFORE (Inconsistent - WRONG):
+╔════════════════════════════════╦═════════════╗
+║ Component                      ║ Value       ║
+╠════════════════════════════════╬═════════════╣
+║ Total Efficiency (one-way)     ║ 96.74%  ←  Provided value
+║ DC Cables                      ║ 97.00%  │
+║ PCS                            ║ 97.00%  │
+║ Transformer                    ║ 98.50%  │  Product: 0.97 × 0.97 × 0.985
+║ RMU / Switchgear / AC Cables   ║ 98.00%  │           × 0.98 × 0.98
+║ HVT / Others                   ║ 98.00%  ├─ = 0.9454 (94.54%)
+╚════════════════════════════════╩═════════════╝    ≠ 96.74% ⚠️
+
+PROBLEM: Math doesn't check out. Reader loses confidence.
+
+AFTER (Consistent - CORRECT):
+╔════════════════════════════════╦═════════════╗
+║ Component                      ║ Value       ║
+╠════════════════════════════════╬═════════════╣
+║ Total Efficiency (one-way)     ║ 94.54%  ←  Calculated from product
+║ DC Cables                      ║ 97.00%  │
+║ PCS                            ║ 97.00%  │
+║ Transformer                    ║ 98.50%  │  Product: 0.97 × 0.97 × 0.985
+║ RMU / Switchgear / AC Cables   ║ 98.00%  │           × 0.98 × 0.98
+║ HVT / Others                   ║ 98.00%  ├─ = 0.9454 (94.54%)
+╚════════════════════════════════╩═════════════╝    ✓ MATCH!
+
+Note: Efficiency figures exclude auxiliary systems (HVAC, cooling, lighting, 
+      control systems, etc.). All values represent one-way DC→AC conversion.
+
+FIXED: Math is self-consistent. Reader trusts numbers.
+
+─────────────────────────────────────────────────────────────────────────────────
+
+AC SIZING TABLE FIX:
+
+BEFORE (Verbose - 23 Identical Rows - WRONG):
+╔═══════╦═════════════╦═══════════════╦═════════════════╗
+║ Block ║ PCS Rating  ║ PCS per Block ║ Power per Block ║
+╠═══════╬═════════════╬═══════════════╬═════════════════╣
+║   1   ║  2500 kW    ║       2       ║     5.0 MW      ║
+║   2   ║  2500 kW    ║       2       ║     5.0 MW      ║  ← 23 rows!
+║   3   ║  2500 kW    ║       2       ║     5.0 MW      ║    All identical
+║  ...  ║   ...       ║      ...      ║      ...        ║
+║  23   ║  2500 kW    ║       2       ║     5.0 MW      ║
+╚═══════╩═════════════╩═══════════════╩═════════════════╝
+
+PROBLEM: Hard to read, unprofessional, redundant.
+
+AFTER (Aggregated - CORRECT):
+╔════════════════╦═════════════╦═══════════════╦═════════════════╗
+║ Block Count    ║ PCS Rating  ║ PCS per Block ║ Power per Block ║
+╠════════════════╬═════════════╬═══════════════╬═════════════════╣
+║      23        ║  2500 kW    ║       2       ║     5.0 MW      ║
+╚════════════════╩═════════════╩═══════════════╩═════════════════╝
+
+Summary: All 23 AC Blocks share identical configuration 
+         (2 × 2500 kW per block, 5.0 MW per block).
+
+FIXED: Clean, concise, professional. Instant visual summary.
+
+─────────────────────────────────────────────────────────────────────────────────
+
+PCS CONFIGURATION OPTIONS:
+
+BEFORE (Limited - WRONG):
+┌─────────────────────────────────┐
+│ Select PCS Rating (kW)          │
+├─────────────────────────────────┤
+│ • 1250                          │  ← Missing 2000 kW
+│ • 1500                          │  ← No custom option
+│ • 1725                          │
+│ • 2500                          │
+└─────────────────────────────────┘
+
+AFTER (Complete - CORRECT):
+┌─────────────────────────────────┐
+│ Select PCS Rating (kW)          │
+├─────────────────────────────────┤
+│ • 1250                          │  ← Added 2000 kW
+│ • 1500                          │
+│ • 1725                          │  ✓ Now covers standard range
+│ • 2000                          │
+│ • 2500                          │
+└─────────────────────────────────┘
+
+                    +
+
+☐ Use custom PCS rating?         ← New custom input option
+┌─────────────────────────────────┐
+│ Enter custom rating (kW)        │  Allows user-defined
+│ Range: 500–5000 kW              │  values for edge cases
+│ [______________________]        │
+└─────────────────────────────────┘
+
+FIXED: Standard options complete + custom flexibility for edge cases.
+
+═════════════════════════════════════════════════════════════════════════════════
+END OF VISUAL REFERENCE
+═════════════════════════════════════════════════════════════════════════════════

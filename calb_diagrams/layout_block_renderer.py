@@ -112,45 +112,67 @@ def _draw_v_dimension(dwg, y1, y2, x, ext_x, text):
     dwg.add(dwg.text(text, insert=(x + 6, (y1 + y2) / 2), class_="dim-text"))
 
 
-def _draw_dc_interior(dwg, x, y, w, h, mirrored: bool = False):
+def _draw_dc_interior(dwg, x, y, w, h, mirrored: bool = False, cooling_align: str = "right"):
+    """
+    Draw DC Block (BESS) interior with 6 battery module racks + Liquid Cooling.
+    Clean design: 6 rectangles (1x6 single row) representing battery racks.
+    Right side: Liquid Cooling strip.
+    """
     pad = min(10.0, max(4.0, w * 0.06))
-    door_w = max(6.0, w * 0.12)
-    door_h = h * 0.35
-    door_x = x + pad if not mirrored else x + w - door_w - pad
-    door_y = y + h * 0.15
-    dwg.add(dwg.rect(insert=(door_x, door_y), size=(door_w, door_h), class_="thin"))
-    dwg.add(
-        dwg.line(
-            (door_x + door_w * 0.75, door_y + door_h * 0.25),
-            (door_x + door_w * 0.75, door_y + door_h * 0.75),
-            class_="thin",
-        )
-    )
+    
+    # Liquid Cooling strip (approx 10% width, smaller as requested)
+    cooling_w = w * 0.10
+    
+    if cooling_align == "left":
+        cooling_x = x + pad
+    else:
+        cooling_x = x + w - pad - cooling_w
 
-    grill_w = door_w * 0.6
-    grill_h = h * 0.4
-    grill_x = x + w - grill_w - pad if not mirrored else x + pad
-    grill_y = y + h * 0.15
-    dwg.add(dwg.rect(insert=(grill_x, grill_y), size=(grill_w, grill_h), class_="thin"))
-    for i in range(3):
-        gy = grill_y + (i + 1) * grill_h / 4
-        dwg.add(dwg.line((grill_x + 2, gy), (grill_x + grill_w - 2, gy), class_="thin"))
+    cooling_y = y + pad
+    cooling_h = h - 2 * pad
+    
+    dwg.add(dwg.rect(insert=(cooling_x, cooling_y), size=(cooling_w, cooling_h), class_="thin"))
+    # Add text "COOLING" vertically or small text
+    cx = cooling_x + cooling_w/2
+    cy = cooling_y + cooling_h/2
+    dwg.add(dwg.text("COOLING", insert=(cx, cy), 
+                     class_="dim-text", text_anchor="middle", transform=f"rotate(90, {cx}, {cy})"))
 
-    rack_x = x + pad + (door_w + pad if not mirrored else grill_w + pad)
-    rack_w = w - (pad * 3 + door_w + grill_w)
-    rack_y = y + pad
-    rack_h = h - 2 * pad
-    if rack_w <= 2 or rack_h <= 2:
-        return
-    cols = 3
-    rack_gap = max(2.0, rack_w * 0.05)
-    cell_w = max(1.0, (rack_w - rack_gap * (cols - 1)) / cols)
-    for c in range(cols):
-        cx = rack_x + c * (cell_w + rack_gap)
-        dwg.add(dwg.rect(insert=(cx, rack_y), size=(cell_w, rack_h), class_="thin"))
+    # Battery modules grid: 1 row x 6 columns = 6 modules
+    # Grid occupies remaining area
+    grid_w = w - 2 * pad - cooling_w - pad
+    grid_h = h - 2 * pad
+    
+    if cooling_align == "left":
+        grid_x_start = x + pad + cooling_w + pad
+    else:
+        grid_x_start = x + pad
+
+    grid_y_start = y + pad
+    
+    cols = 6
+    rows = 1
+    
+    # Calculate module dimensions with inter-module spacing
+    module_spacing = max(2.0, min(grid_w, grid_h) * 0.03)
+    module_w = (grid_w - module_spacing * (cols - 1)) / cols
+    module_h = grid_h
+    
+    # Draw 6 battery modules
+    for row in range(rows):
+        for col in range(cols):
+            mod_x = grid_x_start + col * (module_w + module_spacing)
+            mod_y = grid_y_start + row * (module_h + module_spacing)
+            
+            # Draw module rectangle
+            dwg.add(dwg.rect(insert=(mod_x, mod_y), size=(module_w, module_h), class_="thin"))
 
 
-def _draw_ac_interior(dwg, x, y, w, h, skid_text: str):
+def _draw_ac_interior(dwg, x, y, w, h, skid_text: str, pcs_start_index: int = 1):
+    """
+    Draw AC Block (PCS&MVT SKID) interior.
+    Represents power conversion and transformation area.
+    """
     pcs_w = w * 0.55
     tr_w = w * 0.3
     rmu_w = w - pcs_w - tr_w
@@ -163,17 +185,28 @@ def _draw_ac_interior(dwg, x, y, w, h, skid_text: str):
     dwg.add(dwg.line((split_1, y), (split_1, y + h), class_="thin"))
     dwg.add(dwg.line((split_2, y), (split_2, y + h), class_="thin"))
 
-    dwg.add(dwg.text("PCS", insert=(x + 6, y + 16), class_="dim-text"))
     dwg.add(dwg.text("Transformer", insert=(split_1 + 6, y + 16), class_="dim-text"))
     dwg.add(dwg.text("RMU", insert=(split_2 + 6, y + 16), class_="dim-text"))
 
+    # PCS area: show 2 or 4 PCS modules depending on block config
     pcs_pad = max(4.0, pcs_w * 0.06)
-    cabinet_w = max(6.0, (pcs_w - pcs_pad * 4) / 3)
-    cabinet_h = h - pcs_pad * 2
-    for i in range(3):
-        cx = x + pcs_pad + i * (cabinet_w + pcs_pad)
-        dwg.add(dwg.rect(insert=(cx, y + pcs_pad), size=(cabinet_w, cabinet_h), class_="thin"))
+    # Typically 2 or 4 PCS per block
+    pcs_cols = 2
+    pcs_rows = 2
+    cabinet_w = (pcs_w - pcs_pad * (pcs_cols + 1)) / pcs_cols
+    cabinet_h = (h - pcs_pad * 2) / pcs_rows
+    
+    current_pcs = pcs_start_index
+    for row in range(pcs_rows):
+        for col in range(pcs_cols):
+            cx = x + pcs_pad + col * (cabinet_w + pcs_pad)
+            cy = y + pcs_pad + row * (cabinet_h + pcs_pad * 0.5)
+            dwg.add(dwg.rect(insert=(cx, cy), size=(cabinet_w, cabinet_h), class_="thin"))
+            # Add PCS unit label
+            dwg.add(dwg.text(f"PCS-{current_pcs}", insert=(cx + cabinet_w/2, cy + cabinet_h/2 + 4), class_="dim-text", text_anchor="middle"))
+            current_pcs += 1
 
+    # Transformer area: show transformer symbol
     tr_pad = max(5.0, tr_w * 0.08)
     dwg.add(
         dwg.rect(
@@ -192,7 +225,8 @@ def _draw_ac_interior(dwg, x, y, w, h, skid_text: str):
         )
     )
 
-    dwg.add(dwg.text(skid_text, insert=(x + w / 2, y + h / 2 + 4), class_="label", text_anchor="middle"))
+    # Move label to top of AC Block
+    dwg.add(dwg.text(skid_text, insert=(x + w / 2, y - 8), class_="label", text_anchor="middle"))
 
 
 def _svg_to_data_uri(path: Path) -> str | None:
@@ -252,46 +286,67 @@ def _draw_v_dimension_raw(lines, y1, y2, x, ext_x, text):
     _svg_text(lines, text, x + 6, (y1 + y2) / 2, class_name="dim-text")
 
 
-def _draw_dc_interior_raw(lines, x, y, w, h, mirrored: bool = False):
+def _draw_dc_interior_raw(lines, x, y, w, h, mirrored: bool = False, cooling_align: str = "right"):
+    """
+    Draw DC Block (BESS) interior with 6 battery module racks + Liquid Cooling (raw SVG).
+    Clean design: 6 rectangles (1x6 single row) representing battery racks.
+    Right side: Liquid Cooling strip.
+    """
     pad = min(10.0, max(4.0, w * 0.06))
-    door_w = max(6.0, w * 0.12)
-    door_h = h * 0.35
-    door_x = x + pad if not mirrored else x + w - door_w - pad
-    door_y = y + h * 0.15
-    _svg_rect(lines, door_x, door_y, door_w, door_h, class_name="thin")
-    _svg_line(
-        lines,
-        door_x + door_w * 0.75,
-        door_y + door_h * 0.25,
-        door_x + door_w * 0.75,
-        door_y + door_h * 0.75,
-        class_name="thin",
-    )
+    
+    # Liquid Cooling strip (approx 10% width)
+    cooling_w = w * 0.10
+    
+    if cooling_align == "left":
+        cooling_x = x + pad
+    else:
+        cooling_x = x + w - pad - cooling_w
 
-    grill_w = door_w * 0.6
-    grill_h = h * 0.4
-    grill_x = x + w - grill_w - pad if not mirrored else x + pad
-    grill_y = y + h * 0.15
-    _svg_rect(lines, grill_x, grill_y, grill_w, grill_h, class_name="thin")
-    for i in range(3):
-        gy = grill_y + (i + 1) * grill_h / 4
-        _svg_line(lines, grill_x + 2, gy, grill_x + grill_w - 2, gy, class_name="thin")
+    cooling_y = y + pad
+    cooling_h = h - 2 * pad
+    
+    _svg_rect(lines, cooling_x, cooling_y, cooling_w, cooling_h, class_name="thin")
+    # Add text "COOLING" vertically
+    cx = cooling_x + cooling_w/2
+    cy = cooling_y + cooling_h/2
+    # SVG transform rotate is around a point
+    lines.append(f'<text x="{cx:.1f}" y="{cy:.1f}" class="dim-text" text-anchor="middle" transform="rotate(90, {cx:.1f}, {cy:.1f})">COOLING</text>')
 
-    rack_x = x + pad + (door_w + pad if not mirrored else grill_w + pad)
-    rack_w = w - (pad * 3 + door_w + grill_w)
-    rack_y = y + pad
-    rack_h = h - 2 * pad
-    if rack_w <= 2 or rack_h <= 2:
-        return
-    cols = 3
-    rack_gap = max(2.0, rack_w * 0.05)
-    cell_w = max(1.0, (rack_w - rack_gap * (cols - 1)) / cols)
-    for c in range(cols):
-        cx = rack_x + c * (cell_w + rack_gap)
-        _svg_rect(lines, cx, rack_y, cell_w, rack_h, class_name="thin")
+    # Battery modules grid: 1 row x 6 columns = 6 modules
+    # Grid occupies remaining area
+    grid_w = w - 2 * pad - cooling_w - pad
+    grid_h = h - 2 * pad
+    
+    if cooling_align == "left":
+        grid_x_start = x + pad + cooling_w + pad
+    else:
+        grid_x_start = x + pad
+
+    grid_y_start = y + pad
+    
+    cols = 6
+    rows = 1
+    
+    # Calculate module dimensions with inter-module spacing
+    module_spacing = max(2.0, min(grid_w, grid_h) * 0.03)
+    module_w = (grid_w - module_spacing * (cols - 1)) / cols
+    module_h = grid_h
+    
+    # Draw 6 battery modules
+    for row in range(rows):
+        for col in range(cols):
+            mod_x = grid_x_start + col * (module_w + module_spacing)
+            mod_y = grid_y_start + row * (module_h + module_spacing)
+            
+            # Draw module rectangle
+            _svg_rect(lines, mod_x, mod_y, module_w, module_h, class_name="thin")
 
 
-def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str):
+def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str, pcs_start_index: int = 1):
+    """
+    Draw AC Block (PCS&MVT SKID) interior (raw SVG).
+    Represents power conversion and transformation area.
+    """
     pcs_w = w * 0.55
     tr_w = w * 0.3
     rmu_w = w - pcs_w - tr_w
@@ -303,28 +358,37 @@ def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str):
     split_2 = split_1 + tr_w
     _svg_line(lines, split_1, y, split_1, y + h, class_name="thin")
     _svg_line(lines, split_2, y, split_2, y + h, class_name="thin")
-    _svg_text(lines, "PCS", x + 6, y + 16, class_name="dim-text")
     _svg_text(lines, "Transformer", split_1 + 6, y + 16, class_name="dim-text")
     _svg_text(lines, "RMU", split_2 + 6, y + 16, class_name="dim-text")
 
+    # PCS area: show 2x2 grid of PCS modules
     pcs_pad = max(4.0, pcs_w * 0.06)
-    cabinet_w = max(6.0, (pcs_w - pcs_pad * 4) / 3)
-    cabinet_h = h - pcs_pad * 2
-    for i in range(3):
-        cx = x + pcs_pad + i * (cabinet_w + pcs_pad)
-        _svg_rect(lines, cx, y + pcs_pad, cabinet_w, cabinet_h, class_name="thin")
+    pcs_cols = 2
+    pcs_rows = 2
+    cabinet_w = (pcs_w - pcs_pad * (pcs_cols + 1)) / pcs_cols
+    cabinet_h = (h - pcs_pad * 2) / pcs_rows
+    
+    current_pcs = pcs_start_index
+    for row in range(pcs_rows):
+        for col in range(pcs_cols):
+            cx = x + pcs_pad + col * (cabinet_w + pcs_pad)
+            cy = y + pcs_pad + row * (cabinet_h + pcs_pad * 0.5)
+            _svg_rect(lines, cx, cy, cabinet_w, cabinet_h, class_name="thin")
+            _svg_text(lines, f"PCS-{current_pcs}", cx + cabinet_w/2, cy + cabinet_h/2 + 4, class_name="dim-text", anchor="middle")
+            current_pcs += 1
 
+    # Transformer area
     tr_pad = max(5.0, tr_w * 0.08)
     _svg_rect(lines, split_1 + tr_pad, y + tr_pad, tr_w - tr_pad * 2, h - tr_pad * 2, class_name="thin")
 
     rmu_pad = max(4.0, rmu_w * 0.12)
     _svg_rect(lines, split_2 + rmu_pad, y + rmu_pad, rmu_w - rmu_pad * 2, h - rmu_pad * 2, class_name="thin")
 
-    _svg_text(lines, skid_text, x + w / 2, y + h / 2 + 4, class_name="label", anchor="middle")
+    _svg_text(lines, skid_text, x + w / 2, y - 8, class_name="label", anchor="middle")
 
 
 def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
-    scale = 0.04
+    scale = _safe_float(getattr(spec, "scale", 0.04), 0.04)
     container_len = max(1.0, _safe_float(spec.container_length_mm, 6058)) * scale
     container_w = max(1.0, _safe_float(spec.container_width_mm, 2438)) * scale
 
@@ -333,8 +397,8 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
     ac_gap = _gap_px(spec.dc_to_ac_clearance_m, scale, fallback_gap)
     perimeter_px = _m_to_px(spec.perimeter_clearance_m, scale)
 
-    left_margin = 40
-    top_margin = 40
+    left_margin = _safe_int(getattr(spec, "left_margin", 40), 40)
+    top_margin = _safe_int(getattr(spec, "top_margin", 40), 40)
     gap_y = 50
     inner_pad = 10
     title_h = 22
@@ -409,6 +473,7 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
 
     block_offset = 0
     current_y = top_margin
+    pcs_global_counter = 1
     for block in blocks:
         block_index = block["block_index"]
         dc_count = block["dc_count"]
@@ -446,10 +511,14 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
                 cell_x = dc_array_x + c * (container_len + dc_gap)
                 cell_y = dc_array_y + r * (container_w + dc_gap)
                 _svg_rect(lines, cell_x, cell_y, container_len, container_w)
+
+                # Mirroring logic: Left column (c=0) has cooling on left, Right column (c=1) has cooling on right
+                cooling_align = "left" if (c % 2 == 0) else "right"
+
                 _draw_dc_interior_raw(
-                    lines, cell_x, cell_y, container_len, container_w, mirrored=spec.dc_block_mirrored
+                    lines, cell_x, cell_y, container_len, container_w, mirrored=spec.dc_block_mirrored, cooling_align=cooling_align
                 )
-                _svg_text(lines, "DC Block", cell_x + 6, cell_y + 18)
+                # _svg_text(lines, "DC Block", cell_x + 6, cell_y + 18)
 
         bess_text = bess_text_template.format(start=start, end=end)
         _svg_text(lines, bess_text, dc_array_x, dc_array_y + dc_h + 18)
@@ -458,7 +527,8 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
             skid_x = dc_array_x + dc_w + ac_gap
             skid_y = dc_array_y
             _svg_rect(lines, skid_x, skid_y, container_len, container_w)
-            _draw_ac_interior_raw(lines, skid_x, skid_y, container_len, container_w, skid_text)
+            _draw_ac_interior_raw(lines, skid_x, skid_y, container_len, container_w, skid_text, pcs_start_index=pcs_global_counter)
+            pcs_global_counter += 4
             if skid_subtext:
                 _svg_text(lines, skid_subtext, skid_x + 6, skid_y + container_w - 10, class_name="dim-text")
 
@@ -503,7 +573,7 @@ def render_layout_block_svg(
         return out_svg, "Pro renderer unavailable; fallback to raw SVG."
     out_svg = Path(out_svg)
 
-    scale = 0.04
+    scale = _safe_float(getattr(spec, "scale", 0.04), 0.04)
     container_len = max(1.0, _safe_float(spec.container_length_mm, 6058)) * scale
     container_w = max(1.0, _safe_float(spec.container_width_mm, 2438)) * scale
 
@@ -512,8 +582,8 @@ def render_layout_block_svg(
     ac_gap = _gap_px(spec.dc_to_ac_clearance_m, scale, fallback_gap)
     perimeter_px = _m_to_px(spec.perimeter_clearance_m, scale)
 
-    left_margin = 40
-    top_margin = 40
+    left_margin = _safe_int(getattr(spec, "left_margin", 40), 40)
+    top_margin = _safe_int(getattr(spec, "top_margin", 40), 40)
     gap_y = 50
     inner_pad = 10
     title_h = 22
@@ -605,6 +675,7 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
 
     block_offset = 0
     current_y = top_margin
+    pcs_global_counter = 1
     for block in blocks:
         block_index = block["block_index"]
         dc_count = block["dc_count"]
@@ -641,6 +712,10 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
                     continue
                 cell_x = dc_array_x + c * (container_len + dc_gap)
                 cell_y = dc_array_y + r * (container_w + dc_gap)
+                
+                # Mirroring logic: Left column (c=0) has cooling on left, Right column (c=1) has cooling on right
+                cooling_align = "left" if (c % 2 == 0) else "right"
+
                 if use_template and dc_template_uri and not spec.dc_block_mirrored:
                     dwg.add(
                         dwg.image(
@@ -649,7 +724,7 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
                             size=(container_len, container_w),
                         )
                     )
-                    _draw_dc_interior(dwg, cell_x, cell_y, container_len, container_w, mirrored=False)
+                    _draw_dc_interior(dwg, cell_x, cell_y, container_len, container_w, mirrored=False, cooling_align=cooling_align)
                 else:
                     dwg.add(
                         dwg.rect(
@@ -659,9 +734,9 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
                         )
                     )
                     _draw_dc_interior(
-                        dwg, cell_x, cell_y, container_len, container_w, mirrored=spec.dc_block_mirrored
+                        dwg, cell_x, cell_y, container_len, container_w, mirrored=spec.dc_block_mirrored, cooling_align=cooling_align
                     )
-                dwg.add(dwg.text("DC Block", insert=(cell_x + 6, cell_y + 18), class_="label"))
+                dwg.add(dwg.text("", insert=(cell_x + 6, cell_y + 18), class_="label"))
 
         bess_text = bess_text_template.format(start=start, end=end)
         dwg.add(dwg.text(bess_text, insert=(dc_array_x, dc_array_y + dc_h + 18), class_="label"))
@@ -679,7 +754,8 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
                 )
             else:
                 dwg.add(dwg.rect(insert=(skid_x, skid_y), size=(container_len, container_w), class_="outline"))
-            _draw_ac_interior(dwg, skid_x, skid_y, container_len, container_w, skid_text)
+            _draw_ac_interior(dwg, skid_x, skid_y, container_len, container_w, skid_text, pcs_start_index=pcs_global_counter)
+            pcs_global_counter += 4  # Assuming 4 units per block (2x2)
             if skid_subtext:
                 dwg.add(dwg.text(skid_subtext, insert=(skid_x + 6, skid_y + container_w - 10), class_="dim-text"))
 

@@ -9,9 +9,12 @@ User=calb
 EnvironmentFile=/etc/calb-sizingtool/%i.env
 WorkingDirectory=/opt/calb/%i/CALB_SIZINGTOOL
 Environment=NGROK_CONFIG=/home/calb/.config/ngrok/ngrok.yml
-ExecStart=/usr/local/bin/calb-ngrok-wrapper http ${PORT}
-Restart=always
-RestartSec=5
+ExecStart=/usr/local/bin/calb-ngrok-wrapper %i
+# Use conservative restart policy to avoid tight restart loops when ngrok errors occur
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=60
+StartLimitBurst=5
 StandardOutput=journal
 StandardError=journal
 

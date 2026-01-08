@@ -174,6 +174,182 @@ def _svg_bytes_to_png(svg_bytes: bytes, width_px: int = 900) -> Optional[bytes]:
         return None
 
 
+def _validate_efficiency_chain(ctx: ReportContext) -> list[str]:
+    """Validate that efficiency chain data is complete and self-consistent.
+    
+    Ensures all values come from DC SIZING stage1 output and are internally consistent.
+    Returns list of warning/error messages (does not block export, but logs issues).
+    Caller should log these warnings.
+    
+    NOTE: This validation is advisory only. Efficiency values are sourced directly
+    from DC SIZING stage1 output. If DC SIZING was not run or values are missing,
+    the report will still be generated but this function will warn.
+    """
+    warnings = []
+    
+    # Verify efficiency values came from stage1 (DC SIZING output)
+    if not ctx.stage1 or not isinstance(ctx.stage1, dict):
+        warnings.append("Cannot validate efficiency: stage1 (DC SIZING output) is missing or invalid. "
+                       "Ensure DC SIZING was completed before exporting.")
+        return warnings
+    
+    # Check all components are present (not None/zero)
+    components = [
+        ("DC Cables", ctx.efficiency_components_frac.get("eff_dc_cables_frac")),
+        ("PCS", ctx.efficiency_components_frac.get("eff_pcs_frac")),
+        ("Transformer (MVT)", ctx.efficiency_components_frac.get("eff_mvt_frac")),
+        ("RMU/Switchgear/AC Cables", ctx.efficiency_components_frac.get("eff_ac_cables_sw_rmu_frac")),
+        ("HVT/Others", ctx.efficiency_components_frac.get("eff_hvt_others_frac")),
+    ]
+    
+    has_all_components = True
+    for name, value in components:
+        if value is None or value <= 0:
+            warnings.append(f"Efficiency component '{name}' is missing or zero: {value}. "
+                           f"Efficiency values should come from DC SIZING stage1 output.")
+            has_all_components = False
+        elif value > 1.2:  # Allow some margin (e.g., 105% input)
+            warnings.append(f"Efficiency component '{name}' exceeds 120%: {value}")
+    
+    # Check total efficiency
+    if ctx.efficiency_chain_oneway_frac is None or ctx.efficiency_chain_oneway_frac <= 0:
+        warnings.append(f"Total one-way efficiency chain is missing or zero: {ctx.efficiency_chain_oneway_frac}. "
+                       f"Ensure DC SIZING was completed.")
+    elif ctx.efficiency_chain_oneway_frac > 1.2:
+        warnings.append(f"Total one-way efficiency exceeds 120%: {ctx.efficiency_chain_oneway_frac}")
+    
+    # If all components present, verify total is their product (with tolerance)
+    if has_all_components and ctx.efficiency_chain_oneway_frac and ctx.efficiency_chain_oneway_frac > 0:
+        product = 1.0
+        for name, value in components:
+            if value and value > 0:
+                product *= value
+        # Allow 2% tolerance for rounding and numerical precision
+        relative_error = abs(product - ctx.efficiency_chain_oneway_frac) / ctx.efficiency_chain_oneway_frac if ctx.efficiency_chain_oneway_frac != 0 else 0
+        if relative_error > 0.02:
+            warnings.append(
+                f"Total efficiency ({ctx.efficiency_chain_oneway_frac:.6f}) "
+                f"does not match product of components ({product:.6f}). "
+                f"Relative error: {relative_error*100:.2f}%. "
+                f"Please verify DC SIZING stage1 calculation is complete and consistent."
+            )
+    
+    # Warn if efficiency chain appears uninitialized (less than 0.1% = 0.001)
+    if ctx.efficiency_chain_oneway_frac is not None and ctx.efficiency_chain_oneway_frac < 0.001:
+        warnings.append("Efficiency chain appears to be zero or uninitialized; "
+                       "ensure DC SIZING was completed before exporting.")
+    
+    return warnings
+
+
+def _aggregate_ac_block_configs(ctx: ReportContext) -> list[dict]:
+    """Aggregate AC Block configurations by signature (PCS count, rating, power per block).
+    
+    Returns list of dicts: [{"pcs_per_block": int, "pcs_kw": int, "ac_block_power_mw": float, "count": int}, ...]
+    All blocks are typically identical, but function handles exceptions.
+    """
+    if ctx.ac_blocks_total == 0:
+        return []
+    
+    # Build the single (or primary) configuration from context
+    pcs_per_block = ctx.pcs_per_block
+    
+    # Try to get PCS rating from ac_output, fallback to computation
+    pcs_kw = None
+    if isinstance(ctx.ac_output, dict) and ctx.ac_output.get("pcs_kw"):
+        pcs_kw = ctx.ac_output.get("pcs_kw")
+    
+    if pcs_kw is None and isinstance(ctx.ac_output, dict):
+        pcs_kw = ctx.ac_output.get("pcs_power_kw")
+    
+    ac_block_power_mw = ctx.ac_block_size_mw
+    
+    # If still no PCS kW and we have block power, derive it
+    if pcs_kw is None and ac_block_power_mw and pcs_per_block and pcs_per_block > 0:
+        pcs_kw = int((ac_block_power_mw * 1000) / pcs_per_block)
+    
+    # For now, assume all AC blocks use the same configuration
+    # (Future: parse pcs_count_by_block if blocks are heterogeneous)
+    return [
+        {
+            "pcs_per_block": pcs_per_block,
+            "pcs_kw": pcs_kw,
+            "ac_block_power_mw": ac_block_power_mw,
+            "count": ctx.ac_blocks_total,
+        }
+    ]
+
+
+def _validate_report_consistency(ctx: ReportContext) -> list[str]:
+    """Validate overall report consistency (power/energy/efficiency).
+    
+    Returns list of warning messages (does not block export, only for logging/QC).
+    Warnings address: power balance, energy consistency, efficiency completeness,
+    unit consistency, and contract compliance (guarantee year).
+    """
+    warnings = []
+    
+    # Efficiency chain validation (source and internal consistency)
+    eff_warnings = _validate_efficiency_chain(ctx)
+    warnings.extend(eff_warnings)
+    
+    # AC/DC counts consistency
+    if ctx.ac_blocks_total > 0 and ctx.dc_blocks_total == 0:
+        warnings.append("AC Blocks present but DC Blocks count is zero.")
+    
+    # PCS count consistency
+    expected_pcs = ctx.ac_blocks_total * ctx.pcs_per_block
+    if ctx.pcs_modules_total > 0 and ctx.pcs_modules_total != expected_pcs:
+        warnings.append(
+            f"PCS module count mismatch: expected {expected_pcs} "
+            f"(AC blocks={ctx.ac_blocks_total} × PCS/block={ctx.pcs_per_block}), "
+            f"got {ctx.pcs_modules_total}."
+        )
+    
+    # AC power consistency (with tolerance for rounding and intentional overbuild)
+    if ctx.ac_blocks_total > 0 and ctx.ac_block_size_mw and ctx.ac_block_size_mw > 0:
+        total_ac_power = ctx.ac_blocks_total * ctx.ac_block_size_mw
+        poi_requirement = ctx.poi_power_requirement_mw
+        
+        # Allow 10% tolerance for overbuild (common in BESS sizing)
+        overage = total_ac_power - poi_requirement
+        overage_pct = (overage / poi_requirement * 100) if poi_requirement > 0 else 0
+        if overage > 0.5:  # At least 0.5 MW overbuild is notable
+            if overage_pct > 10:
+                warnings.append(
+                    f"AC power overbuild is {overage_pct:.1f}% "
+                    f"(total {total_ac_power:.2f} MW vs requirement {poi_requirement:.2f} MW). "
+                    f"This may be intentional or may indicate AC undersizing in the ratio; "
+                    f"verify DC-to-AC ratio selection."
+                )
+    
+    # Energy consistency: DC energy should meet POI requirement (through degradation modeling)
+    if ctx.dc_total_energy_mwh is not None and ctx.poi_energy_requirement_mwh is not None:
+        if ctx.dc_total_energy_mwh < ctx.poi_energy_requirement_mwh:
+            warnings.append(
+                f"DC nameplate capacity ({ctx.dc_total_energy_mwh:.2f} MWh) is less than "
+                f"POI requirement ({ctx.poi_energy_requirement_mwh:.2f} MWh). "
+                f"This is expected; degradation modeling determines actual delivery."
+            )
+    
+    # POI usable vs guarantee
+    if (ctx.poi_usable_energy_mwh_at_guarantee_year is not None and 
+        ctx.poi_energy_guarantee_mwh is not None):
+        if ctx.poi_usable_energy_mwh_at_guarantee_year + 0.1 < ctx.poi_energy_guarantee_mwh:
+            warnings.append(
+                f"POI usable energy at guarantee year ({ctx.poi_usable_energy_mwh_at_guarantee_year:.2f} MWh) "
+                f"is below guarantee target ({ctx.poi_energy_guarantee_mwh:.2f} MWh)."
+            )
+    
+    # Guarantee year within project life
+    if ctx.poi_guarantee_year > ctx.project_life_years:
+        warnings.append(
+            f"Guarantee year ({ctx.poi_guarantee_year}) exceeds project life ({ctx.project_life_years} years)."
+        )
+    
+    return warnings
+
+
 def export_report_v2_1(ctx: ReportContext) -> bytes:
     doc = Document()
     _setup_margins(doc)
@@ -235,46 +411,45 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
         ("Grid Power Factor (PF)", format_value(ctx.grid_power_factor, "PF")),
     ]
     _add_table(doc, site_rows, ["Parameter", "Value"])
-
-    doc.add_heading("Battery & Degradation", level=3)
-    battery_rows = [
-        ("DoD", format_percent(ctx.stage1.get("dod_frac"), input_is_fraction=True)),
-        ("SC Loss", format_percent(ctx.stage1.get("sc_loss_frac"), input_is_fraction=True)),
-        ("Cycles per Year", f"{ctx.cycles_per_year:d}"),
-        ("Project Life (years)", f"{ctx.project_life_years:d}"),
-    ]
-    _add_table(doc, battery_rows, ["Parameter", "Value"])
-
-    doc.add_heading("Efficiency Chain (one-way)", level=3)
-    eff_rows = [
-        ("Total Efficiency (one-way)", format_percent(ctx.efficiency_chain_oneway_frac, input_is_fraction=True)),
-        ("DC Cables", format_percent(ctx.efficiency_components_frac.get("eff_dc_cables_frac"), input_is_fraction=True)),
-        ("PCS", format_percent(ctx.efficiency_components_frac.get("eff_pcs_frac"), input_is_fraction=True)),
-        ("Transformer", format_percent(ctx.efficiency_components_frac.get("eff_mvt_frac"), input_is_fraction=True)),
-        ("RMU / Switchgear / AC Cables", format_percent(ctx.efficiency_components_frac.get("eff_ac_cables_sw_rmu_frac"), input_is_fraction=True)),
-        ("HVT / Others", format_percent(ctx.efficiency_components_frac.get("eff_hvt_others_frac"), input_is_fraction=True)),
-    ]
-    _add_table(doc, eff_rows, ["Component", "Value"])
     doc.add_paragraph("")
 
     doc.add_heading("Stage 1: Energy Requirement", level=2)
     doc.add_paragraph(
         "DC energy capacity required (MWh) = POI energy requirement / "
-        "((1 - SC loss) * DoD * sqrt(DC RTE) * eta_chain_oneway)."
+        "((1 - SC loss) * DoD * sqrt(DC RTE) * One-way Efficiency (DC to POI))."
     )
     doc.add_paragraph(
-        f"eta_chain_oneway = {_format_percent_with_fraction(ctx.efficiency_chain_oneway_frac, input_is_fraction=True)}"
+        f"One-way Efficiency (DC to POI) = {_format_percent_with_fraction(ctx.efficiency_chain_oneway_frac, input_is_fraction=True)}"
     )
     doc.add_paragraph(
-        f"SC loss = {_format_percent_with_fraction(ctx.stage1.get('sc_loss_frac'), input_is_fraction=True)}; "
-        f"DoD = {_format_percent_with_fraction(ctx.stage1.get('dod_frac'), input_is_fraction=True)}; "
-        f"DC RTE = {_format_percent_with_fraction(ctx.stage1.get('dc_round_trip_efficiency_frac'), input_is_fraction=True)}"
+        f"SC loss = {_format_percent_with_fraction(ctx.stage1.get('sc_loss_frac') or 0.0, input_is_fraction=True)}; "
+        f"DoD = {_format_percent_with_fraction(ctx.stage1.get('dod_frac') or 0.0, input_is_fraction=True)}; "
+        f"DC RTE = {_format_percent_with_fraction(ctx.stage1.get('dc_round_trip_efficiency_frac') or 0.0, input_is_fraction=True)}"
     )
     s1_rows = [
-        ("DC Energy Capacity Required (MWh)", format_value(ctx.stage1.get("dc_energy_capacity_required_mwh"), "MWh")),
-        ("DC Power Required (MW)", format_value(ctx.stage1.get("dc_power_required_mw"), "MW")),
+        ("DC Energy Capacity Required (MWh)", format_value(ctx.stage1.get("dc_energy_capacity_required_mwh") or 0.0, "MWh")),
+        ("DC Power Required (MW)", format_value(ctx.stage1.get("dc_power_required_mw") or 0.0, "MW")),
     ]
     _add_table(doc, s1_rows, ["Metric", "Value"])
+    
+    # Efficiency Chain breakdown
+    doc.add_paragraph("")
+    doc.add_heading("Efficiency Chain (one-way)", level=3)
+    doc.add_paragraph(
+        "Note: Efficiency chain values (below) represent the one-way conversion path from DC side to AC/POI. "
+        "All efficiency and loss values are exclusive of Auxiliary loads. "
+        "The product of all component efficiencies yields the total one-way chain efficiency."
+    )
+    
+    eff_rows = [
+        ("Total Efficiency (one-way)", format_percent(ctx.efficiency_chain_oneway_frac, input_is_fraction=True)),
+        ("DC Cables", format_percent(ctx.efficiency_components_frac.get("eff_dc_cables_frac"), input_is_fraction=True)),
+        ("PCS", format_percent(ctx.efficiency_components_frac.get("eff_pcs_frac"), input_is_fraction=True)),
+        ("Transformer (MVT)", format_percent(ctx.efficiency_components_frac.get("eff_mvt_frac"), input_is_fraction=True)),
+        ("RMU / Switchgear / AC Cables", format_percent(ctx.efficiency_components_frac.get("eff_ac_cables_sw_rmu_frac"), input_is_fraction=True)),
+        ("HVT / Others", format_percent(ctx.efficiency_components_frac.get("eff_hvt_others_frac"), input_is_fraction=True)),
+    ]
+    _add_table(doc, eff_rows, ["Component", "Value"])
     doc.add_paragraph("")
 
     doc.add_heading("Stage 2: DC Configuration", level=2)
@@ -301,7 +476,7 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
     doc.add_heading("Stage 3: Degradation & Deliverable at POI", level=2)
     s3_df = ctx.stage3_df
     if s3_df is not None and not s3_df.empty:
-        doc.add_paragraph("System RTE = DC RTE * (eta_chain_oneway)^2.")
+        doc.add_paragraph("System RTE = DC RTE * (One-way Efficiency)^2. Note: One-way Efficiency refers to DC-to-POI efficiency.")
         rte_dc = s3_df["DC_RTE_Pct"].astype(float)
         rte_sys = s3_df["System_RTE_Pct"].astype(float)
         rte_dc_min, rte_dc_max = float(rte_dc.min()), float(rte_dc.max())
@@ -332,33 +507,11 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
             available_years = set(s3_df["Year_Index"].astype(int).tolist())
         except Exception:
             available_years = set()
-        key_years = sorted(set([0, ctx.poi_guarantee_year, 5, 10, 15, 20]))
-        selected_years = [year for year in key_years if year in available_years]
-        if selected_years:
-            s3_df = s3_df[s3_df["Year_Index"].isin(selected_years)].copy()
+        
+        # Keep full data for chart (all years)
+        s3_df_full = s3_df.copy()
+        
 
-        s3_columns = [
-            "Year_Index",
-            "SOH_Absolute_Pct",
-            "DC_Usable_MWh",
-            "POI_Usable_Energy_MWh",
-            "Meets_Guarantee",
-        ]
-        headers_map = {
-            "Year_Index": "Year",
-            "SOH_Absolute_Pct": "SOH (%)",
-            "DC_Usable_MWh": "DC Usable (MWh)",
-            "POI_Usable_Energy_MWh": "POI Usable (MWh)",
-            "Meets_Guarantee": "Meets POI Guarantee",
-        }
-        formatters = {
-            "Year_Index": lambda v: f"{int(v)}",
-            "SOH_Absolute_Pct": lambda v: format_percent(v, input_is_fraction=False),
-            "DC_Usable_MWh": lambda v: format_value(v, "MWh"),
-            "POI_Usable_Energy_MWh": lambda v: format_value(v, "MWh"),
-            "Meets_Guarantee": lambda v: "Yes" if bool(v) else "No",
-        }
-        _add_dataframe_table(doc, s3_df, s3_columns, headers_map, formatters)
 
         cap_chart = _plot_dc_capacity_bar_png(
             bol_mwh=ctx.dc_total_energy_mwh,
@@ -371,18 +524,94 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
             doc.add_picture(cap_chart, width=Inches(6.7))
 
         chart = _plot_poi_usable_png(
-            s3_df,
+            s3_df_full,
             poi_target=ctx.poi_energy_guarantee_mwh,
             title="POI Usable Energy vs Year",
         )
         if chart is not None and chart.getbuffer().nbytes > 0:
             doc.add_paragraph("")
             doc.add_picture(chart, width=Inches(6.7))
-    else:
-        doc.add_paragraph("Stage 3 data unavailable.")
-    doc.add_paragraph("")
+        else:
+            # Show diagnostic if recompute failed
+            err = None
+            try:
+                err = ctx.stage3_meta.get("error") if isinstance(ctx.stage3_meta, dict) else None
+            except Exception:
+                err = None
+            if err:
+                doc.add_paragraph(f"Stage 3 data unavailable: {err}")
+            else:
+                doc.add_paragraph("Stage 3 data unavailable.")
+        # Add full year-by-year table after the chart
+        doc.add_paragraph("Year-by-Year Degradation & Deliverable at POI:")
+        s3_columns = [
+            "Year_Index",
+            "SOH_Display_Pct",
+            "SOH_Absolute_Pct",
+            "DC_Usable_MWh",
+            "POI_Usable_Energy_MWh",
+            "DC_RTE_Pct",
+            "System_RTE_Pct",
+        ]
+        headers_map = {
+            "Year_Index": "Year (From COD)",
+            "SOH_Display_Pct": "SOH @ COD Baseline (%)",
+            "SOH_Absolute_Pct": "SOH Vs FAT (%)",
+            "DC_Usable_MWh": "DC Usable (MWh)",
+            "POI_Usable_Energy_MWh": "POI Usable (MWh)",
+            "DC_RTE_Pct": "DC RTE (%)",
+            "System_RTE_Pct": "System RTE (%)",
+        }
+        formatters = {
+            "Year_Index": lambda v: f"{int(v)}",
+            "SOH_Display_Pct": lambda v: format_percent(v, input_is_fraction=False),
+            "SOH_Absolute_Pct": lambda v: format_percent(v, input_is_fraction=False),
+            "DC_Usable_MWh": lambda v: format_value(v, "MWh"),
+            "POI_Usable_Energy_MWh": lambda v: format_value(v, "MWh"),
+            "DC_RTE_Pct": lambda v: format_percent(v, input_is_fraction=False),
+            "System_RTE_Pct": lambda v: format_percent(v, input_is_fraction=False),
+        }
+        _add_dataframe_table(doc, s3_df_full, s3_columns, headers_map, formatters)
+        doc.add_paragraph("")
 
     doc.add_heading("Stage 4: AC Block Sizing", level=2)
+    
+    # Extract AC configuration data from ac_output and context
+    ac_ratio = ctx.ac_output.get("selected_ratio") if isinstance(ctx.ac_output, dict) else None
+    ac_pcs_per_block = ctx.ac_output.get("pcs_per_block") if isinstance(ctx.ac_output, dict) else ctx.pcs_per_block
+    # PCS kW: try ac_output.pcs_kw first, fallback to pcs_power_kw, then compute from AC block size
+    ac_pcs_kw = ctx.ac_output.get("pcs_kw") if isinstance(ctx.ac_output, dict) else None
+    if ac_pcs_kw is None and isinstance(ctx.ac_output, dict):
+        ac_pcs_kw = ctx.ac_output.get("pcs_power_kw")
+    dc_blocks_per_ac = ctx.ac_output.get("dc_blocks_per_ac") if isinstance(ctx.ac_output, dict) else None
+    
+    if ac_ratio:
+        doc.add_paragraph(f"AC:DC Ratio: {ac_ratio} (1 AC Block per specified DC Blocks)")
+        doc.add_paragraph("")
+    
+    # Show AC Block Configuration Summary if we have key data
+    if (ac_pcs_per_block and ctx.ac_blocks_total > 0) and (ac_pcs_kw or ctx.ac_block_size_mw):
+        doc.add_heading("AC Block Configuration Summary", level=3)
+        
+        # Use pcs_kw if available, otherwise derive from AC block power
+        pcs_rating = ac_pcs_kw
+        if pcs_rating is None and ctx.ac_block_size_mw and ac_pcs_per_block and ac_pcs_per_block > 0:
+            pcs_rating = (ctx.ac_block_size_mw * 1000) / ac_pcs_per_block
+        
+        ac_config_rows = [
+            ("PCS per AC Block", f"{ac_pcs_per_block}"),
+        ]
+        if pcs_rating:
+            ac_config_rows.append(("PCS Rating", f"{pcs_rating:.0f} kW"))
+            ac_config_rows.append(("AC Block Power per Block", f"{ac_pcs_per_block * pcs_rating / 1000:.2f} MW"))
+        ac_config_rows.append(("Total AC Blocks", f"{ctx.ac_blocks_total}"))
+        
+        if ac_ratio:
+            ac_config_rows.insert(0, ("AC:DC Ratio", ac_ratio))
+        
+        _add_table(doc, ac_config_rows, ["Parameter", "Value"])
+        doc.add_paragraph("")
+    
     transformer_mva = None
     if ctx.grid_power_factor and ctx.grid_power_factor > 0 and ctx.ac_block_size_mw:
         transformer_mva = ctx.ac_block_size_mw / ctx.grid_power_factor
@@ -464,6 +693,11 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
     doc.add_paragraph("")
 
     qc_checks = list(ctx.qc_checks)
+    
+    # Add consistency validation warnings
+    consistency_warnings = _validate_report_consistency(ctx)
+    qc_checks.extend(consistency_warnings)
+    
     percent_pairs = [
         (ctx.efficiency_chain_oneway_frac, format_percent(ctx.efficiency_chain_oneway_frac, input_is_fraction=True)),
         (ctx.stage1.get("dod_frac"), format_percent(ctx.stage1.get("dod_frac"), input_is_fraction=True)),

@@ -165,8 +165,8 @@ def _build_equipment_list(snapshot: dict) -> List[Tuple[str, str]]:
 def render_jp_pro_svg(snapshot: dict, out_svg: Path) -> None:
     out_svg = Path(out_svg)
 
-    width = 1400
-    height = 900
+    width = int(_safe_float(snapshot.get("svg_width"), 1400))
+    height = int(_safe_float(snapshot.get("svg_height"), 900))
     left_margin = 40
     left_col_width = 320
     diagram_left = left_margin + left_col_width + 40
