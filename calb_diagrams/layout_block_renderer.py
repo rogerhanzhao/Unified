@@ -168,7 +168,7 @@ def _draw_dc_interior(dwg, x, y, w, h, mirrored: bool = False, cooling_align: st
             dwg.add(dwg.rect(insert=(mod_x, mod_y), size=(module_w, module_h), class_="thin"))
 
 
-def _draw_ac_interior(dwg, x, y, w, h, skid_text: str):
+def _draw_ac_interior(dwg, x, y, w, h, skid_text: str, pcs_start_index: int = 1):
     """
     Draw AC Block (PCS&MVT SKID) interior.
     Represents power conversion and transformation area.
@@ -196,11 +196,15 @@ def _draw_ac_interior(dwg, x, y, w, h, skid_text: str):
     cabinet_w = (pcs_w - pcs_pad * (pcs_cols + 1)) / pcs_cols
     cabinet_h = (h - pcs_pad * 2) / pcs_rows
     
+    current_pcs = pcs_start_index
     for row in range(pcs_rows):
         for col in range(pcs_cols):
             cx = x + pcs_pad + col * (cabinet_w + pcs_pad)
             cy = y + pcs_pad + row * (cabinet_h + pcs_pad * 0.5)
             dwg.add(dwg.rect(insert=(cx, cy), size=(cabinet_w, cabinet_h), class_="thin"))
+            # Add PCS unit label
+            dwg.add(dwg.text(f"PCS-{current_pcs}", insert=(cx + cabinet_w/2, cy + cabinet_h/2 + 4), class_="dim-text", text_anchor="middle"))
+            current_pcs += 1
 
     # Transformer area: show transformer symbol
     tr_pad = max(5.0, tr_w * 0.08)
@@ -221,7 +225,8 @@ def _draw_ac_interior(dwg, x, y, w, h, skid_text: str):
         )
     )
 
-    dwg.add(dwg.text(skid_text, insert=(x + w / 2, y + h / 2 + 4), class_="label", text_anchor="middle"))
+    # Move label to top of AC Block
+    dwg.add(dwg.text(skid_text, insert=(x + w / 2, y - 8), class_="label", text_anchor="middle"))
 
 
 def _svg_to_data_uri(path: Path) -> str | None:
@@ -337,7 +342,7 @@ def _draw_dc_interior_raw(lines, x, y, w, h, mirrored: bool = False, cooling_ali
             _svg_rect(lines, mod_x, mod_y, module_w, module_h, class_name="thin")
 
 
-def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str):
+def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str, pcs_start_index: int = 1):
     """
     Draw AC Block (PCS&MVT SKID) interior (raw SVG).
     Represents power conversion and transformation area.
@@ -363,11 +368,14 @@ def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str):
     cabinet_w = (pcs_w - pcs_pad * (pcs_cols + 1)) / pcs_cols
     cabinet_h = (h - pcs_pad * 2) / pcs_rows
     
+    current_pcs = pcs_start_index
     for row in range(pcs_rows):
         for col in range(pcs_cols):
             cx = x + pcs_pad + col * (cabinet_w + pcs_pad)
             cy = y + pcs_pad + row * (cabinet_h + pcs_pad * 0.5)
             _svg_rect(lines, cx, cy, cabinet_w, cabinet_h, class_name="thin")
+            _svg_text(lines, f"PCS-{current_pcs}", cx + cabinet_w/2, cy + cabinet_h/2 + 4, class_name="dim-text", anchor="middle")
+            current_pcs += 1
 
     # Transformer area
     tr_pad = max(5.0, tr_w * 0.08)
@@ -376,7 +384,7 @@ def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str):
     rmu_pad = max(4.0, rmu_w * 0.12)
     _svg_rect(lines, split_2 + rmu_pad, y + rmu_pad, rmu_w - rmu_pad * 2, h - rmu_pad * 2, class_name="thin")
 
-    _svg_text(lines, skid_text, x + w / 2, y + h / 2 + 4, class_name="label", anchor="middle")
+    _svg_text(lines, skid_text, x + w / 2, y - 8, class_name="label", anchor="middle")
 
 
 def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
@@ -505,12 +513,7 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
                 _svg_rect(lines, cell_x, cell_y, container_len, container_w)
 
                 # Mirroring logic: Left column (c=0) has cooling on left, Right column (c=1) has cooling on right
-                # If DC block is mirrored globally, flip this logic
-                base_align = "left" if (c % 2 == 0) else "right"
-                if spec.dc_block_mirrored:
-                    cooling_align = "right" if base_align == "left" else "left"
-                else:
-                    cooling_align = base_align
+                cooling_align = "left" if (c % 2 == 0) else "right"
 
                 _draw_dc_interior_raw(
                     lines, cell_x, cell_y, container_len, container_w, mirrored=spec.dc_block_mirrored, cooling_align=cooling_align
@@ -711,12 +714,7 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
                 cell_y = dc_array_y + r * (container_w + dc_gap)
                 
                 # Mirroring logic: Left column (c=0) has cooling on left, Right column (c=1) has cooling on right
-                # If DC block is mirrored globally, flip this logic
-                base_align = "left" if (c % 2 == 0) else "right"
-                if spec.dc_block_mirrored:
-                    cooling_align = "right" if base_align == "left" else "left"
-                else:
-                    cooling_align = base_align
+                cooling_align = "left" if (c % 2 == 0) else "right"
 
                 if use_template and dc_template_uri and not spec.dc_block_mirrored:
                     dwg.add(
