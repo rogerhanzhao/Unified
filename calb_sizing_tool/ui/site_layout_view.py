@@ -143,7 +143,7 @@ def show():
     c_status5.metric("AC Blocks", ac_output.get("num_blocks") or "TBD")
 
     if not svgwrite_ok:
-        st.error("Missing dependency: svgwrite. Install with Requirement already satisfied: streamlit>=1.30.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 1)) (1.51.0)
+        st.error("Missing dependency: svgwrite. Install with `pip install svgwrite`.")
 Requirement already satisfied: pandas>=2.0.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 2)) (2.3.3)
 Requirement already satisfied: numpy>=1.24.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 3)) (2.2.6)
 Requirement already satisfied: openpyxl>=3.1.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 4)) (3.1.5)
@@ -418,7 +418,7 @@ Requirement already satisfied: attrs>=22.2.0 in /usr/local/lib/python3.10/dist-p
     generate_disabled = not has_prereq
     if style_id == "top_v10" and not svgwrite_ok:
         generate_disabled = True
-        st.error("Top-View rendering requires svgwrite. Install with Requirement already satisfied: svgwrite in /usr/local/lib/python3.10/dist-packages (1.4.3).")
+        st.error("Top-View rendering requires svgwrite. Install with `pip install svgwrite`.")
 
     generate = st.button("Generate Layout", disabled=generate_disabled)
 
