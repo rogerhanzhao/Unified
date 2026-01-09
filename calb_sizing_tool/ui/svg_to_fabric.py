@@ -183,15 +183,29 @@ def convert_svg_to_fabric(svg_path):
                 except:
                     font_size = 12
 
-                # Adjust for baseline difference between SVG and Fabric
-                # SVG y is baseline, Fabric top is top-left.
-                # Heuristic: subtract approx 0.8 * fontSize
-                top_adj = y - (font_size * 0.8)
+                # SVG text y is baseline; Fabric expects top-left corner
+                # Adjust by reducing y to move text up so baseline aligns with intended position
+                # Typical adjustment: -font_size * 0.75 (accounts for baseline offset)
+                fabric_top = y - font_size * 0.75
+
+                # Handle text-anchor attribute
+                # Re-calculate left based on text width estimation if anchor is not start
+                fabric_left = x
+                if anchor == 'middle':
+                    # SVG: x is center; Fabric: left is left edge
+                    # Estimate text width: avg 0.5 * font_size per character
+                    avg_char_width = font_size * 0.5
+                    text_width = len(text_content) * avg_char_width
+                    fabric_left = x - text_width / 2
+                elif anchor == 'end':
+                    avg_char_width = font_size * 0.5
+                    text_width = len(text_content) * avg_char_width
+                    fabric_left = x - text_width
 
                 obj = {
                     "type": "i-text",
-                    "left": x,
-                    "top": top_adj,
+                    "left": fabric_left,
+                    "top": fabric_top,
                     "originX": originX,
                     "text": text_content,
                     "fontSize": font_size,

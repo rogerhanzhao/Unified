@@ -107,11 +107,28 @@ def render_sld_pro_svg(snapshot: dict, output_path: str):
         # Connection from LV Bus to PCS
         dwg.add(dwg.line(start=(pcs_x, lv_y), end=(pcs_x, pcs_y), style=style_line))
         
-        # PCS Symbol (Rectangle with diagonal)
+        # PCS Symbol (Rectangle with diagonal and AC/DC indications)
         pcs_w = 40
         pcs_h = 40
+        # Draw box
         dwg.add(dwg.rect(insert=(pcs_x - pcs_w/2, pcs_y), size=(pcs_w, pcs_h), style=style_line))
+        # Draw diagonal line (bottom-left to top-right)
         dwg.add(dwg.line(start=(pcs_x - pcs_w/2, pcs_y + pcs_h), end=(pcs_x + pcs_w/2, pcs_y), style=style_line))
+        
+        # AC Symbol (~) in top-left triangle
+        # Position roughly: x - 10, y + 15
+        ac_sym_x = pcs_x - 12
+        ac_sym_y = pcs_y + 14
+        path_ac = f"M {ac_sym_x} {ac_sym_y} q 3 -5 6 0 t 6 0"
+        dwg.add(dwg.path(d=path_ac, stroke="black", stroke_width=1.5, fill="none"))
+        
+        # DC Symbol (=) in bottom-right triangle
+        # Position roughly: x + 2, y + 28
+        dc_sym_x = pcs_x + 2
+        dc_sym_y = pcs_y + 28
+        dwg.add(dwg.line(start=(dc_sym_x, dc_sym_y), end=(dc_sym_x + 12, dc_sym_y), stroke="black", stroke_width=1.5))
+        dwg.add(dwg.line(start=(dc_sym_x, dc_sym_y + 4), end=(dc_sym_x + 12, dc_sym_y + 4), stroke="black", stroke_width=1.5))
+        
         dwg.add(dwg.text("PCS", insert=(pcs_x - pcs_w/2, pcs_y - 5), style=style_text))
         
         # DC Busbar for this PCS (Independent)
@@ -145,17 +162,26 @@ def render_sld_pro_svg(snapshot: dict, output_path: str):
                 max_dc_x = max(max_dc_x, blk_x + 40)
                 
                 # DC Block Symbol (Battery)
+                # Two columns of battery cells
                 dwg.add(dwg.rect(insert=(blk_x, blk_y), size=(40, 60), style=style_line))
-                # Battery lines inside
-                dwg.add(dwg.line(start=(blk_x + 10, blk_y + 10), end=(blk_x + 30, blk_y + 10), style=style_line))
-                dwg.add(dwg.line(start=(blk_x + 15, blk_y + 20), end=(blk_x + 25, blk_y + 20), style=style_line))
-                dwg.add(dwg.line(start=(blk_x + 10, blk_y + 30), end=(blk_x + 30, blk_y + 30), style=style_line))
-                dwg.add(dwg.line(start=(blk_x + 15, blk_y + 40), end=(blk_x + 25, blk_y + 40), style=style_line))
+                
+                # Column 1 (left)
+                c1_x = blk_x + 10
+                for r in range(4):
+                    y_off = blk_y + 10 + r * 12
+                    dwg.add(dwg.line(start=(c1_x, y_off), end=(c1_x + 8, y_off), style=style_line)) # Long
+                    dwg.add(dwg.line(start=(c1_x + 2, y_off + 4), end=(c1_x + 6, y_off + 4), style=style_line)) # Short
+
+                # Column 2 (right)
+                c2_x = blk_x + 22
+                for r in range(4):
+                    y_off = blk_y + 10 + r * 12
+                    dwg.add(dwg.line(start=(c2_x, y_off), end=(c2_x + 8, y_off), style=style_line)) # Long
+                    dwg.add(dwg.line(start=(c2_x + 2, y_off + 4), end=(c2_x + 6, y_off + 4), style=style_line)) # Short
                 
                 # Connection to DC Busbar
-                # Draw two lines from top of block to DC busbar to show 2 circuits
-                dwg.add(dwg.line(start=(blk_x + 15, blk_y), end=(blk_x + 15, dc_bus_y), style=style_line))
-                dwg.add(dwg.line(start=(blk_x + 25, blk_y), end=(blk_x + 25, dc_bus_y), style=style_line))
+                # Draw single vertical line from top center of block to DC busbar
+                dwg.add(dwg.line(start=(blk_x + 20, blk_y), end=(blk_x + 20, dc_bus_y), style=style_line))
                 
     # Draw "Battery Storage Bank" dashed box
     # It should enclose all DC blocks.
