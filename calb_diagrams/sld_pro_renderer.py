@@ -11,13 +11,45 @@ def render_sld_pro_svg(snapshot: dict, output_path: str):
     """
     
     # Extract parameters from snapshot
-    inputs = snapshot.get("inputs", {})
+    is_spec_object = hasattr(snapshot, "group_index") and hasattr(snapshot, "layout_params")
     
-    # Canvas dimensions
-    width = inputs.get("svg_width", 1400)
-    height = inputs.get("svg_height", 900)
-    
-    dwg = svgwrite.Drawing(str(output_path), size=(width, height), profile='tiny')
+    if is_spec_object:
+        # It's an SldGroupSpec object
+        layout = snapshot.layout_params
+        width = layout.get("svg_width", 1400)
+        height = layout.get("svg_height", 900)
+        
+        project_name = getattr(snapshot, "project_name", "Project")
+        
+        mv_kv = snapshot.mv_voltage_kv
+        transformer_mva = snapshot.transformer_mva
+        lv_v = snapshot.lv_voltage_v_ll
+        
+        pcs_count = snapshot.pcs_count
+        if pcs_count <= 0:
+             pcs_count = 1
+             
+        dc_blocks_counts = snapshot.dc_blocks_per_feeder # List[int]
+        
+    else:
+        # It's a dict
+        inputs = snapshot.get("inputs", {})
+        width = inputs.get("svg_width", 1400)
+        height = inputs.get("svg_height", 900)
+        project_name = snapshot.get("project_name", "Project")
+        
+        mv_kv = inputs.get('mv_nominal_kv_ac', 33)
+        transformer_mva = inputs.get('transformer_rating_mva', 5)
+        lv_v = inputs.get('pcs_lv_voltage_v_ll', 690)
+        
+        pcs_count = len(inputs.get("pcs_rating_kw_list", []))
+        if pcs_count == 0:
+            pcs_count = 1 
+            
+        dc_blocks_raw = inputs.get("dc_blocks_by_feeder", [])
+        dc_blocks_counts = [d.get("dc_block_count", 0) for d in dc_blocks_raw]
+
+    dwg = svgwrite.Drawing(str(output_path), size=(width, height))
     
     # Styles
     # Define some basic styles
@@ -31,7 +63,6 @@ def render_sld_pro_svg(snapshot: dict, output_path: str):
     dwg.add(dwg.rect(insert=(0, 0), size=('100%', '100%'), fill='white'))
     
     # Title
-    project_name = snapshot.get("project_name", "Project")
     dwg.add(dwg.text(f"Single Line Diagram - {project_name}", insert=(20, 30), style=style_title))
     
     # Main drawing area
@@ -42,12 +73,6 @@ def render_sld_pro_svg(snapshot: dict, output_path: str):
     
     # Calculate positions
     # We assume one AC block group for now as per the view logic
-    
-    pcs_count = len(inputs.get("pcs_rating_kw_list", []))
-    if pcs_count == 0:
-        pcs_count = 1 # Fallback
-        
-    dc_blocks_by_feeder = inputs.get("dc_blocks_by_feeder", [])
     
     # Layout strategy:
     # Top: MV Grid / RMU
@@ -60,7 +85,7 @@ def render_sld_pro_svg(snapshot: dict, output_path: str):
     # MV Busbar (Top)
     mv_y = margin_y + 50
     dwg.add(dwg.line(start=(margin_x, mv_y), end=(width - margin_x, mv_y), style=style_busbar))
-    dwg.add(dwg.text(f"{inputs.get('mv_nominal_kv_ac', 33)} kV Bus", insert=(margin_x, mv_y - 10), style=style_text))
+    dwg.add(dwg.text(f"{mv_kv} kV Bus", insert=(margin_x, mv_y - 10), style=style_text))
     
     # RMU / Transformer connection
     # Draw a vertical line down from MV bus to Transformer
@@ -73,7 +98,7 @@ def render_sld_pro_svg(snapshot: dict, output_path: str):
     r = 15
     dwg.add(dwg.circle(center=(trans_x, trans_y + r), r=r, style=style_line))
     dwg.add(dwg.circle(center=(trans_x, trans_y + 3*r), r=r, style=style_line))
-    dwg.add(dwg.text(f"Transformer\n{inputs.get('transformer_rating_mva', 5)} MVA", insert=(trans_x + 25, trans_y + 2*r), style=style_text))
+    dwg.add(dwg.text(f"Transformer\n{transformer_mva} MVA", insert=(trans_x + 25, trans_y + 2*r), style=style_text))
     
     # LV Busbar
     lv_y = trans_y + 4*r + 30
@@ -83,7 +108,7 @@ def render_sld_pro_svg(snapshot: dict, output_path: str):
     
     dwg.add(dwg.line(start=(trans_x, trans_y + 4*r), end=(trans_x, lv_y), style=style_line))
     dwg.add(dwg.line(start=(lv_start_x, lv_y), end=(lv_end_x, lv_y), style=style_busbar))
-    dwg.add(dwg.text(f"{inputs.get('pcs_lv_voltage_v_ll', 690)} V Bus", insert=(lv_start_x, lv_y - 10), style=style_text))
+    dwg.add(dwg.text(f"{lv_v} V Bus", insert=(lv_start_x, lv_y - 10), style=style_text))
     
     # PCS and DC Blocks
     pcs_y = lv_y + 80
@@ -141,8 +166,8 @@ def render_sld_pro_svg(snapshot: dict, output_path: str):
         # DC Blocks for this PCS
         # Get block count for this feeder
         block_count = 0
-        if i < len(dc_blocks_by_feeder):
-            block_count = dc_blocks_by_feeder[i].get("dc_block_count", 0)
+        if i < len(dc_blocks_counts):
+            block_count = dc_blocks_counts[i]
             
         if block_count > 0:
             has_blocks = True
