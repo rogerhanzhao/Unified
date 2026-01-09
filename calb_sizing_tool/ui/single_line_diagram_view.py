@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from calb_diagrams.sld_pro_renderer import render_sld_pro_svg
+from calb_sizing_tool.sld.jp_pro_renderer import render_jp_pro_svg
 from calb_sizing_tool.common.allocation import allocate_dc_blocks, evenly_distribute
 from calb_sizing_tool.common.dependencies import check_dependencies
 from calb_sizing_tool.common.preferences import load_preferences, save_preferences
@@ -464,11 +464,7 @@ def show():
     )
     if generate:
         try:
-            if not svgwrite_ok:
-                st.error("Rendering requires svgwrite. Install with Requirement already satisfied: svgwrite in /usr/local/lib/python3.10/dist-packages (1.4.3).")
-                svg_bytes = None
-                png_bytes = None
-            else:
+            # svgwrite not required for jp_pro_renderer; proceed to render
                 dc_blocks_by_feeder = []
                 for idx, count in enumerate(dc_blocks_per_feeder, start=1):
                     dc_blocks_by_feeder.append(
@@ -488,7 +484,7 @@ def show():
                 with tempfile.TemporaryDirectory() as tmpdir:
                     tmp_path = Path(tmpdir)
                     svg_path = tmp_path / "sld_pro_v10.svg"
-                    render_sld_pro_svg(snapshot, svg_path)
+                    render_jp_pro_svg(snapshot, svg_path)
                     svg_bytes = svg_path.read_bytes()
                     png_bytes = _svg_bytes_to_png(svg_bytes) if svg_bytes and cairosvg_ok else None
 
