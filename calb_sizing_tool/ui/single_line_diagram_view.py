@@ -465,28 +465,28 @@ def show():
     if generate:
         try:
             # svgwrite not required for jp_pro_renderer; proceed to render
-                dc_blocks_by_feeder = []
-                for idx, count in enumerate(dc_blocks_per_feeder, start=1):
-                    dc_blocks_by_feeder.append(
-                        {
-                            "feeder_id": f"FDR-{idx:02d}",
-                            "dc_block_count": int(count),
-                            "dc_block_energy_mwh": float(count) * dc_block_energy_mwh,
-                        }
-                    )
-                jp_inputs = dict(sld_inputs)
-                jp_inputs["dc_blocks_by_feeder"] = dc_blocks_by_feeder
-                jp_inputs["diagram_scope"] = "one_ac_block_group"
-                snapshot = build_single_unit_snapshot(
-                    stage13_output, ac_output, dc_summary, jp_inputs, scenario_id
+            dc_blocks_by_feeder = []
+            for idx, count in enumerate(dc_blocks_per_feeder, start=1):
+                dc_blocks_by_feeder.append(
+                    {
+                        "feeder_id": f"FDR-{idx:02d}",
+                        "dc_block_count": int(count),
+                        "dc_block_energy_mwh": float(count) * dc_block_energy_mwh,
+                    }
                 )
-                validate_single_unit_snapshot(snapshot)
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    tmp_path = Path(tmpdir)
-                    svg_path = tmp_path / "sld_pro_v10.svg"
-                    render_jp_pro_svg(snapshot, svg_path)
-                    svg_bytes = svg_path.read_bytes()
-                    png_bytes = _svg_bytes_to_png(svg_bytes) if svg_bytes and cairosvg_ok else None
+            jp_inputs = dict(sld_inputs)
+            jp_inputs["dc_blocks_by_feeder"] = dc_blocks_by_feeder
+            jp_inputs["diagram_scope"] = "one_ac_block_group"
+            snapshot = build_single_unit_snapshot(
+                stage13_output, ac_output, dc_summary, jp_inputs, scenario_id
+            )
+            validate_single_unit_snapshot(snapshot)
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tmp_path = Path(tmpdir)
+                svg_path = tmp_path / "sld_pro_v10.svg"
+                render_jp_pro_svg(snapshot, svg_path)
+                svg_bytes = svg_path.read_bytes()
+                png_bytes = _svg_bytes_to_png(svg_bytes) if svg_bytes and cairosvg_ok else None
 
             if svg_bytes or png_bytes:
                 dc_blocks_total = sum(dc_blocks_per_feeder) if dc_blocks_per_feeder else 0
