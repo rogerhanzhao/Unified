@@ -84,6 +84,14 @@ def render_sld_pro_svg(snapshot: dict, output_path: str):
     dwg.add(dwg.line(start=(trans_x, trans_y + 4*r), end=(trans_x, lv_y), style=style_line))
     dwg.add(dwg.line(start=(lv_start_x, lv_y), end=(lv_end_x, lv_y), style=style_busbar))
     dwg.add(dwg.text(f"{inputs.get('pcs_lv_voltage_v_ll', 690)} V Bus", insert=(lv_start_x, lv_y - 10), style=style_text))
+
+    # AC Block dashed container and label (to match verified style)
+    ac_box_x = margin_x
+    ac_box_y = margin_y
+    ac_box_w = drawing_width
+    ac_box_h = lv_y - margin_y + 30
+    dwg.add(dwg.rect(insert=(ac_box_x, ac_box_y), size=(ac_box_w, ac_box_h), style=style_dashed))
+    dwg.add(dwg.text("PCS&MVT SKID (AC Block)", insert=(ac_box_x + 6, ac_box_y + 16), style=style_text))
     
     # PCS and DC Blocks
     pcs_y = lv_y + 80
@@ -112,7 +120,7 @@ def render_sld_pro_svg(snapshot: dict, output_path: str):
         pcs_h = 40
         dwg.add(dwg.rect(insert=(pcs_x - pcs_w/2, pcs_y), size=(pcs_w, pcs_h), style=style_line))
         dwg.add(dwg.line(start=(pcs_x - pcs_w/2, pcs_y + pcs_h), end=(pcs_x + pcs_w/2, pcs_y), style=style_line))
-        dwg.add(dwg.text("PCS", insert=(pcs_x - pcs_w/2, pcs_y - 5), style=style_text))
+        dwg.add(dwg.text(f"PCS-{i+1}", insert=(pcs_x - pcs_w/2, pcs_y - 5), style=style_text))
         
         # DC Busbar for this PCS (Independent)
         # Draw a simple line for DC Busbar
