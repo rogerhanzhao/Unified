@@ -87,13 +87,10 @@ systemctl start calb-sizingtool@prod
 
 1. Navigate to **Site Layout** page
 2. Prerequisite: Complete DC and AC sizing
-3. Choose layout style:
-   - **Top-View V1.0** — Overhead view (recommended)
-   - **Raw V0.5** — Minimal style
-4. Click **Generate Layout**
-5. Layout outputs are saved:
+3. Click **Generate Layout** (Raw V0.5 Stable)
+4. Layout outputs are saved:
    - `st.session_state["layout_results"]` — contains SVG and PNG bytes
-6. Download SVG or PNG
+5. Download SVG or PNG
 
 ### 6. Report Export
 
@@ -157,7 +154,6 @@ st.session_state = {
     },
     "layout_results": {
         "last_style": str,
-        "top_v10": {"svg": bytes, "png": bytes},
         "raw_v05": {"svg": bytes, "png": bytes},
         ...
     },

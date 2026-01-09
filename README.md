@@ -46,7 +46,7 @@ Ensure the Excel data files (for example, `ess_sizing_data_dictionary_v13_dc_aut
 
 1. Run DC sizing and AC sizing.
 2. Open the `Site Layout` page and choose the AC block group.
-3. Choose the style (Raw V0.5 or Top-View V1.0), then click **Generate Layout**.
+3. Click **Generate Layout** (Raw V0.5 Stable).
 4. Download `layout_block.svg` and `layout_block.png`.
 
 ## Legacy pages

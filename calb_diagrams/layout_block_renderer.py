@@ -112,12 +112,74 @@ def _draw_v_dimension(dwg, y1, y2, x, ext_x, text):
     dwg.add(dwg.text(text, insert=(x + 6, (y1 + y2) / 2), class_="dim-text"))
 
 
-def _draw_dc_interior(dwg, x, y, w, h, mirrored: bool = False, cooling_align: str = "right"):
+def _draw_dc_interior(
+    dwg,
+    x,
+    y,
+    w,
+    h,
+    mirrored: bool = False,
+    cooling_align: str = "right",
+    dark_mode: bool = False,
+):
     """
     Draw DC Block (BESS) interior with 6 battery module racks + Liquid Cooling.
     Clean design: 6 rectangles (1x6 single row) representing battery racks.
     Right side: Liquid Cooling strip.
     """
+    if dark_mode:
+        pad = min(10.0, max(4.0, w * 0.05))
+        inner_x = x + pad
+        inner_y = y + pad
+        inner_w = max(1.0, w - 2 * pad)
+        inner_h = max(1.0, h - 2 * pad)
+
+        corrugation_count = max(6, int(inner_w / 18))
+        for idx in range(1, corrugation_count):
+            x_line = inner_x + idx * inner_w / corrugation_count
+            dwg.add(dwg.line((x_line, inner_y), (x_line, inner_y + inner_h), class_="thin"))
+
+        cooling_w = inner_w * 0.12
+        cooling_x = inner_x if cooling_align == "left" else inner_x + inner_w - cooling_w
+        dwg.add(dwg.rect(insert=(cooling_x, inner_y), size=(cooling_w, inner_h), class_="thin"))
+        for h_idx in range(3):
+            y1 = inner_y + (h_idx + 1) * inner_h / 4
+            dwg.add(
+                dwg.line(
+                    (cooling_x, y1),
+                    (cooling_x + cooling_w, y1 - cooling_w * 0.2),
+                    class_="thin",
+                )
+            )
+
+        door_w = inner_w * 0.22
+        door_h = inner_h * 0.35
+        door_x = inner_x + (inner_w - door_w) / 2
+        door_y = inner_y + (inner_h - door_h) / 2
+        dwg.add(dwg.rect(insert=(door_x, door_y), size=(door_w, door_h), class_="thin"))
+        dwg.add(dwg.line((door_x, door_y), (door_x + door_w, door_y + door_h), class_="thin"))
+        dwg.add(dwg.line((door_x + door_w, door_y), (door_x, door_y + door_h), class_="thin"))
+
+        fan_count = 5 if inner_w >= 200 else 4
+        fan_radius = min(inner_w, inner_h) * 0.06
+        fan_y = inner_y if not mirrored else inner_y + inner_h
+        sweep_flag = 1 if not mirrored else 0
+        for idx in range(fan_count):
+            if fan_count == 1:
+                cx = inner_x + inner_w / 2
+            else:
+                cx = inner_x + fan_radius + idx * (inner_w - 2 * fan_radius) / (fan_count - 1)
+            path = dwg.path(
+                d=(
+                    f"M {cx - fan_radius:.1f},{fan_y:.1f} "
+                    f"A {fan_radius:.1f},{fan_radius:.1f} 0 0,{sweep_flag} "
+                    f"{cx + fan_radius:.1f},{fan_y:.1f}"
+                ),
+                class_="thin",
+            )
+            dwg.add(path)
+        return
+
     pad = min(10.0, max(4.0, w * 0.06))
     
     # Liquid Cooling strip (approx 10% width, smaller as requested)
@@ -168,7 +230,16 @@ def _draw_dc_interior(dwg, x, y, w, h, mirrored: bool = False, cooling_align: st
             dwg.add(dwg.rect(insert=(mod_x, mod_y), size=(module_w, module_h), class_="thin"))
 
 
-def _draw_ac_interior(dwg, x, y, w, h, skid_text: str, pcs_start_index: int = 1):
+def _draw_ac_interior(
+    dwg,
+    x,
+    y,
+    w,
+    h,
+    skid_text: str,
+    pcs_start_index: int = 1,
+    dark_mode: bool = False,
+):
     """
     Draw AC Block (PCS&MVT SKID) interior.
     Represents power conversion and transformation area.
@@ -185,48 +256,70 @@ def _draw_ac_interior(dwg, x, y, w, h, skid_text: str, pcs_start_index: int = 1)
     dwg.add(dwg.line((split_1, y), (split_1, y + h), class_="thin"))
     dwg.add(dwg.line((split_2, y), (split_2, y + h), class_="thin"))
 
-    dwg.add(dwg.text("Transformer", insert=(split_1 + 6, y + 16), class_="dim-text"))
-    dwg.add(dwg.text("RMU", insert=(split_2 + 6, y + 16), class_="dim-text"))
-
-    # PCS area: show 2 or 4 PCS modules depending on block config
     pcs_pad = max(4.0, pcs_w * 0.06)
-    # Typically 2 or 4 PCS per block
     pcs_cols = 2
     pcs_rows = 2
     cabinet_w = (pcs_w - pcs_pad * (pcs_cols + 1)) / pcs_cols
     cabinet_h = (h - pcs_pad * 2) / pcs_rows
-    
+
     current_pcs = pcs_start_index
     for row in range(pcs_rows):
         for col in range(pcs_cols):
             cx = x + pcs_pad + col * (cabinet_w + pcs_pad)
             cy = y + pcs_pad + row * (cabinet_h + pcs_pad * 0.5)
             dwg.add(dwg.rect(insert=(cx, cy), size=(cabinet_w, cabinet_h), class_="thin"))
-            # Add PCS unit label
-            dwg.add(dwg.text(f"PCS-{current_pcs}", insert=(cx + cabinet_w/2, cy + cabinet_h/2 + 4), class_="dim-text", text_anchor="middle"))
+            if dark_mode:
+                dwg.add(dwg.line((cx, cy), (cx + cabinet_w, cy + cabinet_h), class_="thin"))
+                dwg.add(dwg.line((cx + cabinet_w, cy), (cx, cy + cabinet_h), class_="thin"))
+            else:
+                dwg.add(
+                    dwg.text(
+                        f"PCS-{current_pcs}",
+                        insert=(cx + cabinet_w / 2, cy + cabinet_h / 2 + 4),
+                        class_="dim-text",
+                        text_anchor="middle",
+                    )
+                )
             current_pcs += 1
 
-    # Transformer area: show transformer symbol
     tr_pad = max(5.0, tr_w * 0.08)
-    dwg.add(
-        dwg.rect(
-            insert=(split_1 + tr_pad, y + tr_pad),
-            size=(tr_w - tr_pad * 2, h - tr_pad * 2),
-            class_="thin",
-        )
-    )
+    tr_x = split_1 + tr_pad
+    tr_y = y + tr_pad
+    tr_w_inner = tr_w - tr_pad * 2
+    tr_h_inner = h - tr_pad * 2
+    dwg.add(dwg.rect(insert=(tr_x, tr_y), size=(tr_w_inner, tr_h_inner), class_="thin"))
+    if dark_mode:
+        dwg.add(dwg.line((tr_x, tr_y), (tr_x + tr_w_inner, tr_y + tr_h_inner), class_="thin"))
+        dwg.add(dwg.line((tr_x + tr_w_inner, tr_y), (tr_x, tr_y + tr_h_inner), class_="thin"))
+    else:
+        dwg.add(dwg.text("Transformer", insert=(split_1 + 6, y + 32), class_="dim-text"))
 
     rmu_pad = max(4.0, rmu_w * 0.12)
-    dwg.add(
-        dwg.rect(
-            insert=(split_2 + rmu_pad, y + rmu_pad),
-            size=(rmu_w - rmu_pad * 2, h - rmu_pad * 2),
-            class_="thin",
-        )
-    )
+    rmu_x = split_2 + rmu_pad
+    rmu_y = y + rmu_pad
+    rmu_w_inner = rmu_w - rmu_pad * 2
+    rmu_h_inner = h - rmu_pad * 2
+    dwg.add(dwg.rect(insert=(rmu_x, rmu_y), size=(rmu_w_inner, rmu_h_inner), class_="thin"))
+    if not dark_mode:
+        dwg.add(dwg.text("RMU", insert=(split_2 + 6, y + 32), class_="dim-text"))
 
-    # Move label to top of AC Block
-    dwg.add(dwg.text(skid_text, insert=(x + w / 2, y - 8), class_="label", text_anchor="middle"))
+    if dark_mode:
+        dwg.add(
+            dwg.text(
+                skid_text,
+                insert=(x + w / 2, y - 8),
+                class_="label title",
+                text_anchor="middle",
+            )
+        )
+    else:
+        dwg.add(
+            dwg.text(
+                skid_text,
+                insert=(x + 6, y + 16),
+                class_="label",
+            )
+        )
 
 
 def _svg_to_data_uri(path: Path) -> str | None:
@@ -262,6 +355,10 @@ def _svg_text(lines, text, x, y, class_name="label", anchor=None):
     )
 
 
+def _svg_path(lines, d, class_name="thin"):
+    lines.append(f'<path d="{d}" class="{class_name}" />')
+
+
 def _draw_h_dimension_raw(lines, x1, x2, y, ext_y, text):
     arrow = 6
     _svg_line(lines, x1, ext_y, x1, y)
@@ -286,12 +383,65 @@ def _draw_v_dimension_raw(lines, y1, y2, x, ext_x, text):
     _svg_text(lines, text, x + 6, (y1 + y2) / 2, class_name="dim-text")
 
 
-def _draw_dc_interior_raw(lines, x, y, w, h, mirrored: bool = False, cooling_align: str = "right"):
+def _draw_dc_interior_raw(
+    lines,
+    x,
+    y,
+    w,
+    h,
+    mirrored: bool = False,
+    cooling_align: str = "right",
+    dark_mode: bool = False,
+):
     """
     Draw DC Block (BESS) interior with 6 battery module racks + Liquid Cooling (raw SVG).
     Clean design: 6 rectangles (1x6 single row) representing battery racks.
     Right side: Liquid Cooling strip.
     """
+    if dark_mode:
+        pad = min(10.0, max(4.0, w * 0.05))
+        inner_x = x + pad
+        inner_y = y + pad
+        inner_w = max(1.0, w - 2 * pad)
+        inner_h = max(1.0, h - 2 * pad)
+
+        corrugation_count = max(6, int(inner_w / 18))
+        for idx in range(1, corrugation_count):
+            x_line = inner_x + idx * inner_w / corrugation_count
+            _svg_line(lines, x_line, inner_y, x_line, inner_y + inner_h)
+
+        cooling_w = inner_w * 0.12
+        cooling_x = inner_x if cooling_align == "left" else inner_x + inner_w - cooling_w
+        _svg_rect(lines, cooling_x, inner_y, cooling_w, inner_h, class_name="thin")
+        for h_idx in range(3):
+            y1 = inner_y + (h_idx + 1) * inner_h / 4
+            _svg_line(lines, cooling_x, y1, cooling_x + cooling_w, y1 - cooling_w * 0.2)
+
+        door_w = inner_w * 0.22
+        door_h = inner_h * 0.35
+        door_x = inner_x + (inner_w - door_w) / 2
+        door_y = inner_y + (inner_h - door_h) / 2
+        _svg_rect(lines, door_x, door_y, door_w, door_h, class_name="thin")
+        _svg_line(lines, door_x, door_y, door_x + door_w, door_y + door_h)
+        _svg_line(lines, door_x + door_w, door_y, door_x, door_y + door_h)
+
+        fan_count = 5 if inner_w >= 200 else 4
+        fan_radius = min(inner_w, inner_h) * 0.06
+        fan_y = inner_y if not mirrored else inner_y + inner_h
+        sweep_flag = 1 if not mirrored else 0
+        for idx in range(fan_count):
+            if fan_count == 1:
+                cx = inner_x + inner_w / 2
+            else:
+                cx = inner_x + fan_radius + idx * (inner_w - 2 * fan_radius) / (fan_count - 1)
+            d = (
+                f"M {cx - fan_radius:.1f},{fan_y:.1f} "
+                f"A {fan_radius:.1f},{fan_radius:.1f} 0 0,{sweep_flag} "
+                f"{cx + fan_radius:.1f},{fan_y:.1f}"
+            )
+            _svg_path(lines, d, class_name="thin")
+        return
+
     pad = min(10.0, max(4.0, w * 0.06))
     
     # Liquid Cooling strip (approx 10% width)
@@ -342,7 +492,16 @@ def _draw_dc_interior_raw(lines, x, y, w, h, mirrored: bool = False, cooling_ali
             _svg_rect(lines, mod_x, mod_y, module_w, module_h, class_name="thin")
 
 
-def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str, pcs_start_index: int = 1):
+def _draw_ac_interior_raw(
+    lines,
+    x,
+    y,
+    w,
+    h,
+    skid_text: str,
+    pcs_start_index: int = 1,
+    dark_mode: bool = False,
+):
     """
     Draw AC Block (PCS&MVT SKID) interior (raw SVG).
     Represents power conversion and transformation area.
@@ -358,10 +517,7 @@ def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str, pcs_start_index: in
     split_2 = split_1 + tr_w
     _svg_line(lines, split_1, y, split_1, y + h, class_name="thin")
     _svg_line(lines, split_2, y, split_2, y + h, class_name="thin")
-    _svg_text(lines, "Transformer", split_1 + 6, y + 16, class_name="dim-text")
-    _svg_text(lines, "RMU", split_2 + 6, y + 16, class_name="dim-text")
 
-    # PCS area: show 2x2 grid of PCS modules
     pcs_pad = max(4.0, pcs_w * 0.06)
     pcs_cols = 2
     pcs_rows = 2
@@ -374,20 +530,50 @@ def _draw_ac_interior_raw(lines, x, y, w, h, skid_text: str, pcs_start_index: in
             cx = x + pcs_pad + col * (cabinet_w + pcs_pad)
             cy = y + pcs_pad + row * (cabinet_h + pcs_pad * 0.5)
             _svg_rect(lines, cx, cy, cabinet_w, cabinet_h, class_name="thin")
-            _svg_text(lines, f"PCS-{current_pcs}", cx + cabinet_w/2, cy + cabinet_h/2 + 4, class_name="dim-text", anchor="middle")
+            if dark_mode:
+                _svg_line(lines, cx, cy, cx + cabinet_w, cy + cabinet_h)
+                _svg_line(lines, cx + cabinet_w, cy, cx, cy + cabinet_h)
+            else:
+                _svg_text(lines, f"PCS-{current_pcs}", cx + cabinet_w/2, cy + cabinet_h/2 + 4, class_name="dim-text", anchor="middle")
             current_pcs += 1
 
-    # Transformer area
     tr_pad = max(5.0, tr_w * 0.08)
-    _svg_rect(lines, split_1 + tr_pad, y + tr_pad, tr_w - tr_pad * 2, h - tr_pad * 2, class_name="thin")
+    tr_x = split_1 + tr_pad
+    tr_y = y + tr_pad
+    tr_w_inner = tr_w - tr_pad * 2
+    tr_h_inner = h - tr_pad * 2
+    _svg_rect(lines, tr_x, tr_y, tr_w_inner, tr_h_inner, class_name="thin")
+    if dark_mode:
+        _svg_line(lines, tr_x, tr_y, tr_x + tr_w_inner, tr_y + tr_h_inner)
+        _svg_line(lines, tr_x + tr_w_inner, tr_y, tr_x, tr_y + tr_h_inner)
+    else:
+        _svg_text(lines, "Transformer", split_1 + 6, y + 32, class_name="dim-text")
 
     rmu_pad = max(4.0, rmu_w * 0.12)
-    _svg_rect(lines, split_2 + rmu_pad, y + rmu_pad, rmu_w - rmu_pad * 2, h - rmu_pad * 2, class_name="thin")
+    rmu_x = split_2 + rmu_pad
+    rmu_y = y + rmu_pad
+    rmu_w_inner = rmu_w - rmu_pad * 2
+    rmu_h_inner = h - rmu_pad * 2
+    _svg_rect(lines, rmu_x, rmu_y, rmu_w_inner, rmu_h_inner, class_name="thin")
+    if not dark_mode:
+        _svg_text(lines, "RMU", split_2 + 6, y + 32, class_name="dim-text")
 
-    _svg_text(lines, skid_text, x + w / 2, y - 8, class_name="label", anchor="middle")
+    if dark_mode:
+        _svg_text(
+            lines,
+            skid_text,
+            x + w / 2,
+            y - 8,
+            class_name="label title",
+            anchor="middle",
+        )
+    else:
+        _svg_text(lines, skid_text, x + 6, y + 16, class_name="label")
 
 
 def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
+    theme = getattr(spec, "theme", "light")
+    dark_mode = str(theme or "light").lower().startswith("dark")
     scale = _safe_float(getattr(spec, "scale", 0.04), 0.04)
     container_len = max(1.0, _safe_float(spec.container_length_mm, 6058)) * scale
     container_w = max(1.0, _safe_float(spec.container_width_mm, 2438)) * scale
@@ -396,13 +582,15 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
     dc_gap = _gap_px(spec.dc_to_dc_clearance_m, scale, fallback_gap)
     ac_gap = _gap_px(spec.dc_to_ac_clearance_m, scale, fallback_gap)
     perimeter_px = _m_to_px(spec.perimeter_clearance_m, scale)
+    if dark_mode:
+        perimeter_px = 0.0
 
     left_margin = _safe_int(getattr(spec, "left_margin", 40), 40)
     top_margin = _safe_int(getattr(spec, "top_margin", 40), 40)
     gap_y = 50
     inner_pad = 10
     title_h = 22
-    dim_band_h = 18
+    dim_band_h = 0 if dark_mode else 18
     label_h = 18
 
     blocks = []
@@ -445,18 +633,25 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
     height = top_margin * 2 + sum(b["block_h"] for b in blocks) + max(0, len(blocks) - 1) * gap_y
     width = left_margin * 2 + max_block_width
 
+    outline_color = "#e5e7eb" if dark_mode else "#000000"
+    thin_color = "#cbd5e1" if dark_mode else "#000000"
+    dash_color = "#22d3ee" if dark_mode else "#000000"
+    label_color = "#e5e7eb" if dark_mode else "#000000"
+    title_color = "#f8fafc" if dark_mode else "#000000"
+    bg_color = "#0b0f13" if dark_mode else "#ffffff"
+
     lines = [
         '<?xml version="1.0" encoding="utf-8"?>',
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.1f}px" height="{height:.1f}px" viewBox="0 0 {width:.1f} {height:.1f}">',
-        '<rect x="0" y="0" width="100%" height="100%" fill="#ffffff" />',
+        f'<rect x="0" y="0" width="100%" height="100%" fill="{bg_color}" />',
         "<style>",
         f"svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}",
-        f".outline {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_OUTLINE}; fill: none; }}",
-        f".thin {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_THIN}; fill: none; }}",
-        f".dash {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_OUTLINE}; fill: none; stroke-dasharray: {LAYOUT_DASH_ARRAY}; }}",
-        ".label { fill: #000000; }",
-        f".title {{ font-size: {LAYOUT_FONT_SIZE_TITLE}px; font-weight: bold; }}",
-        f".dim-text {{ fill: #000000; font-size: {LAYOUT_FONT_SIZE_SMALL}px; }}",
+        f".outline {{ stroke: {outline_color}; stroke-width: {LAYOUT_STROKE_OUTLINE}; fill: none; }}",
+        f".thin {{ stroke: {thin_color}; stroke-width: {LAYOUT_STROKE_THIN}; fill: none; }}",
+        f".dash {{ stroke: {dash_color}; stroke-width: {LAYOUT_STROKE_OUTLINE}; fill: none; stroke-dasharray: {LAYOUT_DASH_ARRAY}; }}",
+        f".label {{ fill: {label_color}; }}",
+        f".title {{ font-size: {LAYOUT_FONT_SIZE_TITLE}px; font-weight: bold; fill: {title_color}; }}",
+        f".dim-text {{ fill: {label_color}; font-size: {LAYOUT_FONT_SIZE_SMALL}px; }}",
         "</style>",
     ]
 
@@ -503,6 +698,7 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
         dc_array_x = content_x
         dc_array_y = content_y
 
+        mirror_vertical = spec.dc_block_mirrored or (dark_mode and rows > 1)
         for r in range(rows):
             for c in range(cols):
                 idx = r * cols + c
@@ -514,9 +710,17 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
 
                 # Mirroring logic: Left column (c=0) has cooling on left, Right column (c=1) has cooling on right
                 cooling_align = "left" if (c % 2 == 0) else "right"
+                mirrored = mirror_vertical and (r % 2 == 1)
 
                 _draw_dc_interior_raw(
-                    lines, cell_x, cell_y, container_len, container_w, mirrored=spec.dc_block_mirrored, cooling_align=cooling_align
+                    lines,
+                    cell_x,
+                    cell_y,
+                    container_len,
+                    container_w,
+                    mirrored=mirrored,
+                    cooling_align=cooling_align,
+                    dark_mode=dark_mode,
                 )
                 # _svg_text(lines, "DC Block", cell_x + 6, cell_y + 18)
 
@@ -527,31 +731,41 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
             skid_x = dc_array_x + dc_w + ac_gap
             skid_y = dc_array_y
             _svg_rect(lines, skid_x, skid_y, container_len, container_w)
-            _draw_ac_interior_raw(lines, skid_x, skid_y, container_len, container_w, skid_text, pcs_start_index=pcs_global_counter)
+            _draw_ac_interior_raw(
+                lines,
+                skid_x,
+                skid_y,
+                container_len,
+                container_w,
+                skid_text,
+                pcs_start_index=pcs_global_counter,
+                dark_mode=dark_mode,
+            )
             pcs_global_counter += 4
             if skid_subtext:
-                _svg_text(lines, skid_subtext, skid_x + 6, skid_y + container_w - 10, class_name="dim-text")
+                _svg_text(lines, skid_subtext, skid_x + 6, skid_y + container_w + 14, class_name="dim-text")
 
         dim_y_main = dc_array_y - 6
         dim_y_secondary = dim_y_main - 16
         dc_text = _format_clearance(spec.dc_to_dc_clearance_m)
         ac_text = _format_clearance(spec.dc_to_ac_clearance_m)
 
-        if cols > 1:
-            x1 = dc_array_x + container_len
-            x2 = dc_array_x + container_len + dc_gap
-            _draw_h_dimension_raw(lines, x1, x2, dim_y_main, dc_array_y, dc_text)
-        if rows > 1:
-            y1 = dc_array_y + container_w
-            y2 = dc_array_y + container_w + dc_gap
-            _draw_v_dimension_raw(lines, y1, y2, dc_array_x - 6, dc_array_x, dc_text)
+        if not dark_mode:
+            if cols > 1:
+                x1 = dc_array_x + container_len
+                x2 = dc_array_x + container_len + dc_gap
+                _draw_h_dimension_raw(lines, x1, x2, dim_y_main, dc_array_y, dc_text)
+            if rows > 1:
+                y1 = dc_array_y + container_w
+                y2 = dc_array_y + container_w + dc_gap
+                _draw_v_dimension_raw(lines, y1, y2, dc_array_x - 6, dc_array_x, dc_text)
 
-        if spec.show_skid:
-            x1 = dc_array_x + dc_w
-            x2 = dc_array_x + dc_w + ac_gap
-            _draw_h_dimension_raw(
-                lines, x1, x2, dim_y_secondary if cols > 1 else dim_y_main, dc_array_y, ac_text
-            )
+            if spec.show_skid:
+                x1 = dc_array_x + dc_w
+                x2 = dc_array_x + dc_w + ac_gap
+                _draw_h_dimension_raw(
+                    lines, x1, x2, dim_y_secondary if cols > 1 else dim_y_main, dc_array_y, ac_text
+                )
 
         current_y += block["block_h"] + gap_y
 
@@ -572,6 +786,8 @@ def render_layout_block_svg(
             png_warning = "PNG export skipped (svgwrite unavailable)."
         return out_svg, "Pro renderer unavailable; fallback to raw SVG."
     out_svg = Path(out_svg)
+    theme = getattr(spec, "theme", "light")
+    dark_mode = str(theme or "light").lower().startswith("dark")
 
     scale = _safe_float(getattr(spec, "scale", 0.04), 0.04)
     container_len = max(1.0, _safe_float(spec.container_length_mm, 6058)) * scale
@@ -581,13 +797,15 @@ def render_layout_block_svg(
     dc_gap = _gap_px(spec.dc_to_dc_clearance_m, scale, fallback_gap)
     ac_gap = _gap_px(spec.dc_to_ac_clearance_m, scale, fallback_gap)
     perimeter_px = _m_to_px(spec.perimeter_clearance_m, scale)
+    if dark_mode:
+        perimeter_px = 0.0
 
     left_margin = _safe_int(getattr(spec, "left_margin", 40), 40)
     top_margin = _safe_int(getattr(spec, "top_margin", 40), 40)
     gap_y = 50
     inner_pad = 10
     title_h = 22
-    dim_band_h = 18
+    dim_band_h = 0 if dark_mode else 18
     label_h = 18
 
     use_template = bool(getattr(spec, "use_template", False))
@@ -647,20 +865,27 @@ def render_layout_block_svg(
         size=(f"{width}px", f"{height}px"),
         viewBox=f"0 0 {width} {height}",
     )
+    outline_color = "#e5e7eb" if dark_mode else "#000000"
+    thin_color = "#cbd5e1" if dark_mode else "#000000"
+    dash_color = "#22d3ee" if dark_mode else "#000000"
+    label_color = "#e5e7eb" if dark_mode else "#000000"
+    title_color = "#f8fafc" if dark_mode else "#000000"
+    bg_color = "#0b0f13" if dark_mode else "#ffffff"
+
     dwg.add(
         dwg.style(
             f"""
 svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
-.outline {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_OUTLINE}; fill: none; }}
-.thin {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_THIN}; fill: none; }}
-.dash {{ stroke: #000000; stroke-width: {LAYOUT_STROKE_OUTLINE}; fill: none; stroke-dasharray: {LAYOUT_DASH_ARRAY}; }}
-.label {{ fill: #000000; }}
-.title {{ font-size: {LAYOUT_FONT_SIZE_TITLE}px; font-weight: bold; }}
-.dim-text {{ fill: #000000; font-size: {LAYOUT_FONT_SIZE_SMALL}px; }}
+.outline {{ stroke: {outline_color}; stroke-width: {LAYOUT_STROKE_OUTLINE}; fill: none; }}
+.thin {{ stroke: {thin_color}; stroke-width: {LAYOUT_STROKE_THIN}; fill: none; }}
+.dash {{ stroke: {dash_color}; stroke-width: {LAYOUT_STROKE_OUTLINE}; fill: none; stroke-dasharray: {LAYOUT_DASH_ARRAY}; }}
+.label {{ fill: {label_color}; }}
+.title {{ font-size: {LAYOUT_FONT_SIZE_TITLE}px; font-weight: bold; fill: {title_color}; }}
+.dim-text {{ fill: {label_color}; font-size: {LAYOUT_FONT_SIZE_SMALL}px; }}
 """
         )
     )
-    dwg.add(dwg.rect(insert=(0, 0), size=(width, height), fill="#ffffff"))
+    dwg.add(dwg.rect(insert=(0, 0), size=(width, height), fill=bg_color))
 
     block_title_template = spec.labels.get("block_title") if isinstance(spec.labels, dict) else None
     bess_text_template = spec.labels.get("bess_range_text") if isinstance(spec.labels, dict) else None
@@ -705,6 +930,7 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
         dc_array_x = content_x
         dc_array_y = content_y
 
+        mirror_vertical = spec.dc_block_mirrored or (dark_mode and rows > 1)
         for r in range(rows):
             for c in range(cols):
                 idx = r * cols + c
@@ -715,6 +941,7 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
                 
                 # Mirroring logic: Left column (c=0) has cooling on left, Right column (c=1) has cooling on right
                 cooling_align = "left" if (c % 2 == 0) else "right"
+                mirrored = mirror_vertical and (r % 2 == 1)
 
                 if use_template and dc_template_uri and not spec.dc_block_mirrored:
                     dwg.add(
@@ -724,7 +951,16 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
                             size=(container_len, container_w),
                         )
                     )
-                    _draw_dc_interior(dwg, cell_x, cell_y, container_len, container_w, mirrored=False, cooling_align=cooling_align)
+                    _draw_dc_interior(
+                        dwg,
+                        cell_x,
+                        cell_y,
+                        container_len,
+                        container_w,
+                        mirrored=mirrored,
+                        cooling_align=cooling_align,
+                        dark_mode=dark_mode,
+                    )
                 else:
                     dwg.add(
                         dwg.rect(
@@ -734,9 +970,15 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
                         )
                     )
                     _draw_dc_interior(
-                        dwg, cell_x, cell_y, container_len, container_w, mirrored=spec.dc_block_mirrored, cooling_align=cooling_align
+                        dwg,
+                        cell_x,
+                        cell_y,
+                        container_len,
+                        container_w,
+                        mirrored=mirrored,
+                        cooling_align=cooling_align,
+                        dark_mode=dark_mode,
                     )
-                dwg.add(dwg.text("", insert=(cell_x + 6, cell_y + 18), class_="label"))
 
         bess_text = bess_text_template.format(start=start, end=end)
         dwg.add(dwg.text(bess_text, insert=(dc_array_x, dc_array_y + dc_h + 18), class_="label"))
@@ -754,29 +996,41 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
                 )
             else:
                 dwg.add(dwg.rect(insert=(skid_x, skid_y), size=(container_len, container_w), class_="outline"))
-            _draw_ac_interior(dwg, skid_x, skid_y, container_len, container_w, skid_text, pcs_start_index=pcs_global_counter)
+            _draw_ac_interior(
+                dwg,
+                skid_x,
+                skid_y,
+                container_len,
+                container_w,
+                skid_text,
+                pcs_start_index=pcs_global_counter,
+                dark_mode=dark_mode,
+            )
             pcs_global_counter += 4  # Assuming 4 units per block (2x2)
             if skid_subtext:
-                dwg.add(dwg.text(skid_subtext, insert=(skid_x + 6, skid_y + container_w - 10), class_="dim-text"))
+                dwg.add(dwg.text(skid_subtext, insert=(skid_x + 6, skid_y + container_w + 14), class_="dim-text"))
 
         dim_y_main = dc_array_y - 6
         dim_y_secondary = dim_y_main - 16
         dc_text = _format_clearance(spec.dc_to_dc_clearance_m)
         ac_text = _format_clearance(spec.dc_to_ac_clearance_m)
 
-        if cols > 1:
-            x1 = dc_array_x + container_len
-            x2 = dc_array_x + container_len + dc_gap
-            _draw_h_dimension(dwg, x1, x2, dim_y_main, dc_array_y, dc_text)
-        if rows > 1:
-            y1 = dc_array_y + container_w
-            y2 = dc_array_y + container_w + dc_gap
-            _draw_v_dimension(dwg, y1, y2, dc_array_x - 6, dc_array_x, dc_text)
+        if not dark_mode:
+            if cols > 1:
+                x1 = dc_array_x + container_len
+                x2 = dc_array_x + container_len + dc_gap
+                _draw_h_dimension(dwg, x1, x2, dim_y_main, dc_array_y, dc_text)
+            if rows > 1:
+                y1 = dc_array_y + container_w
+                y2 = dc_array_y + container_w + dc_gap
+                _draw_v_dimension(dwg, y1, y2, dc_array_x - 6, dc_array_x, dc_text)
 
-        if spec.show_skid:
-            x1 = dc_array_x + dc_w
-            x2 = dc_array_x + dc_w + ac_gap
-            _draw_h_dimension(dwg, x1, x2, dim_y_secondary if cols > 1 else dim_y_main, dc_array_y, ac_text)
+            if spec.show_skid:
+                x1 = dc_array_x + dc_w
+                x2 = dc_array_x + dc_w + ac_gap
+                _draw_h_dimension(
+                    dwg, x1, x2, dim_y_secondary if cols > 1 else dim_y_main, dc_array_y, ac_text
+                )
 
         current_y += block["block_h"] + gap_y
 

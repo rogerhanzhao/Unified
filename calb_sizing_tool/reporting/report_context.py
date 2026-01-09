@@ -339,11 +339,8 @@ def build_report_context(
             if preferred and isinstance(layout_results.get(preferred), dict):
                 layout_png_bytes = layout_results[preferred].get("png")
             if layout_png_bytes is None:
-                for style_key in ("raw_v05", "top_v10"):
-                    if isinstance(layout_results.get(style_key), dict):
-                        layout_png_bytes = layout_results[style_key].get("png")
-                    if layout_png_bytes:
-                        break
+                if isinstance(layout_results.get("raw_v05"), dict):
+                    layout_png_bytes = layout_results["raw_v05"].get("png")
 
         if sld_preview_svg_bytes is None:
             for key in ("sld_pro_jp_svg_bytes", "sld_raw_svg_bytes"):

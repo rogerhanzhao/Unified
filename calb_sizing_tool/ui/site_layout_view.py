@@ -143,67 +143,7 @@ def show():
     c_status5.metric("AC Blocks", ac_output.get("num_blocks") or "TBD")
 
     if not svgwrite_ok:
-        st.error("Missing dependency: svgwrite. Install with Requirement already satisfied: streamlit>=1.30.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 1)) (1.51.0)
-Requirement already satisfied: pandas>=2.0.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 2)) (2.3.3)
-Requirement already satisfied: numpy>=1.24.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 3)) (2.2.6)
-Requirement already satisfied: openpyxl>=3.1.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 4)) (3.1.5)
-Requirement already satisfied: pydantic>=2.0.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 5)) (2.12.5)
-Requirement already satisfied: graphviz>=0.20.1 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 6)) (0.21)
-Requirement already satisfied: python-docx>=1.1.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 7)) (1.2.0)
-Requirement already satisfied: matplotlib>=3.7.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 8)) (3.10.7)
-Requirement already satisfied: svgwrite>=1.4.3 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 9)) (1.4.3)
-Requirement already satisfied: cairosvg>=2.7.0 in /usr/local/lib/python3.10/dist-packages (from -r requirements.txt (line 10)) (2.8.2)
-Requirement already satisfied: protobuf<7,>=3.20 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (6.33.1)
-Requirement already satisfied: pydeck<1,>=0.8.0b4 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (0.9.1)
-Requirement already satisfied: pyarrow<22,>=7.0 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (11.0.0)
-Requirement already satisfied: typing-extensions<5,>=4.4.0 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (4.15.0)
-Requirement already satisfied: requests<3,>=2.27 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (2.32.5)
-Requirement already satisfied: cachetools<7,>=4.0 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (6.2.2)
-Requirement already satisfied: tornado!=6.5.0,<7,>=6.0.3 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (6.5.2)
-Requirement already satisfied: gitpython!=3.1.19,<4,>=3.0.7 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (3.1.45)
-Requirement already satisfied: watchdog<7,>=2.1.5 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (6.0.0)
-Requirement already satisfied: blinker<2,>=1.5.0 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (1.9.0)
-Requirement already satisfied: click<9,>=7.0 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (8.3.1)
-Requirement already satisfied: packaging<26,>=20 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (25.0)
-Requirement already satisfied: tenacity<10,>=8.1.0 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (9.1.2)
-Requirement already satisfied: altair!=5.4.0,!=5.4.1,<6,>=4.0 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (5.5.0)
-Requirement already satisfied: toml<2,>=0.10.1 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (0.10.2)
-Requirement already satisfied: pillow<13,>=7.1.0 in /usr/local/lib/python3.10/dist-packages (from streamlit>=1.30.0->-r requirements.txt (line 1)) (12.0.0)
-Requirement already satisfied: python-dateutil>=2.8.2 in /usr/local/lib/python3.10/dist-packages (from pandas>=2.0.0->-r requirements.txt (line 2)) (2.9.0.post0)
-Requirement already satisfied: tzdata>=2022.7 in /usr/local/lib/python3.10/dist-packages (from pandas>=2.0.0->-r requirements.txt (line 2)) (2025.2)
-Requirement already satisfied: pytz>=2020.1 in /usr/local/lib/python3.10/dist-packages (from pandas>=2.0.0->-r requirements.txt (line 2)) (2025.2)
-Requirement already satisfied: et-xmlfile in /usr/local/lib/python3.10/dist-packages (from openpyxl>=3.1.0->-r requirements.txt (line 4)) (2.0.0)
-Requirement already satisfied: annotated-types>=0.6.0 in /usr/local/lib/python3.10/dist-packages (from pydantic>=2.0.0->-r requirements.txt (line 5)) (0.7.0)
-Requirement already satisfied: pydantic-core==2.41.5 in /usr/local/lib/python3.10/dist-packages (from pydantic>=2.0.0->-r requirements.txt (line 5)) (2.41.5)
-Requirement already satisfied: typing-inspection>=0.4.2 in /usr/local/lib/python3.10/dist-packages (from pydantic>=2.0.0->-r requirements.txt (line 5)) (0.4.2)
-Requirement already satisfied: lxml>=3.1.0 in /usr/local/lib/python3.10/dist-packages (from python-docx>=1.1.0->-r requirements.txt (line 7)) (6.0.2)
-Requirement already satisfied: contourpy>=1.0.1 in /usr/local/lib/python3.10/dist-packages (from matplotlib>=3.7.0->-r requirements.txt (line 8)) (1.3.2)
-Requirement already satisfied: fonttools>=4.22.0 in /usr/local/lib/python3.10/dist-packages (from matplotlib>=3.7.0->-r requirements.txt (line 8)) (4.61.0)
-Requirement already satisfied: pyparsing>=3 in /usr/local/lib/python3.10/dist-packages (from matplotlib>=3.7.0->-r requirements.txt (line 8)) (3.2.5)
-Requirement already satisfied: cycler>=0.10 in /usr/local/lib/python3.10/dist-packages (from matplotlib>=3.7.0->-r requirements.txt (line 8)) (0.12.1)
-Requirement already satisfied: kiwisolver>=1.3.1 in /usr/local/lib/python3.10/dist-packages (from matplotlib>=3.7.0->-r requirements.txt (line 8)) (1.4.9)
-Requirement already satisfied: tinycss2 in /usr/local/lib/python3.10/dist-packages (from cairosvg>=2.7.0->-r requirements.txt (line 10)) (1.5.1)
-Requirement already satisfied: cssselect2 in /usr/local/lib/python3.10/dist-packages (from cairosvg>=2.7.0->-r requirements.txt (line 10)) (0.8.0)
-Requirement already satisfied: cairocffi in /usr/local/lib/python3.10/dist-packages (from cairosvg>=2.7.0->-r requirements.txt (line 10)) (1.7.1)
-Requirement already satisfied: defusedxml in /usr/local/lib/python3.10/dist-packages (from cairosvg>=2.7.0->-r requirements.txt (line 10)) (0.7.1)
-Requirement already satisfied: jsonschema>=3.0 in /usr/local/lib/python3.10/dist-packages (from altair!=5.4.0,!=5.4.1,<6,>=4.0->streamlit>=1.30.0->-r requirements.txt (line 1)) (4.25.1)
-Requirement already satisfied: jinja2 in /usr/local/lib/python3.10/dist-packages (from altair!=5.4.0,!=5.4.1,<6,>=4.0->streamlit>=1.30.0->-r requirements.txt (line 1)) (3.1.6)
-Requirement already satisfied: narwhals>=1.14.2 in /usr/local/lib/python3.10/dist-packages (from altair!=5.4.0,!=5.4.1,<6,>=4.0->streamlit>=1.30.0->-r requirements.txt (line 1)) (2.13.0)
-Requirement already satisfied: gitdb<5,>=4.0.1 in /usr/local/lib/python3.10/dist-packages (from gitpython!=3.1.19,<4,>=3.0.7->streamlit>=1.30.0->-r requirements.txt (line 1)) (4.0.12)
-Requirement already satisfied: six>=1.5 in /usr/local/lib/python3.10/dist-packages (from python-dateutil>=2.8.2->pandas>=2.0.0->-r requirements.txt (line 2)) (1.17.0)
-Requirement already satisfied: idna<4,>=2.5 in /usr/local/lib/python3.10/dist-packages (from requests<3,>=2.27->streamlit>=1.30.0->-r requirements.txt (line 1)) (3.11)
-Requirement already satisfied: charset_normalizer<4,>=2 in /usr/local/lib/python3.10/dist-packages (from requests<3,>=2.27->streamlit>=1.30.0->-r requirements.txt (line 1)) (3.4.4)
-Requirement already satisfied: certifi>=2017.4.17 in /usr/local/lib/python3.10/dist-packages (from requests<3,>=2.27->streamlit>=1.30.0->-r requirements.txt (line 1)) (2025.11.12)
-Requirement already satisfied: urllib3<3,>=1.21.1 in /usr/local/lib/python3.10/dist-packages (from requests<3,>=2.27->streamlit>=1.30.0->-r requirements.txt (line 1)) (2.5.0)
-Requirement already satisfied: cffi>=1.1.0 in /usr/local/lib/python3.10/dist-packages (from cairocffi->cairosvg>=2.7.0->-r requirements.txt (line 10)) (2.0.0)
-Requirement already satisfied: webencodings in /usr/local/lib/python3.10/dist-packages (from cssselect2->cairosvg>=2.7.0->-r requirements.txt (line 10)) (0.5.1)
-Requirement already satisfied: pycparser in /usr/local/lib/python3.10/dist-packages (from cffi>=1.1.0->cairocffi->cairosvg>=2.7.0->-r requirements.txt (line 10)) (2.23)
-Requirement already satisfied: smmap<6,>=3.0.1 in /usr/local/lib/python3.10/dist-packages (from gitdb<5,>=4.0.1->gitpython!=3.1.19,<4,>=3.0.7->streamlit>=1.30.0->-r requirements.txt (line 1)) (5.0.2)
-Requirement already satisfied: MarkupSafe>=2.0 in /usr/local/lib/python3.10/dist-packages (from jinja2->altair!=5.4.0,!=5.4.1,<6,>=4.0->streamlit>=1.30.0->-r requirements.txt (line 1)) (3.0.3)
-Requirement already satisfied: referencing>=0.28.4 in /usr/local/lib/python3.10/dist-packages (from jsonschema>=3.0->altair!=5.4.0,!=5.4.1,<6,>=4.0->streamlit>=1.30.0->-r requirements.txt (line 1)) (0.37.0)
-Requirement already satisfied: rpds-py>=0.7.1 in /usr/local/lib/python3.10/dist-packages (from jsonschema>=3.0->altair!=5.4.0,!=5.4.1,<6,>=4.0->streamlit>=1.30.0->-r requirements.txt (line 1)) (0.30.0)
-Requirement already satisfied: jsonschema-specifications>=2023.03.6 in /usr/local/lib/python3.10/dist-packages (from jsonschema>=3.0->altair!=5.4.0,!=5.4.1,<6,>=4.0->streamlit>=1.30.0->-r requirements.txt (line 1)) (2025.9.1)
-Requirement already satisfied: attrs>=22.2.0 in /usr/local/lib/python3.10/dist-packages (from jsonschema>=3.0->altair!=5.4.0,!=5.4.1,<6,>=4.0->streamlit>=1.30.0->-r requirements.txt (line 1)) (25.4.0).")
+        st.error("Missing dependency: svgwrite. Run: pip install svgwrite")
 
     def _init_input(field: str, default_value):
         key = f"layout_inputs.{field}"
@@ -212,18 +152,6 @@ Requirement already satisfied: attrs>=22.2.0 in /usr/local/lib/python3.10/dist-p
         if field not in layout_inputs:
             layout_inputs[field] = st.session_state[key]
         return key
-
-    style_options = ["Raw V0.5 (Stable)", "Top-View V1.0 (Template)"]
-    style_default = layout_inputs.get("style") or style_options[0]
-    if style_default not in style_options:
-        style_default = style_options[0]
-    style = st.selectbox(
-        "Style",
-        style_options,
-        index=style_options.index(style_default),
-        key=_init_input("style", style_default),
-    )
-    layout_inputs["style"] = style
 
     ac_blocks_total = max(_safe_int(ac_output.get("num_blocks"), 0), 1)
     block_default = _safe_int(layout_inputs.get("block_index"), 1)
@@ -411,22 +339,16 @@ Requirement already satisfied: attrs>=22.2.0 in /usr/local/lib/python3.10/dist-p
     else:
         layout_arrangement = arrangement
 
-    style_id = "raw_v05" if style.startswith("Raw") else "top_v10"
+    style_id = "raw_v05"
     if style_id not in layout_results:
         layout_results[style_id] = {}
 
     generate_disabled = not has_prereq
-    if style_id == "top_v10" and not svgwrite_ok:
-        generate_disabled = True
-        st.error("Top-View rendering requires svgwrite. Install with Requirement already satisfied: svgwrite in /usr/local/lib/python3.10/dist-packages (1.4.3).")
 
     generate = st.button("Generate Layout", disabled=generate_disabled)
 
-    if generate and style_id in ("raw_v05", "top_v10"):
+    if generate and style_id == "raw_v05":
         try:
-            assets_root = Path("calb_assets") / "layout"
-            dc_asset = assets_root / "dc_block_top.svg"
-            ac_asset = assets_root / "ac_block_top.svg"
             spec = build_layout_block_spec(
                 ac_output=ac_output,
                 block_indices_to_render=selected_blocks,
@@ -439,12 +361,11 @@ Requirement already satisfied: attrs>=22.2.0 in /usr/local/lib/python3.10/dist-p
                 dc_to_ac_clearance_m=dc_to_ac_clearance,
                 perimeter_clearance_m=perimeter_clearance,
                 dc_block_mirrored=dc_block_mirrored,
-                use_template=(style_id == "top_v10"),
-                dc_block_svg_path=str(dc_asset) if dc_asset.exists() else None,
-                ac_block_svg_path=str(ac_asset) if ac_asset.exists() else None,
+                use_template=False,
                 scale=scale_factor,
                 left_margin=left_margin,
                 top_margin=top_margin,
+                theme="light",
             )
             with tempfile.TemporaryDirectory() as tmpdir:
                 tmp_path = Path(tmpdir)

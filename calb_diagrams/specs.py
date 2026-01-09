@@ -153,6 +153,7 @@ class LayoutBlockSpec:
     scale: float = 0.04
     left_margin: int = 40
     top_margin: int = 40
+    theme: str = "light"
 
 
 def build_sld_group_spec(
@@ -312,6 +313,18 @@ def build_sld_group_spec(
             "cables": sld_inputs.get("cables", {}) or {},
             "dc_fuse": sld_inputs.get("dc_fuse", {}) or {},
         }
+    dc_block_voltage_v = _safe_float(sld_inputs.get("dc_block_voltage_v"), 0.0)
+    if dc_block_voltage_v <= 0 and isinstance(dc_summary, dict):
+        dc_block = dc_summary.get("dc_block")
+        if dc_block is not None:
+            dc_block_voltage_v = _safe_float(getattr(dc_block, "voltage_v", 0.0), 0.0)
+    project_hz = _safe_float(stage13_output.get("poi_frequency_hz"), 0.0)
+    if project_hz > 0 or dc_block_voltage_v > 0:
+        equipment_list = dict(equipment_list)
+        if project_hz > 0:
+            equipment_list.setdefault("project_hz", project_hz)
+        if dc_block_voltage_v > 0:
+            equipment_list.setdefault("dc_block_voltage_v", dc_block_voltage_v)
 
     layout_params = {
         "svg_width": _safe_float(sld_inputs.get("svg_width"), 1750),
@@ -323,7 +336,11 @@ def build_sld_group_spec(
         "pcs_gap": _safe_float(sld_inputs.get("pcs_gap"), 60),
         "busbar_gap": _safe_float(sld_inputs.get("busbar_gap"), 22),
         "font_scale": _safe_float(sld_inputs.get("font_scale"), 1.0),
+        "compact_mode": bool(sld_inputs.get("compact_mode")),
+        "theme": str(sld_inputs.get("theme") or "light"),
     }
+    if sld_inputs.get("draw_summary") is not None:
+        layout_params["draw_summary"] = bool(sld_inputs.get("draw_summary"))
 
     return SldGroupSpec(
         group_index=group_index,
@@ -362,6 +379,7 @@ def build_layout_block_spec(
     scale: float = 0.04,
     left_margin: int = 40,
     top_margin: int = 40,
+    theme: str = "light",
 ) -> LayoutBlockSpec:
     block_indices = block_indices_to_render or [1]
     normalized = []
@@ -402,4 +420,5 @@ def build_layout_block_spec(
         scale=scale,
         left_margin=left_margin,
         top_margin=top_margin,
+        theme=str(theme or "light"),
     )

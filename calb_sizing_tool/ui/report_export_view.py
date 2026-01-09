@@ -67,11 +67,9 @@ def show():
         if preferred and isinstance(layout_results.get(preferred), dict):
             layout_entry = layout_results.get(preferred)
         if layout_entry is None:
-            for style_key in ("raw_v05", "top_v10"):
-                entry = layout_results.get(style_key)
-                if isinstance(entry, dict) and (entry.get("png") or entry.get("svg")):
-                    layout_entry = entry
-                    break
+            entry = layout_results.get("raw_v05")
+            if isinstance(entry, dict) and (entry.get("png") or entry.get("svg")):
+                layout_entry = entry
     layout_png = artifacts.get("layout_png_bytes") or (layout_entry.get("png") if layout_entry else None)
     layout_svg = artifacts.get("layout_svg_bytes") or (layout_entry.get("svg") if layout_entry else None)
     if layout_png is None:
