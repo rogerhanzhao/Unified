@@ -154,6 +154,93 @@ def _draw_pcs_dc_ac_symbol(dwg, x: float, y: float, w: float, h: float) -> None:
     dwg.add(dwg.polyline(points=points, class_="thin", fill="none"))
 
 
+def _draw_breaker_x(dwg, x: float, y: float, size: float) -> None:
+    half = size * 0.5
+    dwg.add(dwg.line((x - half, y - half), (x + half, y + half), class_="thin"))
+    dwg.add(dwg.line((x - half, y + half), (x + half, y - half), class_="thin"))
+
+
+def _draw_dc_switch(dwg, x: float, y: float, h: float) -> None:
+    blade_dx = h * 0.45
+    blade_dy = h * 0.45
+    contact_w = h * 0.4
+    dwg.add(dwg.line((x, y), (x + blade_dx, y + blade_dy), class_="thin"))
+    dwg.add(
+        dwg.line(
+            (x - contact_w / 2, y + h),
+            (x + contact_w / 2, y + h),
+            class_="thin",
+        )
+    )
+
+
+def _draw_fuse(dwg, x: float, y: float, w: float, h: float) -> None:
+    dwg.add(
+        dwg.rect(
+            insert=(x - w / 2, y),
+            size=(w, h),
+            class_="thin",
+        )
+    )
+
+
+def _draw_battery_column(dwg, x: float, y: float, h: float, rows: int) -> None:
+    if rows <= 0 or h <= 0:
+        return
+    cell_pitch = h / rows
+    long_w = max(8.0, min(16.0, cell_pitch * 0.9))
+    short_w = long_w * 0.6
+    plate_gap = min(4.0, max(2.0, cell_pitch * 0.2))
+    dwg.add(dwg.line((x, y - 2), (x, y + h + 2), class_="thin"))
+    for row in range(rows):
+        y_center = y + cell_pitch * (row + 0.5)
+        y_long = y_center - plate_gap / 2
+        y_short = y_center + plate_gap / 2
+        dwg.add(dwg.line((x - long_w / 2, y_long), (x + long_w / 2, y_long), class_="thin"))
+        dwg.add(dwg.line((x - short_w / 2, y_short), (x + short_w / 2, y_short), class_="thin"))
+    dot_gap = min(6.0, max(3.0, cell_pitch * 0.3))
+    mid_y = y + h * 0.5
+    for offset in (-dot_gap, 0.0, dot_gap):
+        dwg.add(dwg.line((x - 1.5, mid_y + offset), (x + 1.5, mid_y + offset), class_="thin"))
+
+
+def _draw_triangle_up(dwg, x: float, y: float, size: float) -> None:
+    half = size * 0.6
+    points = [(x, y - size), (x - half, y), (x + half, y)]
+    dwg.add(dwg.polygon(points=points, class_="thin", fill="none"))
+
+
+def _draw_breaker_circle(dwg, x: float, y: float, r: float) -> None:
+    if r <= 0:
+        return
+    dwg.add(dwg.circle(center=(x, y), r=r, class_="outline"))
+    dwg.add(dwg.line((x - r * 0.7, y - r * 0.7), (x + r * 0.7, y + r * 0.7), class_="thin"))
+    dwg.add(dwg.line((x - r * 0.7, y + r * 0.7), (x + r * 0.7, y - r * 0.7), class_="thin"))
+
+
+def _draw_transformer_symbol(dwg, x: float, y: float, r: float) -> tuple[tuple[float, float], tuple[float, float]]:
+    gap = r * 1.4
+    top_center = (x, y)
+    left_center = (x - gap, y + gap)
+    right_center = (x + gap, y + gap)
+    for cx, cy in (top_center, left_center, right_center):
+        dwg.add(dwg.circle(center=(cx, cy), r=r, class_="outline"))
+
+    tri = [
+        (top_center[0], top_center[1] - r * 0.55),
+        (top_center[0] - r * 0.5, top_center[1] + r * 0.35),
+        (top_center[0] + r * 0.5, top_center[1] + r * 0.35),
+    ]
+    dwg.add(dwg.polygon(points=tri, class_="thin", fill="none"))
+
+    for cx, cy in (left_center, right_center):
+        dwg.add(dwg.line((cx, cy), (cx, cy - r * 0.6), class_="thin"))
+        dwg.add(dwg.line((cx, cy), (cx - r * 0.5, cy + r * 0.35), class_="thin"))
+        dwg.add(dwg.line((cx, cy), (cx + r * 0.5, cy + r * 0.35), class_="thin"))
+
+    return left_center, right_center
+
+
 def _wrap_text(text: str, max_chars: int) -> List[str]:
     words = text.split()
     if not words:
@@ -544,8 +631,8 @@ def render_sld_pro_svg(
     available = max(240.0, diagram_width - pcs_pad * 2)
     slot_w = available / pcs_count
     if compact_mode:
-        pcs_box_w = min(84.0, max(56.0, slot_w - 18.0))
-        pcs_box_h = max(76.0, pcs_box_w * 1.25)
+        pcs_box_w = min(80.0, max(58.0, slot_w - 20.0))
+        pcs_box_h = max(78.0, pcs_box_w)
     else:
         pcs_box_w = min(160.0, max(110.0, slot_w - 10.0))
     pcs_start_x = skid_x + pcs_pad + (slot_w - pcs_box_w) / 2
@@ -563,7 +650,7 @@ def render_sld_pro_svg(
         battery_y = skid_y + skid_h + 40
         battery_title_h = 20
         dc_box_w = pcs_box_w
-        dc_box_h = max(120.0, pcs_box_h * 1.1)
+        dc_box_h = max(140.0, pcs_box_h * 1.5)
         dc_box_y = battery_y + battery_title_h + 30
         battery_h = battery_title_h + 30 + dc_box_h + 40
 
@@ -781,45 +868,73 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     if not to_other_rmu:
         to_other_rmu = "To Other RMU"
 
-    terminal_y = skid_y + 55
+    terminal_y = skid_y + 60
     terminal_left_x = skid_x + 70
     terminal_right_x = skid_x + diagram_width - 70
-    dwg.add(dwg.text(to_switchgear, insert=(terminal_left_x - 10, terminal_y - 10), class_="label"))
+    dwg.add(dwg.text(to_switchgear, insert=(terminal_left_x - 10, terminal_y - 18), class_="label"))
     dwg.add(
         dwg.text(
             to_other_rmu,
-            insert=(terminal_right_x + 10, terminal_y - 10),
+            insert=(terminal_right_x + 10, terminal_y - 18),
             class_="label",
             text_anchor="end",
         )
     )
-    dwg.add(dwg.line((terminal_left_x, terminal_y), (terminal_left_x, terminal_y + 20), class_="thin"))
-    dwg.add(dwg.line((terminal_right_x, terminal_y), (terminal_right_x, terminal_y + 20), class_="thin"))
 
-    rmu_center_y = skid_y + 95
-    rmu_left_x = skid_x + 80
-    rmu_right_x = rmu_left_x + 70
-    dwg.add(dwg.text("RMU", insert=(rmu_left_x, rmu_center_y - 25), class_="label"))
-    dwg.add(dwg.line((rmu_left_x, rmu_center_y - 20), (rmu_left_x, rmu_center_y + 20), class_="thin"))
-    dwg.add(dwg.line((rmu_right_x, rmu_center_y - 20), (rmu_right_x, rmu_center_y + 20), class_="thin"))
-    dwg.add(dwg.line((rmu_left_x, rmu_center_y), (rmu_right_x, rmu_center_y), class_="thin"))
-    dwg.add(dwg.line((rmu_left_x + 28, rmu_center_y - 6), (rmu_left_x + 40, rmu_center_y + 6), class_="thin"))
-    dwg.add(dwg.line((rmu_left_x + 40, rmu_center_y + 6), (rmu_left_x + 52, rmu_center_y + 6), class_="thin"))
-    ground_x = rmu_left_x + 35
-    ground_y = rmu_center_y + 24
-    dwg.add(dwg.line((ground_x, ground_y), (ground_x, ground_y + 10), class_="thin"))
-    dwg.add(dwg.line((ground_x - 8, ground_y + 10), (ground_x + 8, ground_y + 10), class_="thin"))
-    dwg.add(dwg.line((ground_x - 6, ground_y + 14), (ground_x + 6, ground_y + 14), class_="thin"))
-    dwg.add(dwg.line((ground_x - 4, ground_y + 18), (ground_x + 4, ground_y + 18), class_="thin"))
+    mv_bus_y = skid_y + 140
+    breaker_r = 7.0
+    feeder_switch_h = 12.0
+    for feeder_x in (terminal_left_x, terminal_right_x):
+        _draw_triangle_up(dwg, feeder_x, terminal_y, 10.0)
+        breaker_y = terminal_y + 26
+        dwg.add(dwg.line((feeder_x, terminal_y), (feeder_x, breaker_y - breaker_r), class_="thin"))
+        _draw_breaker_circle(dwg, feeder_x, breaker_y, breaker_r)
+        switch_y = breaker_y + breaker_r + 6.0
+        dwg.add(dwg.line((feeder_x, breaker_y + breaker_r), (feeder_x, switch_y), class_="thin"))
+        _draw_dc_switch(dwg, feeder_x, switch_y, feeder_switch_h)
+        dwg.add(dwg.line((feeder_x, switch_y + feeder_switch_h), (feeder_x, mv_bus_y), class_="thin"))
 
-    tr_x = skid_x + diagram_width / 2 - 40
-    tr_y = skid_y + 130
-    dwg.add(dwg.circle(center=(tr_x, tr_y + 25), r=18, class_="outline"))
-    dwg.add(dwg.circle(center=(tr_x + 50, tr_y + 25), r=18, class_="outline"))
-    dwg.add(dwg.line((tr_x + 18, tr_y + 25), (tr_x + 32, tr_y + 25), class_="thin"))
+    dwg.add(
+        dwg.line(
+            (terminal_left_x - 20, mv_bus_y),
+            (terminal_right_x + 20, mv_bus_y),
+            class_="thin",
+        )
+    )
+    dwg.add(dwg.text("RMU", insert=(terminal_left_x - 26, terminal_y + 10), class_="label"))
 
-    tr_text_x = tr_x + 80
-    tr_text_y = tr_y + 12
+    tr_center_x = skid_x + diagram_width / 2
+    tr_radius = 16.0
+    tr_top_y = mv_bus_y + 30
+    tr_switch_h = 12.0
+    tr_switch_y = mv_bus_y + 10
+    dwg.add(dwg.line((tr_center_x, mv_bus_y), (tr_center_x, tr_switch_y), class_="thin"))
+    _draw_dc_switch(dwg, tr_center_x, tr_switch_y, tr_switch_h)
+    dwg.add(
+        dwg.line(
+            (tr_center_x, tr_switch_y + tr_switch_h),
+            (tr_center_x, tr_top_y - tr_radius),
+            class_="thin",
+        )
+    )
+    left_center, right_center = _draw_transformer_symbol(dwg, tr_center_x, tr_top_y, tr_radius)
+    dwg.add(
+        dwg.line(
+            (left_center[0], left_center[1] + tr_radius),
+            (left_center[0], bus_y),
+            class_="thin",
+        )
+    )
+    dwg.add(
+        dwg.line(
+            (right_center[0], right_center[1] + tr_radius),
+            (right_center[0], bus_y),
+            class_="thin",
+        )
+    )
+
+    tr_text_x = tr_center_x + tr_radius * 2 + 24
+    tr_text_y = tr_top_y - tr_radius
     tr_lines = [
         "Transformer",
         f"{format_kv(spec.mv_voltage_kv)}/{format_v(spec.lv_voltage_v_ll)}",
@@ -870,20 +985,24 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             rating = spec.pcs_rating_kw_list[idx] if idx < len(spec.pcs_rating_kw_list) else 0.0
             rating_text = f"{rating:.0f} kW" if rating else "TBD"
             dwg.add(dwg.text(rating_text, insert=(x + 8, pcs_y + 38), class_="label"))
-        dwg.add(
-            dwg.line(
-                (x + pcs_box_w / 2, bus_y),
-                (x + pcs_box_w / 2, pcs_y),
-                class_="thin",
+        line_x = x + pcs_box_w / 2
+        if compact_mode:
+            _draw_breaker_x(dwg, line_x, bus_y + 10, 8)
+            switch_h = 12.0
+            switch_y = pcs_y - switch_h - 6.0
+            dwg.add(dwg.line((line_x, bus_y), (line_x, switch_y), class_="thin"))
+            _draw_dc_switch(dwg, line_x, switch_y, switch_h)
+            dwg.add(dwg.line((line_x, switch_y + switch_h), (line_x, pcs_y), class_="thin"))
+        else:
+            dwg.add(
+                dwg.line(
+                    (line_x, bus_y),
+                    (line_x, pcs_y),
+                    class_="thin",
+                )
             )
-        )
 
     if compact_mode:
-        for idx in range(pcs_count):
-            x = pcs_start_x + idx * slot_w
-            line_x = x + pcs_box_w / 2
-            dwg.add(dwg.line((line_x, pcs_y + pcs_box_h), (line_x, dc_bus_y), class_="thin"))
-
         dwg.add(dwg.rect(insert=(battery_x, battery_y), size=(battery_w, battery_h), class_="dash"))
         if dark_mode:
             dwg.add(
@@ -906,27 +1025,44 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         for idx in range(pcs_count):
             x = pcs_start_x + idx * slot_w
             line_x = x + pcs_box_w / 2
-            dwg.add(dwg.line((line_x, dc_bus_y), (line_x, dc_box_y - 10), class_="thin"))
-            dwg.add(dwg.rect(insert=(x, dc_box_y), size=(dc_box_w, dc_box_h), class_="outline"))
+            dc_top = pcs_y + pcs_box_h
+            triangle_base_y = dc_box_y - 4
+            available = max(8.0, triangle_base_y - dc_top)
+            switch_h = 14.0
+            fuse_h = 10.0
+            gap_before = 6.0
+            gap_between = 8.0
+            gap_after = 8.0
+            total = gap_before + switch_h + gap_between + fuse_h + gap_after
+            if total > available:
+                scale = max(0.6, available / total)
+                switch_h *= scale
+                fuse_h *= scale
+                gap_before *= scale
+                gap_between *= scale
+                gap_after *= scale
+            switch_y = dc_top + gap_before
+            fuse_y = switch_y + switch_h + gap_between
+            dwg.add(dwg.line((line_x, dc_top), (line_x, switch_y), class_="thin"))
+            _draw_dc_switch(dwg, line_x, switch_y, switch_h)
+            dwg.add(dwg.line((line_x, switch_y + switch_h), (line_x, fuse_y), class_="thin"))
+            _draw_fuse(dwg, line_x, fuse_y, max(6.0, pcs_box_w * 0.1), fuse_h)
+            dwg.add(dwg.line((line_x, fuse_y + fuse_h), (line_x, triangle_base_y), class_="thin"))
+            _draw_triangle_up(dwg, line_x, triangle_base_y, 8.0)
+            dwg.add(dwg.line((line_x, triangle_base_y), (line_x, dc_box_y), class_="thin"))
 
-            line_w = max(10.0, min(16.0, dc_box_w * 0.24))
-            col_span = max(line_w * 2.2, dc_box_w * 0.5)
-            center_x = x + dc_box_w / 2
-            col_centers = (center_x - col_span / 2, center_x + col_span / 2)
+            col_centers = (line_x,)
             cell_rows = 6
             top_pad = max(12.0, dc_box_h * 0.14)
             usable_h = max(1.0, dc_box_h - top_pad * 2)
-            cell_pitch = usable_h / cell_rows
-            line_gap = min(4.0, max(2.0, cell_pitch * 0.22))
-            for row in range(cell_rows):
-                y_center = dc_box_y + top_pad + cell_pitch * (row + 0.5)
-                y1 = y_center - line_gap / 2
-                y2 = y_center + line_gap / 2
-                for col_center in col_centers:
-                    x1 = col_center - line_w / 2
-                    x2 = col_center + line_w / 2
-                    dwg.add(dwg.line((x1, y1), (x2, y1), class_="thin"))
-                    dwg.add(dwg.line((x1, y2), (x2, y2), class_="thin"))
+            for col_center in col_centers:
+                _draw_battery_column(
+                    dwg,
+                    col_center,
+                    dc_box_y + top_pad,
+                    usable_h,
+                    cell_rows,
+                )
     else:
         dwg.add(dwg.line((bus_x1, dc_bus_a_y), (bus_x2, dc_bus_a_y), class_=busbar_class))
         dwg.add(dwg.text("DC BUSBAR A", insert=(bus_x1, dc_bus_a_y - 8), class_="label"))

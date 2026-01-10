@@ -316,7 +316,7 @@ def _draw_ac_interior(
         dwg.add(
             dwg.text(
                 skid_text,
-                insert=(x + 6, y + 16),
+                insert=(x + 6, y + h + 14),
                 class_="label",
             )
         )
@@ -568,7 +568,7 @@ def _draw_ac_interior_raw(
             anchor="middle",
         )
     else:
-        _svg_text(lines, skid_text, x + 6, y + 16, class_name="label")
+        _svg_text(lines, skid_text, x + 6, y + h + 14, class_name="label")
 
 
 def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
@@ -743,7 +743,7 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
             )
             pcs_global_counter += 4
             if skid_subtext:
-                _svg_text(lines, skid_subtext, skid_x + 6, skid_y + container_w + 14, class_name="dim-text")
+                _svg_text(lines, skid_subtext, skid_x + 6, skid_y + container_w + 30, class_name="dim-text")
 
         dim_y_main = dc_array_y - 6
         dim_y_secondary = dim_y_main - 16
@@ -1008,7 +1008,7 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
             )
             pcs_global_counter += 4  # Assuming 4 units per block (2x2)
             if skid_subtext:
-                dwg.add(dwg.text(skid_subtext, insert=(skid_x + 6, skid_y + container_w + 14), class_="dim-text"))
+                dwg.add(dwg.text(skid_subtext, insert=(skid_x + 6, skid_y + container_w + 30), class_="dim-text"))
 
         dim_y_main = dc_array_y - 6
         dim_y_secondary = dim_y_main - 16
