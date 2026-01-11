@@ -12,10 +12,13 @@ from calb_diagrams.sld_pro_renderer import render_sld_pro_svg
 from calb_sizing_tool.common.allocation import allocate_dc_blocks, evenly_distribute
 from calb_sizing_tool.common.dependencies import check_dependencies
 from calb_sizing_tool.common.preferences import load_preferences
+from calb_sizing_tool.sld.snapshot_single_unit import (
+    build_single_unit_snapshot,
+    validate_single_unit_snapshot,
+)
 from calb_sizing_tool.ui.sld_inputs import render_electrical_inputs
 from calb_sizing_tool.state.project_state import get_project_state, init_project_state
 from calb_sizing_tool.state.session_state import init_shared_state
-from calb_sizing_tool.ui.template_store import load_active
 
 
 def _safe_float(value, default=0.0):
@@ -230,35 +233,6 @@ def show():
     st.header("Single Line Diagram")
     st.caption("Engineering-readable SLD for one AC block group.")
 
-    # Manual template override from Diagram Studio
-    try:
-        manual = load_active("sld")
-        if isinstance(manual, dict):
-            meta = manual.get("__meta__", {})
-            st.info("🎨 Manual SLD Active: Using the custom diagram from Diagram Studio.")
-            preview_png = meta.get("preview_png_path")
-            
-            # Ensure outputs directory exists
-            outputs_dir = Path("outputs")
-            outputs_dir.mkdir(exist_ok=True)
-            
-            if preview_png and Path(preview_png).exists():
-                st.image(preview_png, use_container_width=True)
-                st.session_state["sld_png_path"] = str(preview_png)
-                
-                # Also read SVG if available for artifact completeness
-                # Note: Diagram Studio outputs JSON mainly, but might have saved an SVG
-                # Here we trust sld_png_path for the report.
-                
-                if st.button("Revert to Auto-Generation"):
-                    from calb_sizing_tool.ui.template_store import clear_active
-                    clear_active("sld")
-                    st.rerun()
-                return
-    except Exception as e:
-        # Fallback if template store fails
-        st.warning(f"Could not load manual template: {e}")
-
     deps = check_dependencies()
     svgwrite_ok = deps.get("svgwrite", False)
     cairosvg_ok = deps.get("cairosvg", False)
@@ -334,7 +308,10 @@ def show():
     c_status5.metric("DC Blocks (group)", str(dc_blocks_status) if dc_blocks_status != "TBD" else "TBD")
 
     if not svgwrite_ok:
-        st.error("Missing dependency: svgwrite. Run: pip install svgwrite")
+        st.error(
+            "Missing dependency: svgwrite. Install with `pip install svgwrite` or "
+            "`pip install -r requirements.txt`."
+        )
 
     scenario_default = diagram_inputs.get("scenario_id")
     if scenario_default is None:
@@ -556,29 +533,35 @@ def show():
     if generate:
         try:
             if not svgwrite_ok:
-                st.error("Rendering requires svgwrite. Run: pip install svgwrite")
+                st.error("Rendering requires svgwrite. Install with Requirement already satisfied: svgwrite in /usr/local/lib/python3.10/dist-packages (1.4.3).")
                 svg_bytes = None
                 png_bytes = None
             else:
-                spec = build_sld_group_spec(
+                dc_blocks_by_feeder = []
+                for idx, count in enumerate(dc_blocks_per_feeder, start=1):
+                    dc_blocks_by_feeder.append(
+                        {
+                            "feeder_id": f"FDR-{idx:02d}",
+                            "dc_block_count": int(count),
+                            "dc_block_energy_mwh": float(count) * dc_block_energy_mwh,
+                        }
+                    )
+                jp_inputs = dict(sld_inputs)
+                jp_inputs["dc_blocks_by_feeder"] = dc_blocks_by_feeder
+                jp_inputs["diagram_scope"] = "one_ac_block_group"
+                snapshot = build_single_unit_snapshot(
+                    stage13_output, ac_output, dc_summary, jp_inputs, scenario_id
+                )
+                validate_single_unit_snapshot(snapshot)
+                sld_spec = build_sld_group_spec(
                     stage13_output, ac_output, dc_summary, sld_inputs, group_index
                 )
                 with tempfile.TemporaryDirectory() as tmpdir:
                     tmp_path = Path(tmpdir)
-                    svg_path = tmp_path / "sld_raw_v05.svg"
-                    png_path = tmp_path / "sld_raw_v05.png" if cairosvg_ok else None
-                    svg_result, warning = render_sld_pro_svg(spec, svg_path, png_path)
-                    if svg_result is None:
-                        st.error(warning or "SLD renderer unavailable.")
-                        svg_bytes = None
-                        png_bytes = None
-                    else:
-                        if warning:
-                            st.warning(warning)
-                        svg_bytes = svg_path.read_bytes() if svg_path.exists() else None
-                        png_bytes = (
-                            png_path.read_bytes() if png_path and png_path.exists() else None
-                        )
+                    svg_path = tmp_path / "sld_pro_v10.svg"
+                    render_sld_pro_svg(sld_spec, svg_path)
+                    svg_bytes = svg_path.read_bytes() if svg_path.exists() else None
+                    png_bytes = _svg_bytes_to_png(svg_bytes) if svg_bytes and cairosvg_ok else None
 
             if svg_bytes or png_bytes:
                 dc_blocks_total = sum(dc_blocks_per_feeder) if dc_blocks_per_feeder else 0
@@ -601,18 +584,6 @@ def show():
                 }
                 diagram_results["last_style"] = style_id
                 st.session_state["diagram_results"] = diagram_results
-                outputs_dir = Path("outputs")
-                outputs_dir.mkdir(exist_ok=True)
-                if svg_bytes:
-                    svg_path = outputs_dir / "sld_latest.svg"
-                    svg_path.write_bytes(svg_bytes)
-                    diagram_outputs.sld_svg_path = str(svg_path)
-                    st.session_state["sld_svg_path"] = str(svg_path)
-                if png_bytes:
-                    png_path = outputs_dir / "sld_latest.png"
-                    png_path.write_bytes(png_bytes)
-                    diagram_outputs.sld_png_path = str(png_path)
-                    st.session_state["sld_png_path"] = str(png_path)
                 if svg_bytes:
                     artifacts["sld_svg_bytes"] = svg_bytes
                     diagram_outputs.sld_svg = svg_bytes
@@ -620,6 +591,28 @@ def show():
                     artifacts["sld_png_bytes"] = png_bytes
                     diagram_outputs.sld_png = png_bytes
                 artifacts["sld_meta"] = meta
+                outputs_dir = Path("outputs")
+                try:
+                    outputs_dir.mkdir(exist_ok=True)
+                except Exception as exc:
+                    st.warning(f"Could not create outputs directory: {exc}")
+                else:
+                    if svg_bytes:
+                        try:
+                            svg_path = outputs_dir / "sld_latest.svg"
+                            svg_path.write_bytes(svg_bytes)
+                            diagram_outputs.sld_svg_path = str(svg_path)
+                            st.session_state["sld_svg_path"] = str(svg_path)
+                        except Exception as exc:
+                            st.warning(f"Could not write SLD SVG: {exc}")
+                    if png_bytes:
+                        try:
+                            png_path = outputs_dir / "sld_latest.png"
+                            png_path.write_bytes(png_bytes)
+                            diagram_outputs.sld_png_path = str(png_path)
+                            st.session_state["sld_png_path"] = str(png_path)
+                        except Exception as exc:
+                            st.warning(f"Could not write SLD PNG: {exc}")
         except Exception as exc:
             st.error(f"SLD generation failed: {exc}")
 

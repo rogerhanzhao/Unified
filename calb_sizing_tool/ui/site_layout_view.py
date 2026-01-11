@@ -12,7 +12,6 @@ from calb_sizing_tool.common.dependencies import check_dependencies
 from calb_sizing_tool.common.preferences import load_preferences, save_preferences
 from calb_sizing_tool.state.project_state import get_project_state, init_project_state
 from calb_sizing_tool.state.session_state import init_shared_state
-from calb_sizing_tool.ui.template_store import load_active
 
 
 def _safe_float(value, default=0.0):
@@ -49,32 +48,6 @@ def show():
     project_state = get_project_state()
     st.header("Site Layout")
     st.caption("Template block layout (abstract engineering view).")
-
-    # Manual template override from Diagram Studio
-    try:
-        manual = load_active("layout")
-        if isinstance(manual, dict):
-            meta = manual.get("__meta__", {})
-            st.info("🎨 Manual Layout Active: Using the custom diagram from Diagram Studio.")
-            preview_png = meta.get("preview_png_path")
-            
-            # Ensure outputs directory exists
-            outputs_dir = Path("outputs")
-            outputs_dir.mkdir(exist_ok=True)
-            
-            if preview_png and Path(preview_png).exists():
-                st.image(preview_png, use_container_width=True)
-                st.session_state["layout_png_path"] = str(preview_png)
-                
-                # Trust the manual override
-                
-                if st.button("Revert to Auto-Generation"):
-                     from calb_sizing_tool.ui.template_store import clear_active
-                     clear_active("layout")
-                     st.rerun()
-                return
-    except Exception as e:
-        st.warning(f"Could not load manual template: {e}")
 
     deps = check_dependencies()
     svgwrite_ok = deps.get("svgwrite", False)
@@ -143,7 +116,10 @@ def show():
     c_status5.metric("AC Blocks", ac_output.get("num_blocks") or "TBD")
 
     if not svgwrite_ok:
-        st.error("Missing dependency: svgwrite. Run: pip install svgwrite")
+        st.error(
+            "Missing dependency: svgwrite. Install with `pip install svgwrite` or "
+            "`pip install -r requirements.txt`."
+        )
 
     def _init_input(field: str, default_value):
         key = f"layout_inputs.{field}"
@@ -408,28 +384,39 @@ def show():
                         }
                         layout_results["last_style"] = style_id
                         st.session_state["layout_results"] = layout_results
-                        outputs_dir = Path("outputs")
-                        outputs_dir.mkdir(exist_ok=True)
-                        if svg_bytes:
-                            svg_path = outputs_dir / "layout_latest.svg"
-                            svg_path.write_bytes(svg_bytes)
-                            diagram_outputs.layout_svg_path = str(svg_path)
-                            st.session_state["layout_svg_path"] = str(svg_path)
                         if svg_bytes:
                             st.session_state["layout_svg_bytes"] = svg_bytes
                             artifacts["layout_svg_bytes"] = svg_bytes
                             diagram_outputs.layout_svg = svg_bytes
                         if png_bytes:
-                            png_path = outputs_dir / "layout_latest.png"
-                            png_path.write_bytes(png_bytes)
-                            diagram_outputs.layout_png_path = str(png_path)
-                            st.session_state["layout_png_path"] = str(png_path)
                             st.session_state["layout_png_bytes"] = png_bytes
                             artifacts["layout_png_bytes"] = png_bytes
                             diagram_outputs.layout_png = png_bytes
                             if isinstance(layout_results[style_id].get("meta"), dict):
                                 layout_results[style_id]["meta"]["hash"] = __import__("hashlib").sha256(png_bytes).hexdigest()[:12]
                         artifacts["layout_meta"] = meta
+                        outputs_dir = Path("outputs")
+                        try:
+                            outputs_dir.mkdir(exist_ok=True)
+                        except Exception as exc:
+                            st.warning(f"Could not create outputs directory: {exc}")
+                        else:
+                            if svg_bytes:
+                                try:
+                                    svg_path = outputs_dir / "layout_latest.svg"
+                                    svg_path.write_bytes(svg_bytes)
+                                    diagram_outputs.layout_svg_path = str(svg_path)
+                                    st.session_state["layout_svg_path"] = str(svg_path)
+                                except Exception as exc:
+                                    st.warning(f"Could not write layout SVG: {exc}")
+                            if png_bytes:
+                                try:
+                                    png_path = outputs_dir / "layout_latest.png"
+                                    png_path.write_bytes(png_bytes)
+                                    diagram_outputs.layout_png_path = str(png_path)
+                                    st.session_state["layout_png_path"] = str(png_path)
+                                except Exception as exc:
+                                    st.warning(f"Could not write layout PNG: {exc}")
                     st.session_state["layout_spec_json"] = json.dumps(
                         asdict(spec), indent=2, sort_keys=True
                     )

@@ -1,7 +1,6 @@
 import math
 from pathlib import Path
 from typing import List, Tuple
-
 try:  # pragma: no cover - optional dependency
     import svgwrite
 except Exception:  # pragma: no cover
@@ -1143,7 +1142,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
                 if block_count > 1:
                     offset_x = (-1 if b % 2 == 0 else 1) * min(10.0, pcs_box_w * 0.15)
                 block_positions.append((line_x + offset_x, block_y))
-
             for center_x, block_y in block_positions:
                 dwg.add(dwg.line((center_x, branch_bus_y), (center_x, block_y - 4), class_="thin"))
                 _draw_triangle_up(dwg, center_x, block_y - 4, 8.0)
