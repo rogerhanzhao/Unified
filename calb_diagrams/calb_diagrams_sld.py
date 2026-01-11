@@ -1006,7 +1006,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             class_="thin",
             start_anchor=(tap_x, mv_bus_y),
         )
-        dwg.add(dwg.circle(center=(tap_x, mv_bus_y - rmu_tap_h - 6), r=6, class_="outline"))
     dwg.add(dwg.text("RMU", insert=(terminal_left_x - 26, terminal_y + 10), class_="label"))
 
     # MV center chain

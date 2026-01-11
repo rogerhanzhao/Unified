@@ -1210,8 +1210,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         contact_r=switch_contact_r,
         contact_fill=node_fill,
     )
-    _draw_solid_node(dwg, terminal_left_x, mv_bus_y, mv_bus_node_r, node_fill)
-    _draw_solid_node(dwg, terminal_right_x, mv_bus_y, mv_bus_node_r, node_fill)
     _draw_solid_node(dwg, mv_center_x, mv_bus_y, mv_bus_node_r, node_fill)
     _draw_breaker_x(dwg, mv_center_x, mv_bus_y + mv_bus_x_offset, mv_bus_x_size)
     _draw_breaker_with_isolators(
