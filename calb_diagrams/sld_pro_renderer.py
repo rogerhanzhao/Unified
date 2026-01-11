@@ -258,7 +258,7 @@ def _draw_breaker_circle(dwg, x: float, y: float, r: float) -> None:
 
 
 def _draw_transformer_symbol(dwg, x: float, y: float, r: float) -> tuple[tuple[float, float], tuple[float, float]]:
-    gap = r * 1.2
+    gap = r * 0.9
     top_center = (x, y)
     left_center = (x - gap, y + gap)
     right_center = (x + gap, y + gap)
