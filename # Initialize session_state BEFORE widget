@@ -1,7 +1,0 @@
-# Initialize session_state BEFORE widget creation
-if "diagram_inputs.dc_blocks_table" not in st.session_state:
-    st.session_state["diagram_inputs.dc_blocks_table"] = default_df  # your default
-
-# Now use the widget WITHOUT assigning to session_state after
-result_df = st.data_editor(data=st.session_state["diagram_inputs.dc_blocks_table"], ...)
-st.session_state["diagram_inputs.dc_blocks_table"] = result_df

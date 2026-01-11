@@ -13,6 +13,7 @@ __pycache__/
 
 # Streamlit cache
 .streamlit/cache/
+.streamlit/machine_id_v4
 
 # Temporary files
 *.log
@@ -21,6 +22,26 @@ __pycache__/
 *_update.py
 temp_*.py
 verify_*.py
+
+# Local shell/config history (host-specific)
+.bash_aliases
+.bash_history
+.bashrc
+.gitconfig
+.lesshst
+.profile
+.wget-hsts
+.zshrc
+
+# Local machine caches/config
+.cache/
+.config/
+.copilot/
+.dotnet/
+.local/
+.ssh/
+user_preferences.json
+outputs/
 
 # Systemd env files
 deploy/systemd/*.env
