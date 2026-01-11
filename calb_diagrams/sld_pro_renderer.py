@@ -113,7 +113,7 @@ def _pick_pcs_rating_kw(spec: SldGroupSpec) -> float:
 def _draw_pcs_dc_ac_symbol(dwg, x: float, y: float, w: float, h: float) -> None:
     if w <= 0 or h <= 0:
         return
-    pad = min(w, h) * 0.18
+    pad = min(w, h) * 0.12
     inner_x = x + pad
     inner_y = y + pad
     inner_w = max(1.0, w - pad * 2)
@@ -246,6 +246,55 @@ def _draw_node(dwg, x: float, y: float, r: float, fill: str) -> None:
 
 def _draw_solid_node(dwg, x: float, y: float, r: float, fill: str) -> None:
     dwg.add(dwg.circle(center=(x, y), r=r, fill=fill, stroke=fill, stroke_width=0.6))
+
+
+def _draw_open_switches_vertical(
+    dwg,
+    x: float,
+    y_top: float,
+    y_bottom: float,
+    switches: list[dict],
+    line_class: str,
+    contact_style: str,
+    contact_r: float,
+    contact_fill: str,
+) -> None:
+    if y_bottom < y_top:
+        y_top, y_bottom = y_bottom, y_top
+    current_y = y_top
+    for switch in sorted(switches, key=lambda item: item.get("y", 0.0)):
+        pivot_y = _safe_float(switch.get("y"), current_y)
+        if pivot_y <= current_y + 1.0:
+            pivot_y = current_y + 1.0
+        if pivot_y >= y_bottom - 1.0:
+            pivot_y = y_bottom - 1.0
+        gap = max(4.0, _safe_float(switch.get("gap"), 6.0))
+        blade_dx = max(6.0, _safe_float(switch.get("blade_dx"), gap * 1.2))
+        blade_dy = max(3.0, _safe_float(switch.get("blade_dy"), gap * 0.6))
+        _draw_line_anchored(
+            dwg,
+            (x, current_y),
+            (x, pivot_y),
+            class_=line_class,
+            start_anchor=(x, current_y),
+            end_anchor=(x, pivot_y),
+        )
+        dwg.add(dwg.line((x, pivot_y), (x + blade_dx, pivot_y + blade_dy), class_=line_class))
+        contact_y = min(y_bottom, pivot_y + gap)
+        if contact_style == "cross":
+            _draw_breaker_x(dwg, x, contact_y, contact_r * 2.0)
+        else:
+            _draw_solid_node(dwg, x, contact_y, contact_r, contact_fill)
+        current_y = contact_y
+    if current_y < y_bottom:
+        _draw_line_anchored(
+            dwg,
+            (x, current_y),
+            (x, y_bottom),
+            class_=line_class,
+            start_anchor=(x, current_y),
+            end_anchor=(x, y_bottom),
+        )
 
 
 def _snap_point(
@@ -684,13 +733,13 @@ def render_sld_pro_svg(
     pcs_count = max(1, int(spec.pcs_count))
     group_a, group_b = _split_pcs_groups(pcs_count)
     group_split = len(group_a)
-    pcs_box_h = 54
+    pcs_box_h = 50
     pcs_pad = skid_pad
     pcs_span = max(240.0, diagram_width - pcs_pad * 2)
     slot_w = pcs_span / pcs_count
     if compact_mode:
         pcs_box_w = min(80.0, max(58.0, slot_w - 20.0))
-        pcs_box_h = max(78.0, pcs_box_w)
+        pcs_box_h = max(66.0, pcs_box_w * 0.9)
     else:
         pcs_box_w = min(160.0, max(110.0, slot_w - 10.0))
     pcs_centers = [
@@ -713,7 +762,8 @@ def render_sld_pro_svg(
     tr_top_y = equip_y + mv_to_tr_gap
 
     bus_y = tr_top_y + tr_radius * 2 + 80.0
-    pcs_y = bus_y + 24.0
+    pcs_bus_gap = _safe_float(layout_params.get("pcs_bus_gap"), 32.0)
+    pcs_y = bus_y + pcs_bus_gap
     dc_blocks_total = _safe_int(spec.dc_blocks_total_in_group, 0)
     battery_x = skid_x + battery_pad
     battery_w = diagram_width - battery_pad * 2
@@ -975,6 +1025,10 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     )
 
     node_fill = label_color
+    switch_contact_style = str(layout_params.get("switch_contact_style") or "dot").lower()
+    if switch_contact_style not in ("dot", "cross"):
+        switch_contact_style = "dot"
+    switch_contact_r = _safe_float(layout_params.get("switch_contact_r"), 2.4)
     busbar_left_x = hv_bus_left
     busbar_right_x = hv_bus_right
     dwg.add(dwg.line((busbar_left_x, mv_bus_y), (busbar_right_x, mv_bus_y), class_="thick"))
@@ -985,35 +1039,48 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     _draw_node(dwg, mv_center_x, mv_bus_y, node_r, node_fill)
 
     # Incoming RMU lines (two-way feeders) into short busbar.
-    incoming_symbol_r = 6.0
     incoming_symbol_y = terminal_y + (mv_bus_y - terminal_y) * 0.45
     incoming_arrow_size = 8.0
+    incoming_gap = _safe_float(layout_params.get("rmu_switch_gap"), 7.0)
+    incoming_blade_dx = _safe_float(layout_params.get("rmu_switch_blade_dx"), 10.0)
     for tap_x in (terminal_left_x, terminal_right_x):
-        _draw_line_anchored(
+        _draw_open_switches_vertical(
             dwg,
-            (tap_x, mv_bus_y),
-            (tap_x, terminal_y),
-            class_="thin",
-            start_anchor=(tap_x, mv_bus_y),
-            end_anchor=(tap_x, terminal_y),
+            tap_x,
+            mv_bus_y,
+            terminal_y,
+            [
+                {
+                    "y": incoming_symbol_y,
+                    "gap": incoming_gap,
+                    "blade_dx": incoming_blade_dx,
+                }
+            ],
+            line_class="thin",
+            contact_style=switch_contact_style,
+            contact_r=switch_contact_r,
+            contact_fill=node_fill,
         )
-        _draw_breaker_circle(dwg, tap_x, incoming_symbol_y, incoming_symbol_r)
         _draw_triangle_down(dwg, tap_x, terminal_y - incoming_arrow_size, incoming_arrow_size)
     dwg.add(dwg.text("RMU", insert=(terminal_left_x - 26, terminal_y + 10), class_="label"))
 
     # MV center chain
-    branch_top = (mv_center_x, mv_bus_y)
-    branch_bottom = (mv_center_x, equip_y)
-    _draw_line_anchored(
+    mv_switch_contact_gap = _safe_float(layout_params.get("mv_switch_gap"), 7.0)
+    mv_switch_blade_dx = _safe_float(layout_params.get("mv_switch_blade_dx"), 10.0)
+    _draw_open_switches_vertical(
         dwg,
-        branch_top,
-        branch_bottom,
-        class_="thin",
-        start_anchor=branch_top,
-        end_anchor=branch_bottom,
+        mv_center_x,
+        mv_bus_y,
+        equip_y,
+        [
+            {"y": breaker_y, "gap": mv_switch_contact_gap, "blade_dx": mv_switch_blade_dx},
+            {"y": switch_y, "gap": mv_switch_contact_gap, "blade_dx": mv_switch_blade_dx},
+        ],
+        line_class="thin",
+        contact_style=switch_contact_style,
+        contact_r=switch_contact_r,
+        contact_fill=node_fill,
     )
-    _draw_breaker_x(dwg, mv_center_x, breaker_y, 9.0)
-    _draw_dc_switch(dwg, mv_center_x, switch_y, mv_switch_h)
 
     equip_span = 60.0
     dwg.add(
@@ -1044,6 +1111,11 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     _draw_triangle_down(dwg, mv_center_x, tr_top_y - tr_radius - 8, 8.0)
     left_center, right_center = _draw_transformer_symbol(dwg, tr_center_x, tr_top_y, tr_radius)
     tx_lv_spacing = _safe_float(layout_params.get("tx_lv_spacing"), 14.0)
+    requested_gap = _safe_float(layout_params.get("lv_bus_gap"), 0.0)
+    if requested_gap <= 0:
+        requested_gap = _safe_float(layout_params.get("lv_bus_coupler_r"), 0.0) * 2
+    if requested_gap > 0:
+        tx_lv_spacing = requested_gap / 2
     tx_lv_spacing = min(18.0, max(12.0, tx_lv_spacing))
     tx_lv_start_y = left_center[1] + tr_radius
     tx_lv_left_start = (tr_center_x - tx_lv_spacing, tx_lv_start_y)
@@ -1092,16 +1164,9 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     bus_x2 = skid_x + diagram_width - skid_pad
     busbar_class = "busbar" if dark_mode else "thick"
     lv_bus_split = bool(layout_params.get("lv_bus_split", True))
-    lv_bus_gap = _safe_float(layout_params.get("lv_bus_gap"), 0.0)
-    if lv_bus_gap <= 0:
-        lv_bus_gap = _safe_float(layout_params.get("lv_bus_coupler_r"), 0.0) * 2
-    if lv_bus_gap <= 0:
-        lv_bus_gap = tx_lv_spacing * 1.2
-    lv_bus_gap = max(10.0, min(lv_bus_gap, tx_lv_spacing * 1.6))
     if lv_bus_split:
-        gap_center = mv_center_x
-        bus_left_end = gap_center - lv_bus_gap / 2
-        bus_right_start = gap_center + lv_bus_gap / 2
+        bus_left_end = tx_lv_left[0]
+        bus_right_start = tx_lv_right[0]
         dwg.add(dwg.line((bus_x1, bus_y), (bus_left_end, bus_y), class_=busbar_class))
         dwg.add(dwg.line((bus_right_start, bus_y), (bus_x2, bus_y), class_=busbar_class))
     else:
@@ -1110,7 +1175,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
 
     pcs_label_offset = _safe_float(layout_params.get("pcs_label_offset"), 10.0)
     pcs_switch_offset = _safe_float(layout_params.get("pcs_switch_offset"), 8.0)
-    pcs_breaker_size = _safe_float(layout_params.get("pcs_breaker_size"), 6.0)
     lv_tap_nodes = bool(layout_params.get("lv_tap_nodes", False))
     lv_node_r = 3.0
     _draw_solid_node(dwg, tx_lv_left[0], tx_lv_left[1], lv_node_r, node_fill)
@@ -1132,10 +1196,10 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             )
             _draw_pcs_dc_ac_symbol(
                 dwg,
-                pcs_left_x + pcs_box_w * 0.12,
-                pcs_y + pcs_box_h * 0.26,
-                pcs_box_w * 0.76,
-                pcs_box_h * 0.68,
+                pcs_left_x + pcs_box_w * 0.08,
+                pcs_y + pcs_box_h * 0.18,
+                pcs_box_w * 0.84,
+                pcs_box_h * 0.74,
             )
         else:
             dwg.add(
@@ -1158,19 +1222,25 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             )
         tap = (pcs_center_x, bus_y)
         pcs_in = (pcs_center_x, pcs_y)
-        _draw_line_anchored(
+        pcs_switch_gap = _safe_float(layout_params.get("pcs_switch_gap"), 6.0)
+        pcs_switch_blade_dx = _safe_float(layout_params.get("pcs_switch_blade_dx"), 10.0)
+        _draw_open_switches_vertical(
             dwg,
-            tap,
-            pcs_in,
-            class_="thin",
-            start_anchor=tap,
-            end_anchor=pcs_in,
+            pcs_center_x,
+            tap[1],
+            pcs_in[1],
+            [
+                {
+                    "y": bus_y + pcs_switch_offset,
+                    "gap": pcs_switch_gap,
+                    "blade_dx": pcs_switch_blade_dx,
+                }
+            ],
+            line_class="thin",
+            contact_style=switch_contact_style,
+            contact_r=switch_contact_r,
+            contact_fill=node_fill,
         )
-        _draw_breaker_x(dwg, pcs_center_x, bus_y + pcs_switch_offset, pcs_breaker_size)
-        if compact_mode:
-            switch_h = 12.0
-            switch_y = pcs_y - switch_h - 6.0
-            _draw_dc_switch(dwg, pcs_center_x, switch_y, switch_h)
         if lv_tap_nodes:
             _draw_node(dwg, tap[0], tap[1], lv_node_r, node_fill)
 
@@ -1225,15 +1295,25 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             pcs_out = (line_x, dc_top)
             prot_center = (line_x, fuse_center_y)
             branch_bus = (line_x, branch_bus_y)
-            _draw_line_anchored(
+            dc_switch_gap = _safe_float(layout_params.get("dc_switch_gap"), 6.0)
+            dc_switch_blade_dx = _safe_float(layout_params.get("dc_switch_blade_dx"), 10.0)
+            _draw_open_switches_vertical(
                 dwg,
-                pcs_out,
-                prot_center,
-                class_="thin",
-                start_anchor=pcs_out,
-                end_anchor=prot_center,
+                line_x,
+                pcs_out[1],
+                prot_center[1],
+                [
+                    {
+                        "y": switch_y,
+                        "gap": dc_switch_gap,
+                        "blade_dx": dc_switch_blade_dx,
+                    }
+                ],
+                line_class="thin",
+                contact_style=switch_contact_style,
+                contact_r=switch_contact_r,
+                contact_fill=node_fill,
             )
-            _draw_dc_switch(dwg, line_x, switch_y, switch_h)
             _draw_fuse(dwg, line_x, fuse_top, max(6.0, pcs_box_w * 0.1), fuse_h)
             _draw_line_anchored(
                 dwg,
