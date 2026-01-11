@@ -244,6 +244,30 @@ def _draw_node(dwg, x: float, y: float, r: float, fill: str) -> None:
     dwg.add(dwg.circle(center=(x, y), r=r, class_="outline", fill=fill))
 
 
+def _snap_point(
+    point: tuple[float, float], anchor: tuple[float, float], tol: float = 0.5
+) -> tuple[float, float]:
+    if abs(point[0] - anchor[0]) > tol or abs(point[1] - anchor[1]) > tol:
+        return anchor
+    return point
+
+
+def _draw_line_anchored(
+    dwg,
+    start: tuple[float, float],
+    end: tuple[float, float],
+    class_: str = "thin",
+    start_anchor: tuple[float, float] | None = None,
+    end_anchor: tuple[float, float] | None = None,
+    tol: float = 0.5,
+) -> None:
+    if start_anchor is not None:
+        start = _snap_point(start, start_anchor, tol)
+    if end_anchor is not None:
+        end = _snap_point(end, end_anchor, tol)
+    dwg.add(dwg.line(start, end, class_=class_))
+
+
 def _draw_ground(dwg, x: float, y: float) -> None:
     dwg.add(dwg.line((x, y), (x, y + 6), class_="thin"))
     dwg.add(dwg.line((x - 6, y + 6), (x + 6, y + 6), class_="thin"))
@@ -651,19 +675,23 @@ def render_sld_pro_svg(
 
     skid_x = diagram_left
     skid_y = table_y
+    skid_pad = _safe_float(layout_params.get("skid_pad"), 60.0)
+    battery_pad = _safe_float(layout_params.get("battery_pad"), 40.0)
     pcs_count = max(1, int(spec.pcs_count))
     group_a, group_b = _split_pcs_groups(pcs_count)
     group_split = len(group_a)
     pcs_box_h = 54
-    pcs_pad = 60
-    available = max(240.0, diagram_width - pcs_pad * 2)
-    slot_w = available / pcs_count
+    pcs_pad = skid_pad
+    pcs_span = max(240.0, diagram_width - pcs_pad * 2)
+    slot_w = pcs_span / pcs_count
     if compact_mode:
         pcs_box_w = min(80.0, max(58.0, slot_w - 20.0))
         pcs_box_h = max(78.0, pcs_box_w)
     else:
         pcs_box_w = min(160.0, max(110.0, slot_w - 10.0))
-    pcs_start_x = skid_x + pcs_pad + (slot_w - pcs_box_w) / 2
+    pcs_centers = [
+        skid_x + pcs_pad + (idx + 0.5) * slot_w for idx in range(pcs_count)
+    ]
     mv_center_x = skid_x + diagram_width / 2
     gap_center = mv_center_x
 
@@ -683,8 +711,8 @@ def render_sld_pro_svg(
     bus_y = tr_top_y + tr_radius * 2 + 80.0
     pcs_y = bus_y + 24.0
     dc_blocks_total = _safe_int(spec.dc_blocks_total_in_group, 0)
-    battery_x = skid_x + 40
-    battery_w = diagram_width - 80
+    battery_x = skid_x + battery_pad
+    battery_w = diagram_width - battery_pad * 2
 
     if compact_mode:
         dc_bus_y = pcs_y + pcs_box_h + 30
@@ -807,15 +835,21 @@ def render_sld_pro_svg(
     title_color = "#f8fafc" if dark_mode else "#000000"
     bg_color = "#0b0f13" if dark_mode else "#ffffff"
 
+    thin_width = max(1.5, SLD_STROKE_THIN)
+    outline_width = max(2.0, SLD_STROKE_OUTLINE)
+    thick_width = max(2.0, SLD_STROKE_THICK)
+    dash_width = outline_width
+    busbar_width = max(2.0, SLD_STROKE_THICK)
+
     dwg.add(
         dwg.style(
             f"""
 svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
-.outline {{ stroke: {outline_color}; stroke-width: {SLD_STROKE_OUTLINE}; fill: none; }}
-.thin {{ stroke: {thin_color}; stroke-width: {SLD_STROKE_THIN}; fill: none; }}
-.thick {{ stroke: {thick_color}; stroke-width: {SLD_STROKE_THICK}; fill: none; }}
-.dash {{ stroke: {dash_color}; stroke-width: {SLD_STROKE_OUTLINE}; fill: none; stroke-dasharray: {SLD_DASH_ARRAY}; }}
-.busbar {{ stroke: {busbar_color}; stroke-width: {SLD_STROKE_THICK}; fill: none; }}
+.outline {{ stroke: {outline_color}; stroke-width: {outline_width}; fill: none; }}
+.thin {{ stroke: {thin_color}; stroke-width: {thin_width}; fill: none; }}
+.thick {{ stroke: {thick_color}; stroke-width: {thick_width}; fill: none; }}
+.dash {{ stroke: {dash_color}; stroke-width: {dash_width}; fill: none; stroke-dasharray: {SLD_DASH_ARRAY}; }}
+.busbar {{ stroke: {busbar_color}; stroke-width: {busbar_width}; fill: none; }}
 .label {{ fill: {label_color}; }}
 .title {{ font-size: {SLD_FONT_SIZE_TITLE}px; font-weight: bold; fill: {title_color}; }}
 .small {{ font-size: {SLD_FONT_SIZE_SMALL}px; fill: {label_color}; }}
@@ -919,9 +953,9 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     if not to_other_rmu:
         to_other_rmu = "To Other RMU"
 
-    terminal_y = skid_y + 56
-    terminal_left_x = skid_x + 70
-    terminal_right_x = skid_x + diagram_width - 70
+    terminal_y = skid_y + max(56.0, skid_pad)
+    terminal_left_x = skid_x + skid_pad
+    terminal_right_x = skid_x + diagram_width - skid_pad
     dwg.add(dwg.text(to_switchgear, insert=(terminal_left_x - 10, terminal_y - 18), class_="label"))
     dwg.add(
         dwg.text(
@@ -933,11 +967,11 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     )
 
     node_fill = label_color
-    busbar_left_x = terminal_left_x - 20
-    busbar_right_x = terminal_right_x + 20
+    busbar_left_x = terminal_left_x
+    busbar_right_x = terminal_right_x
     dwg.add(dwg.line((busbar_left_x, mv_bus_y), (busbar_right_x, mv_bus_y), class_="thin"))
 
-    node_r = 4.0
+    node_r = 3.0
     _draw_node(dwg, terminal_left_x, mv_bus_y, node_r, node_fill)
     _draw_node(dwg, terminal_right_x, mv_bus_y, node_r, node_fill)
     _draw_node(dwg, mv_center_x, mv_bus_y, node_r, node_fill)
@@ -945,16 +979,29 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     # RMU taps
     rmu_tap_h = 26.0
     for tap_x in (terminal_left_x, terminal_right_x):
-        dwg.add(dwg.line((tap_x, mv_bus_y - rmu_tap_h), (tap_x, mv_bus_y - node_r), class_="thin"))
+        _draw_line_anchored(
+            dwg,
+            (tap_x, mv_bus_y),
+            (tap_x, mv_bus_y - rmu_tap_h),
+            class_="thin",
+            start_anchor=(tap_x, mv_bus_y),
+        )
         dwg.add(dwg.circle(center=(tap_x, mv_bus_y - rmu_tap_h - 6), r=6, class_="outline"))
     dwg.add(dwg.text("RMU", insert=(terminal_left_x - 26, terminal_y + 10), class_="label"))
 
     # MV center chain
-    dwg.add(dwg.line((mv_center_x, mv_bus_y + node_r), (mv_center_x, breaker_y - 5), class_="thin"))
+    branch_top = (mv_center_x, mv_bus_y)
+    branch_bottom = (mv_center_x, equip_y)
+    _draw_line_anchored(
+        dwg,
+        branch_top,
+        branch_bottom,
+        class_="thin",
+        start_anchor=branch_top,
+        end_anchor=branch_bottom,
+    )
     _draw_breaker_x(dwg, mv_center_x, breaker_y, 9.0)
-    dwg.add(dwg.line((mv_center_x, breaker_y + 5), (mv_center_x, switch_y), class_="thin"))
     _draw_dc_switch(dwg, mv_center_x, switch_y, mv_switch_h)
-    dwg.add(dwg.line((mv_center_x, switch_y + mv_switch_h), (mv_center_x, equip_y), class_="thin"))
 
     equip_span = 60.0
     dwg.add(
@@ -984,19 +1031,15 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     dwg.add(dwg.line((mv_center_x, equip_y), (mv_center_x, tr_top_y - tr_radius), class_="thin"))
     _draw_triangle_down(dwg, mv_center_x, tr_top_y - tr_radius - 8, 8.0)
     left_center, right_center = _draw_transformer_symbol(dwg, tr_center_x, tr_top_y, tr_radius)
-    dwg.add(
-        dwg.line(
-            (left_center[0], left_center[1] + tr_radius),
-            (left_center[0], bus_y),
-            class_="thin",
-        )
-    )
-    dwg.add(
-        dwg.line(
-            (right_center[0], right_center[1] + tr_radius),
-            (right_center[0], bus_y),
-            class_="thin",
-        )
+    tx_lv_anchor = (tr_center_x, left_center[1] + tr_radius)
+    tx_lv_bus = (tr_center_x, bus_y)
+    _draw_line_anchored(
+        dwg,
+        tx_lv_anchor,
+        tx_lv_bus,
+        class_="thin",
+        start_anchor=tx_lv_anchor,
+        end_anchor=tx_lv_bus,
     )
 
     tr_text_x = tr_center_x + tr_radius * 2 + 90
@@ -1020,23 +1063,24 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     for idx, line in enumerate(tr_lines):
         dwg.add(dwg.text(line, insert=(tr_text_x, tr_text_y + idx * 16), class_="label"))
 
-    bus_x1 = skid_x + 80
-    bus_x2 = skid_x + diagram_width - 80
+    bus_x1 = skid_x + skid_pad
+    bus_x2 = skid_x + diagram_width - skid_pad
     busbar_class = "busbar" if dark_mode else "thick"
-    bus_gap = max(18.0, min(80.0, slot_w * 0.6))
-    bus_gap = min(bus_gap, tr_radius * 2.4)
-    bus_left_end = gap_center - bus_gap / 2
-    bus_right_start = gap_center + bus_gap / 2
-    dwg.add(dwg.line((bus_x1, bus_y), (bus_left_end, bus_y), class_=busbar_class))
-    dwg.add(dwg.line((bus_right_start, bus_y), (bus_x2, bus_y), class_=busbar_class))
+    dwg.add(dwg.line((bus_x1, bus_y), (bus_x2, bus_y), class_=busbar_class))
     dwg.add(dwg.text("LV Busbar", insert=(bus_x1, bus_y - 8), class_="label"))
 
+    pcs_label_offset = _safe_float(layout_params.get("pcs_label_offset"), 10.0)
+    pcs_switch_offset = _safe_float(layout_params.get("pcs_switch_offset"), 18.0)
+    pcs_breaker_size = _safe_float(layout_params.get("pcs_breaker_size"), 6.0)
+    lv_node_r = 3.0
+    _draw_node(dwg, tx_lv_bus[0], tx_lv_bus[1], lv_node_r, node_fill)
     for idx in range(pcs_count):
-        x = pcs_start_x + idx * slot_w
-        dwg.add(dwg.rect(insert=(x, pcs_y), size=(pcs_box_w, pcs_box_h), class_="outline"))
+        pcs_center_x = pcs_centers[idx]
+        pcs_left_x = pcs_center_x - pcs_box_w / 2
+        dwg.add(dwg.rect(insert=(pcs_left_x, pcs_y), size=(pcs_box_w, pcs_box_h), class_="outline"))
         if compact_mode:
-            label_y = pcs_y - 6
-            label_x = x + 6
+            label_y = bus_y + pcs_label_offset
+            label_x = pcs_left_x + 6
             dwg.add(
                 dwg.text(
                     f"PCS-{idx + 1}",
@@ -1046,32 +1090,44 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             )
             _draw_pcs_dc_ac_symbol(
                 dwg,
-                x + pcs_box_w * 0.12,
+                pcs_left_x + pcs_box_w * 0.12,
                 pcs_y + pcs_box_h * 0.26,
                 pcs_box_w * 0.76,
                 pcs_box_h * 0.68,
             )
         else:
-            dwg.add(dwg.text(f"PCS-{idx + 1}", insert=(x + 8, pcs_y + 20), class_="label"))
-            rating = spec.pcs_rating_kw_list[idx] if idx < len(spec.pcs_rating_kw_list) else 0.0
-            rating_text = f"{rating:.0f} kW" if rating else "TBD"
-            dwg.add(dwg.text(rating_text, insert=(x + 8, pcs_y + 38), class_="label"))
-        line_x = x + pcs_box_w / 2
-        if compact_mode:
-            _draw_breaker_x(dwg, line_x, bus_y + 10, 8)
-            switch_h = 12.0
-            switch_y = pcs_y - switch_h - 6.0
-            dwg.add(dwg.line((line_x, bus_y), (line_x, switch_y), class_="thin"))
-            _draw_dc_switch(dwg, line_x, switch_y, switch_h)
-            dwg.add(dwg.line((line_x, switch_y + switch_h), (line_x, pcs_y), class_="thin"))
-        else:
             dwg.add(
-                dwg.line(
-                    (line_x, bus_y),
-                    (line_x, pcs_y),
-                    class_="thin",
+                dwg.text(
+                    f"PCS-{idx + 1}",
+                    insert=(pcs_left_x + 8, pcs_y + 20),
+                    class_="label",
                 )
             )
+            rating = spec.pcs_rating_kw_list[idx] if idx < len(spec.pcs_rating_kw_list) else 0.0
+            rating_text = f"{rating:.0f} kW" if rating else "TBD"
+            dwg.add(
+                dwg.text(
+                    rating_text,
+                    insert=(pcs_left_x + 8, pcs_y + 38),
+                    class_="label",
+                )
+            )
+        tap = (pcs_center_x, bus_y)
+        pcs_in = (pcs_center_x, pcs_y)
+        _draw_line_anchored(
+            dwg,
+            tap,
+            pcs_in,
+            class_="thin",
+            start_anchor=tap,
+            end_anchor=pcs_in,
+        )
+        _draw_breaker_x(dwg, pcs_center_x, bus_y + pcs_switch_offset, pcs_breaker_size)
+        if compact_mode:
+            switch_h = 12.0
+            switch_y = pcs_y - switch_h - 6.0
+            _draw_dc_switch(dwg, pcs_center_x, switch_y, switch_h)
+        _draw_node(dwg, tap[0], tap[1], lv_node_r, node_fill)
 
     if compact_mode:
         dwg.add(dwg.rect(insert=(battery_x, battery_y), size=(battery_w, battery_h), class_="dash"))
@@ -1093,9 +1149,9 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
                 )
             )
 
+        dc_node_r = 2.5
         for idx in range(pcs_count):
-            x = pcs_start_x + idx * slot_w
-            line_x = x + pcs_box_w / 2
+            line_x = pcs_centers[idx]
             dc_top = pcs_y + pcs_box_h
             per_feeder = (
                 per_feeder_counts[idx] if idx < len(per_feeder_counts) else 1
@@ -1119,12 +1175,30 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
                 gap_between *= scale
                 gap_after *= scale
             switch_y = dc_top + gap_before
-            fuse_y = switch_y + switch_h + gap_between
-            dwg.add(dwg.line((line_x, dc_top), (line_x, switch_y), class_="thin"))
+            fuse_center_y = switch_y + switch_h + gap_between + fuse_h / 2
+            fuse_top = fuse_center_y - fuse_h / 2
+            pcs_out = (line_x, dc_top)
+            prot_center = (line_x, fuse_center_y)
+            branch_bus = (line_x, branch_bus_y)
+            _draw_line_anchored(
+                dwg,
+                pcs_out,
+                prot_center,
+                class_="thin",
+                start_anchor=pcs_out,
+                end_anchor=prot_center,
+            )
             _draw_dc_switch(dwg, line_x, switch_y, switch_h)
-            dwg.add(dwg.line((line_x, switch_y + switch_h), (line_x, fuse_y), class_="thin"))
-            _draw_fuse(dwg, line_x, fuse_y, max(6.0, pcs_box_w * 0.1), fuse_h)
-            dwg.add(dwg.line((line_x, fuse_y + fuse_h), (line_x, branch_bus_y), class_="thin"))
+            _draw_fuse(dwg, line_x, fuse_top, max(6.0, pcs_box_w * 0.1), fuse_h)
+            _draw_line_anchored(
+                dwg,
+                prot_center,
+                branch_bus,
+                class_="thin",
+                start_anchor=prot_center,
+                end_anchor=branch_bus,
+            )
+            _draw_node(dwg, branch_bus[0], branch_bus[1], dc_node_r, node_fill)
 
             block_positions = []
             if block_count > 1:
@@ -1138,16 +1212,25 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
                 )
             for b in range(block_count):
                 block_y = stack_top_y + b * (dc_block_h + dc_block_gap_y)
-                offset_x = 0.0
-                if block_count > 1:
-                    offset_x = (-1 if b % 2 == 0 else 1) * min(10.0, pcs_box_w * 0.15)
-                block_positions.append((line_x + offset_x, block_y))
+                block_positions.append((line_x, block_y))
             for center_x, block_y in block_positions:
-                dwg.add(dwg.line((center_x, branch_bus_y), (center_x, block_y - 4), class_="thin"))
-                _draw_triangle_up(dwg, center_x, block_y - 4, 8.0)
-                dwg.add(dwg.rect(insert=(center_x - pcs_box_w * 0.4, block_y),
-                                 size=(pcs_box_w * 0.8, dc_block_h),
-                                 class_="outline"))
+                dc_in = (center_x, block_y)
+                _draw_line_anchored(
+                    dwg,
+                    (center_x, branch_bus_y),
+                    dc_in,
+                    class_="thin",
+                    start_anchor=(center_x, branch_bus_y),
+                    end_anchor=dc_in,
+                )
+                _draw_node(dwg, dc_in[0], dc_in[1], dc_node_r, node_fill)
+                dwg.add(
+                    dwg.rect(
+                        insert=(center_x - pcs_box_w * 0.4, block_y),
+                        size=(pcs_box_w * 0.8, dc_block_h),
+                        class_="outline",
+                    )
+                )
                 inner_pad = max(10.0, dc_block_h * 0.12)
                 usable_h = max(1.0, dc_block_h - inner_pad * 2)
                 _draw_battery_column(
@@ -1163,11 +1246,21 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         dwg.add(dwg.line((bus_x1, dc_bus_b_y), (bus_x2, dc_bus_b_y), class_=busbar_class))
         dwg.add(dwg.text("DC BUSBAR B", insert=(bus_x1, dc_bus_b_y - 8), class_="label"))
 
+        dc_node_r = 2.5
         for idx in range(pcs_count):
-            x = pcs_start_x + idx * slot_w
-            line_x = x + pcs_box_w / 2
+            line_x = pcs_centers[idx]
             target_bus_y = dc_bus_a_y if idx < group_split else dc_bus_b_y
-            dwg.add(dwg.line((line_x, pcs_y + pcs_box_h), (line_x, target_bus_y), class_="thin"))
+            pcs_out = (line_x, pcs_y + pcs_box_h)
+            target = (line_x, target_bus_y)
+            _draw_line_anchored(
+                dwg,
+                pcs_out,
+                target,
+                class_="thin",
+                start_anchor=pcs_out,
+                end_anchor=target,
+            )
+            _draw_node(dwg, target[0], target[1], dc_node_r, node_fill)
 
         dwg.add(dwg.rect(insert=(battery_x, battery_y), size=(battery_w, battery_h), class_="dash"))
         if dark_mode:
