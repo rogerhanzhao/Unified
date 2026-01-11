@@ -49,6 +49,7 @@ class ReportContext:
     sld_preview_svg_bytes: Optional[bytes]
     sld_pro_png_bytes: Optional[bytes]
     layout_png_bytes: Optional[bytes]
+    layout_svg_bytes: Optional[bytes]
     stage1: Dict[str, Any] = field(default_factory=dict)
     stage2: Dict[str, Any] = field(default_factory=dict)
     stage3_df: Any = None
@@ -312,12 +313,14 @@ def build_report_context(
     sld_preview_svg_bytes = None
     sld_pro_png_bytes = None
     layout_png_bytes = None
+    layout_svg_bytes = None
     if isinstance(state, dict):
         artifacts = state.get("artifacts")
         if isinstance(artifacts, dict):
             sld_preview_svg_bytes = artifacts.get("sld_svg_bytes") or sld_preview_svg_bytes
             sld_pro_png_bytes = artifacts.get("sld_png_bytes") or sld_pro_png_bytes
             layout_png_bytes = artifacts.get("layout_png_bytes") or layout_png_bytes
+            layout_svg_bytes = artifacts.get("layout_svg_bytes") or layout_svg_bytes
 
         diagram_results = state.get("diagram_results")
         if isinstance(diagram_results, dict) and diagram_results:
@@ -338,9 +341,11 @@ def build_report_context(
             preferred = layout_results.get("last_style")
             if preferred and isinstance(layout_results.get(preferred), dict):
                 layout_png_bytes = layout_results[preferred].get("png")
+                layout_svg_bytes = layout_results[preferred].get("svg") or layout_svg_bytes
             if layout_png_bytes is None:
                 if isinstance(layout_results.get("raw_v05"), dict):
                     layout_png_bytes = layout_results["raw_v05"].get("png")
+                    layout_svg_bytes = layout_results["raw_v05"].get("svg") or layout_svg_bytes
 
         if sld_preview_svg_bytes is None:
             for key in ("sld_pro_jp_svg_bytes", "sld_raw_svg_bytes"):
@@ -350,6 +355,7 @@ def build_report_context(
                     break
         sld_pro_png_bytes = sld_pro_png_bytes or state.get("sld_pro_png_bytes")
         layout_png_bytes = layout_png_bytes or state.get("layout_png_bytes")
+        layout_svg_bytes = layout_svg_bytes or state.get("layout_svg_bytes")
 
     outputs_dir = Path("outputs")
     if sld_pro_png_bytes is None:
@@ -364,6 +370,10 @@ def build_report_context(
         candidate = outputs_dir / "layout_latest.png"
         if candidate.exists():
             layout_png_bytes = candidate.read_bytes()
+    if layout_svg_bytes is None:
+        candidate = outputs_dir / "layout_latest.svg"
+        if candidate.exists():
+            layout_svg_bytes = candidate.read_bytes()
 
     return ReportContext(
         project_name=project_name,
@@ -407,6 +417,7 @@ def build_report_context(
         sld_preview_svg_bytes=sld_preview_svg_bytes,
         sld_pro_png_bytes=sld_pro_png_bytes,
         layout_png_bytes=layout_png_bytes,
+        layout_svg_bytes=layout_svg_bytes,
         stage1=stage1,
         stage2=stage2,
         stage3_df=stage3_df,

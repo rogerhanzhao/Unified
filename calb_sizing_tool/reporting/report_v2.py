@@ -684,8 +684,11 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
     doc.add_paragraph("")
 
     doc.add_heading("Block Layout (template view)", level=2)
-    if ctx.layout_png_bytes:
-        doc.add_picture(io.BytesIO(ctx.layout_png_bytes), width=Inches(6.7))
+    layout_png_bytes = ctx.layout_png_bytes
+    if not layout_png_bytes and ctx.layout_svg_bytes:
+        layout_png_bytes = _svg_bytes_to_png(ctx.layout_svg_bytes)
+    if layout_png_bytes:
+        doc.add_picture(io.BytesIO(layout_png_bytes), width=Inches(6.7))
         doc.add_paragraph(f"Figure {figure_index} - Block Layout (auto-generated)")
         figure_index += 1
     else:

@@ -181,7 +181,7 @@ def show():
             type="primary",
         )
 
-    if not sld_png:
-        st.info("SLD PNG not found. Generate it in Single Line Diagram.")
-    if not layout_png:
-        st.info("Layout PNG not found. Generate it in Site Layout.")
+    if not sld_png and not sld_svg:
+        st.info("SLD image not found. Generate it in Single Line Diagram.")
+    if not layout_png and not layout_svg:
+        st.info("Layout image not found. Generate it in Site Layout.")
