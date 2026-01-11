@@ -22,7 +22,19 @@ try:
     import cairosvg
 except Exception:  # pragma: no cover - optional dependency
     cairosvg = None
+def _draw_triangle_up_tip(dwg, tip_x: float, tip_y: float, size: float) -> None:
+    """Up-pointing triangle where (tip_x, tip_y) is the tip point."""
+    half = size * 0.6
+    base_y = tip_y + size
+    points = [(tip_x, tip_y), (tip_x - half, base_y), (tip_x + half, base_y)]
+    dwg.add(dwg.polygon(points=points, class_="thin", fill="none"))
 
+
+def _draw_arrow_head_right(dwg, x: float, y: float, size: float) -> None:
+    """Simple open arrow head pointing right, tip at (x, y)."""
+    half = size * 0.6
+    points = [(x, y), (x - size, y - half), (x - size, y + half)]
+    dwg.add(dwg.polygon(points=points, class_="thin", fill="none"))
 
 def _safe_float(value, default=0.0) -> float:
     try:
@@ -806,6 +818,7 @@ def render_sld_pro_svg(
             f"Allocation: {allocation_text}",
             "Counts indicate allocation for sizing/configuration; detailed DC wiring is not represented.",
         ]
+
     wrapped_lines = []
     note_w = 0.0
     note_h = 0.0
@@ -957,13 +970,12 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     if not to_other_rmu:
         to_other_rmu = "To Other RMU"
 
-    hv_bus_span = _safe_float(layout_params.get("hv_bus_span"), diagram_width * 0.45)
-    hv_bus_span = max(220.0, min(hv_bus_span, diagram_width - skid_pad * 2))
-    hv_bus_left = mv_center_x - hv_bus_span / 2
-    hv_bus_right = mv_center_x + hv_bus_span / 2
+    # --- MV: match PDF: short internal bus, not full-width
     terminal_y = skid_y + max(56.0, skid_pad)
-    terminal_left_x = hv_bus_left
-    terminal_right_x = hv_bus_right
+    mv_bus_half = min(300.0, max(180.0, diagram_width * 0.22))
+    terminal_left_x = mv_center_x - mv_bus_half
+    terminal_right_x = mv_center_x + mv_bus_half
+
     dwg.add(dwg.text(to_switchgear, insert=(terminal_left_x - 10, terminal_y - 18), class_="label"))
     dwg.add(
         dwg.text(
@@ -975,30 +987,26 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     )
 
     node_fill = label_color
-    busbar_left_x = hv_bus_left
-    busbar_right_x = hv_bus_right
-    dwg.add(dwg.line((busbar_left_x, mv_bus_y), (busbar_right_x, mv_bus_y), class_="thick"))
+    busbar_left_x = terminal_left_x
+    busbar_right_x = terminal_right_x
+    dwg.add(dwg.line((busbar_left_x, mv_bus_y), (busbar_right_x, mv_bus_y), class_="thin"))
 
     node_r = 3.0
     _draw_node(dwg, terminal_left_x, mv_bus_y, node_r, node_fill)
     _draw_node(dwg, terminal_right_x, mv_bus_y, node_r, node_fill)
     _draw_node(dwg, mv_center_x, mv_bus_y, node_r, node_fill)
 
-    # Incoming RMU lines (two-way feeders) into short busbar.
-    incoming_symbol_r = 6.0
-    incoming_symbol_y = terminal_y + (mv_bus_y - terminal_y) * 0.45
-    incoming_arrow_size = 8.0
+    # RMU taps
+    rmu_tap_h = 26.0
     for tap_x in (terminal_left_x, terminal_right_x):
         _draw_line_anchored(
             dwg,
             (tap_x, mv_bus_y),
-            (tap_x, terminal_y),
+            (tap_x, mv_bus_y - rmu_tap_h),
             class_="thin",
             start_anchor=(tap_x, mv_bus_y),
-            end_anchor=(tap_x, terminal_y),
         )
-        _draw_breaker_circle(dwg, tap_x, incoming_symbol_y, incoming_symbol_r)
-        _draw_triangle_down(dwg, tap_x, terminal_y - incoming_arrow_size, incoming_arrow_size)
+        dwg.add(dwg.circle(center=(tap_x, mv_bus_y - rmu_tap_h - 6), r=6, class_="outline"))
     dwg.add(dwg.text("RMU", insert=(terminal_left_x - 26, terminal_y + 10), class_="label"))
 
     # MV center chain
@@ -1043,6 +1051,8 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     dwg.add(dwg.line((mv_center_x, equip_y), (mv_center_x, tr_top_y - tr_radius), class_="thin"))
     _draw_triangle_down(dwg, mv_center_x, tr_top_y - tr_radius - 8, 8.0)
     left_center, right_center = _draw_transformer_symbol(dwg, tr_center_x, tr_top_y, tr_radius)
+
+    # Transformer LV double down-leads to LV busbar (match PDF)
     tx_lv_spacing = _safe_float(layout_params.get("tx_lv_spacing"), 14.0)
     tx_lv_spacing = min(18.0, max(12.0, tx_lv_spacing))
     tx_lv_start_y = left_center[1] + tr_radius
@@ -1091,21 +1101,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     bus_x1 = skid_x + skid_pad
     bus_x2 = skid_x + diagram_width - skid_pad
     busbar_class = "busbar" if dark_mode else "thick"
-    lv_bus_split = bool(layout_params.get("lv_bus_split", True))
-    lv_bus_gap = _safe_float(layout_params.get("lv_bus_gap"), 0.0)
-    if lv_bus_gap <= 0:
-        lv_bus_gap = _safe_float(layout_params.get("lv_bus_coupler_r"), 0.0) * 2
-    if lv_bus_gap <= 0:
-        lv_bus_gap = tx_lv_spacing * 1.2
-    lv_bus_gap = max(10.0, min(lv_bus_gap, tx_lv_spacing * 1.6))
-    if lv_bus_split:
-        gap_center = mv_center_x
-        bus_left_end = gap_center - lv_bus_gap / 2
-        bus_right_start = gap_center + lv_bus_gap / 2
-        dwg.add(dwg.line((bus_x1, bus_y), (bus_left_end, bus_y), class_=busbar_class))
-        dwg.add(dwg.line((bus_right_start, bus_y), (bus_x2, bus_y), class_=busbar_class))
-    else:
-        dwg.add(dwg.line((bus_x1, bus_y), (bus_x2, bus_y), class_=busbar_class))
+    dwg.add(dwg.line((bus_x1, bus_y), (bus_x2, bus_y), class_=busbar_class))
     dwg.add(dwg.text("LV Busbar", insert=(bus_x1, bus_y - 8), class_="label"))
 
     pcs_label_offset = _safe_float(layout_params.get("pcs_label_offset"), 10.0)
@@ -1113,8 +1109,45 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     pcs_breaker_size = _safe_float(layout_params.get("pcs_breaker_size"), 6.0)
     lv_tap_nodes = bool(layout_params.get("lv_tap_nodes", False))
     lv_node_r = 3.0
+
+    # transformer connection nodes + X on LV busbar (match PDF)
     _draw_solid_node(dwg, tx_lv_left[0], tx_lv_left[1], lv_node_r, node_fill)
     _draw_solid_node(dwg, tx_lv_right[0], tx_lv_right[1], lv_node_r, node_fill)
+    _draw_breaker_x(dwg, tx_lv_left[0], bus_y, pcs_breaker_size)
+    _draw_breaker_x(dwg, tx_lv_right[0], bus_y, pcs_breaker_size)
+
+    # --- Aux power input branch (match PDF right-side arrow)
+    aux_enable = bool(layout_params.get("aux_power_input", True))
+    if aux_enable:
+        aux_bus_len = 70.0
+        aux_bus_y = bus_y - 90.0
+        aux_bus_x2 = bus_x2 - 30.0
+        aux_bus_x1 = aux_bus_x2 - aux_bus_len
+
+        dwg.add(dwg.line((aux_bus_x1, aux_bus_y), (aux_bus_x2, aux_bus_y), class_="thin"))
+
+        aux_drop_x = aux_bus_x1 + aux_bus_len * 0.35
+        _draw_line_anchored(
+            dwg,
+            (aux_drop_x, aux_bus_y),
+            (aux_drop_x, bus_y),
+            class_="thin",
+            start_anchor=(aux_drop_x, aux_bus_y),
+            end_anchor=(aux_drop_x, bus_y),
+        )
+        _draw_breaker_x(dwg, aux_drop_x, bus_y, pcs_breaker_size)
+        _draw_dc_switch(dwg, aux_drop_x, (aux_bus_y + bus_y) / 2 - 6.0, 12.0)
+
+        arrow_tip_x = min(diagram_right - 6.0, aux_bus_x2 + 30.0)
+        _draw_arrow_head_right(dwg, arrow_tip_x, aux_bus_y, 10.0)
+        dwg.add(
+            dwg.text(
+                "Power input from Auxiliary transformer for station",
+                insert=(arrow_tip_x + 8.0, aux_bus_y + 4.0),
+                class_="label",
+            )
+        )
+
     for idx in range(pcs_count):
         pcs_center_x = pcs_centers[idx]
         pcs_left_x = pcs_center_x - pcs_box_w / 2
@@ -1156,6 +1189,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
                     text_anchor="start",
                 )
             )
+
         tap = (pcs_center_x, bus_y)
         pcs_in = (pcs_center_x, pcs_y)
         _draw_line_anchored(
@@ -1166,11 +1200,16 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             start_anchor=tap,
             end_anchor=pcs_in,
         )
-        _draw_breaker_x(dwg, pcs_center_x, bus_y + pcs_switch_offset, pcs_breaker_size)
+
+        # match PDF: X marker sits ON LV busbar
+        _draw_breaker_x(dwg, pcs_center_x, bus_y, pcs_breaker_size)
+
         if compact_mode:
+            # match PDF: switch symbol on the down-lead just below LV bus
             switch_h = 12.0
-            switch_y = pcs_y - switch_h - 6.0
-            _draw_dc_switch(dwg, pcs_center_x, switch_y, switch_h)
+            switch_y_local = bus_y + 6.0
+            _draw_dc_switch(dwg, pcs_center_x, switch_y_local, switch_h)
+
         if lv_tap_nodes:
             _draw_node(dwg, tap[0], tap[1], lv_node_r, node_fill)
 
@@ -1206,25 +1245,32 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             stack_top_y = dc_box_y + (dc_stack_h - stack_h) / 2
             branch_bus_y = stack_top_y - 10
             available = max(8.0, branch_bus_y - dc_top)
+
+            # spacing for: switch + fuse + switch (match PDF 2-level switching)
             switch_h = 14.0
             fuse_h = 10.0
             gap_before = 6.0
             gap_between = 8.0
             gap_after = 8.0
-            total = gap_before + switch_h + gap_between + fuse_h + gap_after
+            total = gap_before + switch_h + gap_between + fuse_h + gap_between + switch_h + gap_after
             if total > available:
-                scale = max(0.6, available / total)
+                scale = max(0.55, available / total)
                 switch_h *= scale
                 fuse_h *= scale
                 gap_before *= scale
                 gap_between *= scale
                 gap_after *= scale
-            switch_y = dc_top + gap_before
-            fuse_center_y = switch_y + switch_h + gap_between + fuse_h / 2
-            fuse_top = fuse_center_y - fuse_h / 2
+
+            # positions
+            switch1_y = dc_top + gap_before
+            fuse_top = switch1_y + switch_h + gap_between
+            fuse_center_y = fuse_top + fuse_h / 2
+            switch2_y = fuse_top + fuse_h + gap_between
+
             pcs_out = (line_x, dc_top)
             prot_center = (line_x, fuse_center_y)
             branch_bus = (line_x, branch_bus_y)
+
             _draw_line_anchored(
                 dwg,
                 pcs_out,
@@ -1233,8 +1279,10 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
                 start_anchor=pcs_out,
                 end_anchor=prot_center,
             )
-            _draw_dc_switch(dwg, line_x, switch_y, switch_h)
+            _draw_dc_switch(dwg, line_x, switch1_y, switch_h)
             _draw_fuse(dwg, line_x, fuse_top, max(6.0, pcs_box_w * 0.1), fuse_h)
+            _draw_dc_switch(dwg, line_x, switch2_y, switch_h)
+
             _draw_line_anchored(
                 dwg,
                 prot_center,
@@ -1258,6 +1306,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             for b in range(block_count):
                 block_y = stack_top_y + b * (dc_block_h + dc_block_gap_y)
                 block_positions.append((line_x, block_y))
+
             for center_x, block_y in block_positions:
                 dc_in = (center_x, block_y)
                 _draw_line_anchored(
@@ -1268,7 +1317,10 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
                     start_anchor=(center_x, branch_bus_y),
                     end_anchor=dc_in,
                 )
-                _draw_node(dwg, dc_in[0], dc_in[1], dc_node_r, node_fill)
+
+                # match PDF: triangle terminal at DC block input
+                _draw_triangle_up_tip(dwg, dc_in[0], dc_in[1], 6.0)
+
                 dwg.add(
                     dwg.rect(
                         insert=(center_x - pcs_box_w * 0.4, block_y),
