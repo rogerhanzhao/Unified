@@ -66,7 +66,7 @@ def pack_stage13_output(
     output["dod_frac"] = _f(stage1.get("dod_frac"), 0.0)
     output["dc_round_trip_efficiency_frac"] = _f(stage1.get("dc_round_trip_efficiency_frac"), 0.0)
     output["dc_energy_capacity_required_mwh"] = _f(stage1.get("dc_energy_capacity_required_mwh"), 0.0)
-    output["sc_time_months"] = _f(stage1.get("sc_time_months"), 0.0)
+    output["sc_time_months"] = _i(stage1.get("sc_time_months"), 0)
     output["sc_loss_pct"] = _f(stage1.get("sc_loss_pct"), 0.0)
     output["dc_usable_bol_frac"] = _f(stage1.get("dc_usable_bol_frac"), 0.0)
 

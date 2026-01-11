@@ -137,6 +137,12 @@ def to_float(x, default=0.0):
     except Exception:
         return default
 
+def to_int(x, default=0):
+    try:
+        return int(to_float(x, default))
+    except Exception:
+        return default
+
 def to_frac(x, default=1.0):
     v = to_float(x, default)
     if v > 1.5:
@@ -152,7 +158,7 @@ def safe_div(a: float, b: float, default: float = 0.0) -> float:
         return default
 
 def calc_sc_loss_pct(sc_months: float) -> float:
-    m = int(round(to_float(sc_months, 0.0)))
+    m = to_int(sc_months, 0)
     if m <= 0:
         return 0.0
 
@@ -168,19 +174,10 @@ def calc_sc_loss_pct(sc_months: float) -> float:
 
     if m > 12:
         base_loss = 4.5
-        extra_months = sc_months - 12.0
+        extra_months = m - 12
         return base_loss + (extra_months * 0.05)
 
-    lower = int(math.floor(sc_months))
-    upper = int(math.ceil(sc_months))
-    if lower <= 0:
-        return mapping.get(upper, 2.0)
-    if upper == lower:
-        return mapping.get(lower, 2.0)
-    v_low = mapping.get(lower, 2.0)
-    v_up = mapping.get(upper, v_low)
-    ratio = (sc_months - lower) / (upper - lower)
-    return v_low + (v_up - v_low) * ratio
+    return mapping.get(m, 2.0)
 
 def first_success_key(results: dict, preferred_order: list):
     for k in preferred_order:
@@ -229,9 +226,9 @@ def run_stage1(inputs: dict, defaults: dict) -> dict:
 
     poi_mw = to_float(get("poi_power_req_mw", 100.0))
     poi_mwh = to_float(get("poi_energy_req_mwh", 400.0))
-    project_life_years = int(to_float(get("project_life_years", 20)))
-    cycles_per_year = int(to_float(get("cycles_per_year", 365)))
-    poi_guarantee_year = int(to_float(get("poi_guarantee_year", 0)))
+    project_life_years = to_int(get("project_life_years", 20), 20)
+    cycles_per_year = to_int(get("cycles_per_year", 365), 365)
+    poi_guarantee_year = to_int(get("poi_guarantee_year", 0), 0)
 
     eff_dc_cables = to_frac(get("eff_dc_cables", 0.995))
     eff_pcs       = to_frac(get("eff_pcs", 0.985))
@@ -240,9 +237,9 @@ def run_stage1(inputs: dict, defaults: dict) -> dict:
     eff_hvt       = to_frac(get("eff_hvt_others", 1.0))
     eff_chain = eff_dc_cables * eff_pcs * eff_mvt * eff_ac_sw * eff_hvt
 
-    sc_val = to_float(get("sc_time_months", 3.0))
-    if sc_val < 3.0:
-        sc_val = 3.0
+    sc_val = to_int(get("sc_time_months", 3), 3)
+    if sc_val < 3:
+        sc_val = 3
     sc_time_months = sc_val
     sc_loss_pct = calc_sc_loss_pct(sc_time_months)
     sc_loss_frac = sc_loss_pct / 100.0
@@ -985,6 +982,12 @@ def show():
             dc_inputs[field] = st.session_state[key]
         return key
 
+    def _init_int_input(field: str, default_value: int):
+        key = _init_input(field, int(default_value))
+        st.session_state[key] = to_int(st.session_state.get(key, default_value), int(default_value))
+        dc_inputs[field] = st.session_state[key]
+        return key
+
     # --- UI Form ---
     with st.container():
         st.markdown("<div class='calb-card'>", unsafe_allow_html=True)
@@ -1014,15 +1017,17 @@ def show():
                 key=_init_input("poi_energy_req_mwh", get_default_numeric("poi_energy_req_mwh", 400.0)),
             )
             dc_inputs["poi_energy_req_mwh"] = poi_energy
-            project_life = int(
-                c3.number_input(
-                    "Project Life (Years)",
-                    key=_init_input(
-                        "project_life_years",
-                        int(get_default_numeric("project_life_years", 20)),
-                    ),
-                )
+            project_life_key = _init_int_input(
+                "project_life_years",
+                int(get_default_numeric("project_life_years", 20)),
             )
+            project_life = c3.number_input(
+                "Project Life (Years)",
+                key=project_life_key,
+                step=1,
+                format="%d",
+            )
+            project_life = to_int(project_life, 0)
             dc_inputs["project_life_years"] = project_life
 
             mv_default = dc_inputs.get("poi_nominal_voltage_kv")
@@ -1055,29 +1060,35 @@ def show():
             dc_inputs["poi_frequency_option"] = poi_frequency
 
             c4, c5, c6 = st.columns(3)
-            cycles_year = int(
-                c4.number_input(
-                    "Cycles Per Year",
-                    key=_init_input(
-                        "cycles_per_year",
-                        int(get_default_numeric("cycles_per_year", 365)),
-                    ),
-                )
+            cycles_year_key = _init_int_input(
+                "cycles_per_year",
+                int(get_default_numeric("cycles_per_year", 365)),
             )
+            cycles_year = c4.number_input(
+                "Cycles Per Year",
+                key=cycles_year_key,
+                step=1,
+                format="%d",
+            )
+            cycles_year = to_int(cycles_year, 0)
             dc_inputs["cycles_per_year"] = cycles_year
-            guarantee_year = int(
-                c5.number_input(
-                    "POI Guarantee Year",
-                    key=_init_input("poi_guarantee_year", 0),
-                )
+            guarantee_year_key = _init_int_input("poi_guarantee_year", 0)
+            guarantee_year = c5.number_input(
+                "POI Guarantee Year",
+                key=guarantee_year_key,
+                step=1,
+                format="%d",
             )
+            guarantee_year = to_int(guarantee_year, 0)
             dc_inputs["poi_guarantee_year"] = guarantee_year
-            sc_time_months = int(
-                c6.number_input(
-                    "S&C Time (Months)",
-                    key=_init_input("sc_time_months", 3),
-                )
+            sc_time_key = _init_int_input("sc_time_months", 3)
+            sc_time_months = c6.number_input(
+                "S&C Time (Months)",
+                key=sc_time_key,
+                step=1,
+                format="%d",
             )
+            sc_time_months = to_int(sc_time_months, 3)
             dc_inputs["sc_time_months"] = sc_time_months
 
             st.markdown("---")
