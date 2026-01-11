@@ -1,11 +1,14 @@
 "use strict";
 
+const UNIT = 10;
+
 const STYLE = {
+  unit: UNIT,
   lineColor: "#e5e7eb",
   busbarColor: "#ef4444",
-  busbarStrokeWidth: 3,
-  conductorStrokeWidth: 2,
-  symbolStrokeWidth: 2,
+  busbarStrokeWidth: 0.35 * UNIT,
+  conductorStrokeWidth: 0.2 * UNIT,
+  symbolStrokeWidth: 0.2 * UNIT,
   fontFamily: "Arial",
   fontSize: 14,
 };
@@ -157,7 +160,7 @@ function createKnifeSwitch(length = 30, orientation = "horizontal") {
   return group(objects, { in: { x: 0, y: 0 }, out: { x: 0, y: length } }, "Switch");
 }
 
-function createCircuitBreaker(length = 30, orientation = "horizontal") {
+function createCircuitBreaker(length = STYLE.unit * 1.4, orientation = "horizontal") {
   const box = length * 0.35;
   const gap = (length - box) / 2;
   const objects = [];
@@ -195,8 +198,8 @@ function createEarthingSwitch(height = 30) {
   return group(objects, { in: { x: 0, y: 0 }, ground: { x: 0, y: height + 4 } }, "EarthingSwitch");
 }
 
-function createCT(length = 30, orientation = "horizontal") {
-  const r = 4;
+function createCT(length = STYLE.unit * 3.0, orientation = "horizontal") {
+  const r = STYLE.unit * 0.6;
   const objects = [];
   if (orientation === "horizontal") {
     objects.push(lineLocal(0, 0, length, 0));
@@ -212,17 +215,25 @@ function createCT(length = 30, orientation = "horizontal") {
   return group(objects, { in: { x: 0, y: 0 }, out: { x: 0, y: length } }, "CT");
 }
 
-function createSurgeArrester(height = 36) {
+function createSurgeArrester(height = STYLE.unit * 3.2) {
   const objects = [];
   objects.push(lineLocal(0, 0, 0, height * 0.4));
   objects.push(lineLocal(-6, height * 0.4, 6, height * 0.4));
   objects.push(lineLocal(-6, height * 0.5, 6, height * 0.5));
   objects.push(circleLocal(0, height * 0.7, 6));
   objects.push(lineLocal(0, height * 0.76, 0, height));
-  return group(objects, { tap: { x: 0, y: 0 }, ground: { x: 0, y: height } }, "SurgeArrester");
+  const ground = createGround();
+  ground.group.left = 0;
+  ground.group.top = height;
+  objects.push(...ground.group.objects);
+  return group(
+    objects,
+    { tap: { x: 0, y: 0 }, ground: { x: 0, y: height + 14 } },
+    "SurgeArrester"
+  );
 }
 
-function createTransformerSymbol(radius = 18, spacing = 8) {
+function createTransformerSymbol(radius = STYLE.unit * 1.5, spacing = STYLE.unit * 0.6) {
   const r = radius;
   const topCx = r;
   const topCy = r;

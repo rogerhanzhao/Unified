@@ -34,6 +34,12 @@ function addLabel(labels, text, x, y, options = {}) {
   let labelY = y;
   const width = Math.max(10, text.length * fontSize * 0.6);
   const height = fontSize * 1.2;
+  const align = options.align || "left";
+  if (align === "center") {
+    labelX = x - width / 2;
+  } else if (align === "right") {
+    labelX = x - width;
+  }
 
   let shifted = 0;
   while (
@@ -105,17 +111,38 @@ function render_ac_block_sld(params = {}) {
 
   const width = 1600;
   const height = 900;
+  const U = STYLE.unit;
 
   const xLeft = 200;
   const xRight = width - 200;
   const xCenter = (xLeft + xRight) / 2;
   const yMV = 140;
 
-  const transformer = createTransformerSymbol(18, 8);
+  const transformer = createTransformerSymbol();
   const tHeight = transformer.group.sld.height || 80;
-  const tY = yMV + 90;
-  const yLV = tY + tHeight + 110;
-  const yPCS = yLV + 50;
+  const yChainStart = yMV;
+  const leadBusToSwitch = Math.round(U * 0.6);
+  const switchLen = Math.round(U * 2.0);
+  const leadSwitchToBreaker = Math.round(U * 0.6);
+  const breakerLen = Math.round(U * 1.4);
+  const leadBreakerToCT = Math.round(U * 0.8);
+  const ctLen = Math.round(U * 3.0);
+  const leadCTToTap = Math.round(U * 0.8);
+  const leadTapToTransformer = Math.round(U * 4.0);
+  const tapBranchLen = Math.round(U * 4.0);
+
+  const tY =
+    yChainStart +
+    leadBusToSwitch +
+    switchLen +
+    leadSwitchToBreaker +
+    breakerLen +
+    leadBreakerToCT +
+    ctLen +
+    leadCTToTap +
+    leadTapToTransformer;
+  const yLV = tY + tHeight + Math.round(U * 8.0);
+  const yPCS = yLV + Math.round(U * 2.8);
 
   const lvLeft = xLeft + 80;
   const lvRight = xRight - 80;
@@ -141,13 +168,14 @@ function render_ac_block_sld(params = {}) {
   objects.push(placeSymbol(rmuDotLeft, rmuInX, yMV));
   objects.push(placeSymbol(rmuDotRight, rmuOutX, yMV));
 
-  const rmuStubLen = 26;
+  const rmuStubLen = Math.round(U * 2.4);
   const rmuStub = createConductor(rmuStubLen, "vertical");
   objects.push(placeSymbol(rmuStub, rmuInX, yMV - rmuStubLen));
   objects.push(placeSymbol(rmuStub, rmuOutX, yMV - rmuStubLen));
-  const rmuSwitch = createKnifeSwitch(22, "vertical");
-  objects.push(placeSymbol(rmuSwitch, rmuInX, yMV - rmuStubLen - 22));
-  objects.push(placeSymbol(rmuSwitch, rmuOutX, yMV - rmuStubLen - 22));
+  const rmuSwitchLen = Math.round(U * 2.0);
+  const rmuSwitch = createKnifeSwitch(rmuSwitchLen, "vertical");
+  objects.push(placeSymbol(rmuSwitch, rmuInX, yMV - rmuStubLen - rmuSwitchLen));
+  objects.push(placeSymbol(rmuSwitch, rmuOutX, yMV - rmuStubLen - rmuSwitchLen));
 
   const rmuLabel = addLabel(labels, "RMU", rmuInX - 24, yMV - rmuStubLen - 40);
   objects.push(rmuLabel);
@@ -155,37 +183,37 @@ function render_ac_block_sld(params = {}) {
   objects.push(addLabel(labels, "To 20kV Switchgear", rmuInX - 70, yMV - 90));
   objects.push(addLabel(labels, "To Other RMU", rmuOutX - 40, yMV - 90));
 
-  const hvAnchorY = tY + transformer.anchors.hv.y;
-  const mvConductor = createConductor(hvAnchorY - yMV, "vertical");
-  objects.push(placeSymbol(mvConductor, xCenter, yMV));
+  const switchSymbol = createKnifeSwitch(switchLen, "vertical");
+  const cbSymbol = createCircuitBreaker(breakerLen, "vertical");
+  const ctSymbol = createCT(ctLen, "vertical");
+  const earthSwitch = createEarthingSwitch(Math.round(U * 3.0));
+  const surge = createSurgeArrester(Math.round(U * 3.2));
 
-  const switchSymbol = createKnifeSwitch(24, "vertical");
-  const cbSymbol = createCircuitBreaker(26, "vertical");
-  const ctSymbol = createCT(26, "vertical");
-  const earthSwitch = createEarthingSwitch(30);
-  const surge = createSurgeArrester(36);
+  let yCursor = yChainStart;
+  objects.push(placeSymbol(createConductor(leadBusToSwitch, "vertical"), xCenter, yCursor));
+  yCursor += leadBusToSwitch;
+  objects.push(placeSymbol(switchSymbol, xCenter, yCursor));
+  yCursor += switchLen;
+  objects.push(placeSymbol(createConductor(leadSwitchToBreaker, "vertical"), xCenter, yCursor));
+  yCursor += leadSwitchToBreaker;
+  objects.push(placeSymbol(cbSymbol, xCenter, yCursor));
+  yCursor += breakerLen;
+  objects.push(placeSymbol(createConductor(leadBreakerToCT, "vertical"), xCenter, yCursor));
+  yCursor += leadBreakerToCT;
+  objects.push(placeSymbol(ctSymbol, xCenter, yCursor));
+  yCursor += ctLen;
+  objects.push(placeSymbol(createConductor(leadCTToTap, "vertical"), xCenter, yCursor));
+  yCursor += leadCTToTap;
 
-  const chainTop = yMV + 12;
-  const chainBottom = hvAnchorY - 12;
-  const chainLen = chainBottom - chainTop;
-  const switchY = chainTop;
-  const cbY = chainTop + chainLen * 0.35;
-  const ctY = chainTop + chainLen * 0.65;
-  objects.push(placeSymbol(switchSymbol, xCenter, switchY));
-  objects.push(placeSymbol(cbSymbol, xCenter, cbY));
-  objects.push(placeSymbol(ctSymbol, xCenter, ctY));
+  const tapDot = createNodeDot(4);
+  objects.push(placeSymbol(tapDot, xCenter, yCursor));
+  objects.push(placeSymbol(createConductor(tapBranchLen, "horizontal"), xCenter - tapBranchLen, yCursor));
+  objects.push(placeSymbol(createConductor(tapBranchLen, "horizontal"), xCenter, yCursor));
+  objects.push(placeSymbol(earthSwitch, xCenter - tapBranchLen, yCursor));
+  objects.push(placeSymbol(surge, xCenter + tapBranchLen, yCursor));
 
-  const earthX = xCenter - 40;
-  const earthTap = createConductor(16, "horizontal");
-  objects.push(placeSymbol(earthTap, earthX, cbY + 6));
-  objects.push(placeSymbol(earthSwitch, earthX, cbY + 8));
-
-  const surgeX = xCenter + 40;
-  const surgeTap = createConductor(16, "horizontal");
-  objects.push(placeSymbol(surgeTap, xCenter, ctY + 10));
-  objects.push(placeSymbol(surge, surgeX, ctY + 6));
-
-  const transformerX = xCenter - (transformer.group.sld.width || 36) / 2;
+  objects.push(placeSymbol(createConductor(leadTapToTransformer, "vertical"), xCenter, yCursor));
+  const transformerX = xCenter - (transformer.group.sld.width || U * 3) / 2;
   objects.push(placeSymbol(transformer, transformerX, tY));
 
   const transformerLabelX = transformerX + (transformer.group.sld.width || 36) + 18;
@@ -202,20 +230,32 @@ function render_ac_block_sld(params = {}) {
   const lvDot = createNodeDot(4);
   const lvNodeX = xCenter;
   objects.push(placeSymbol(lvDot, lvNodeX, yLV));
-  const lvConductor = createConductor(yLV - (tY + transformer.anchors.lv.y), "vertical");
-  objects.push(placeSymbol(lvConductor, lvNodeX, tY + transformer.anchors.lv.y));
+  const lvAnchorY = tY + transformer.anchors.lv.y;
+  const lvConductor = createConductor(yLV - lvAnchorY, "vertical");
+  objects.push(placeSymbol(lvConductor, lvNodeX, lvAnchorY));
 
-  const pcsBox = createPCSBox(70, 70);
-  const feederSwitch = createCircuitBreaker(20, "vertical");
+  const pcsBoxSize = Math.round(U * 7.0);
+  const pcsBox = createPCSBox(pcsBoxSize, pcsBoxSize);
+  const feederSwitch = createCircuitBreaker(breakerLen, "vertical");
+  const feederLead = Math.round(U * 0.6);
+  const feederGap = Math.round(U * 0.8);
   for (let i = 0; i < pcsCount; i += 1) {
     const x = feederStart + feederStep * i;
     const node = createNodeDot(4);
     objects.push(placeSymbol(node, x, yLV));
-    const feederLine = createConductor(yPCS - yLV, "vertical");
-    objects.push(placeSymbol(feederLine, x, yLV));
-    objects.push(placeSymbol(feederSwitch, x, yLV + 12));
-    objects.push(placeSymbol(pcsBox, x - 35, yPCS));
-    objects.push(addLabel(labels, `PCS-${i + 1}`, x - 22, yLV + 8));
+    objects.push(placeSymbol(createConductor(feederLead, "vertical"), x, yLV));
+    objects.push(placeSymbol(feederSwitch, x, yLV + feederLead));
+    objects.push(
+      placeSymbol(
+        createConductor(feederGap, "vertical"),
+        x,
+        yLV + feederLead + breakerLen
+      )
+    );
+    objects.push(placeSymbol(pcsBox, x - pcsBoxSize / 2, yPCS));
+    objects.push(
+      addLabel(labels, `PCS-${i + 1}`, x, yLV - Math.round(U * 1.4), { align: "center" })
+    );
   }
 
   return {

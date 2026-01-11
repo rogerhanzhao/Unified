@@ -51,6 +51,65 @@ function lineContainsPoint(line, pt, tol) {
   return false;
 }
 
+function validateConnections(json) {
+  const errors = [];
+  if (!json || !Array.isArray(json.objects)) {
+    return { ok: false, errors: ["Invalid JSON: missing objects array."] };
+  }
+
+  const anchors = [];
+  const lines = [];
+  collectAnchors(json.objects, anchors);
+  collectLines(json.objects, lines);
+
+  const tol = 1;
+  lines.forEach((line) => {
+    const endPoints = [
+      { x: line.x1, y: line.y1 },
+      { x: line.x2, y: line.y2 },
+    ];
+    endPoints.forEach((pt) => {
+      const snapped = anchors.some((a) => distance(a, pt) <= tol);
+      if (!snapped) {
+        errors.push(`Conductor endpoint not snapped: (${pt.x.toFixed(1)}, ${pt.y.toFixed(1)})`);
+      }
+    });
+  });
+
+  json.objects.forEach((obj) => {
+    if (!obj || obj.type !== "group" || !obj.sld || !obj.sld.anchors) {
+      return;
+    }
+    if (["Conductor", "Busbar", "NodeDot"].includes(obj.sld.type)) {
+      return;
+    }
+    const left = obj.left || 0;
+    const top = obj.top || 0;
+    const anchorPoints = Object.values(obj.sld.anchors).map((pt) => ({
+      x: left + pt.x,
+      y: top + pt.y,
+    }));
+    const connected = anchorPoints.some((pt) =>
+      lines.some((line) => distance(pt, { x: line.x1, y: line.y1 }) <= tol || distance(pt, { x: line.x2, y: line.y2 }) <= tol)
+    );
+    if (!connected) {
+      errors.push(`Floating symbol: ${obj.sld.type || "Unknown"} at (${left}, ${top})`);
+    }
+  });
+
+  const lvBusbars = json.objects.filter(
+    (obj) => obj.sld && obj.sld.type === "Busbar" && obj.sld.bus === "LV"
+  );
+  if (lvBusbars.length > 1) {
+    const coupler = json.objects.find((obj) => obj.sld && obj.sld.type === "BusCoupler");
+    if (!coupler) {
+      errors.push("LV bus is split but no Bus Coupler symbol present.");
+    }
+  }
+
+  return { ok: errors.length === 0, errors };
+}
+
 function validate_sld(json) {
   const errors = [];
   if (!json || !Array.isArray(json.objects)) {
@@ -124,4 +183,4 @@ function validate_sld(json) {
   return { ok: errors.length === 0, errors };
 }
 
-module.exports = { validate_sld };
+module.exports = { validate_sld, validateConnections };

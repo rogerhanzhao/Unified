@@ -27,6 +27,48 @@ def get_fill(elem, style):
         return 'transparent'
     return val or 'transparent'
 
+def parse_dasharray(value):
+    if not value:
+        return None
+    parts = re.findall(r'[-+]?\d*\.?\d+', value)
+    if not parts:
+        return None
+    return [float(p) for p in parts]
+
+def get_stroke_dasharray(elem, style):
+    val = elem.get('stroke-dasharray') or style.get('stroke-dasharray')
+    return parse_dasharray(val)
+
+def parse_points(points_str):
+    if not points_str:
+        return []
+    nums = re.findall(r'[-+]?\d*\.?\d+', points_str)
+    points = []
+    for i in range(0, len(nums) - 1, 2):
+        points.append({"x": float(nums[i]), "y": float(nums[i + 1])})
+    return points
+
+def _parse_length(value):
+    if value is None:
+        return None
+    try:
+        return float(re.sub(r"[^\d\.]", "", str(value)))
+    except Exception:
+        return None
+
+
+def _parse_viewbox(viewbox):
+    if not viewbox:
+        return None
+    parts = re.findall(r"[-+]?\d*\.?\d+", str(viewbox))
+    if len(parts) >= 4:
+        try:
+            return float(parts[2]), float(parts[3])
+        except Exception:
+            return None
+    return None
+
+
 def convert_svg_to_fabric(svg_path):
     """
     Convert a simple SVG file to Fabric.js JSON format for streamlit-drawable-canvas.
@@ -38,6 +80,15 @@ def convert_svg_to_fabric(svg_path):
     except Exception as e:
         print(f"Error parsing SVG: {e}")
         return None
+
+    width_attr = root.get("width")
+    height_attr = root.get("height")
+    width = _parse_length(width_attr)
+    height = _parse_length(height_attr)
+    if width is None or height is None:
+        vb = _parse_viewbox(root.get("viewBox"))
+        if vb:
+            width, height = vb
 
     # Remove namespace prefixes
     for elem in root.iter():
@@ -70,6 +121,7 @@ def convert_svg_to_fabric(svg_path):
 
     for elem in root.iter():
         style = get_elem_style(elem)
+        dasharray = get_stroke_dasharray(elem, style)
         
         if elem.tag == 'rect':
             try:
@@ -87,6 +139,7 @@ def convert_svg_to_fabric(svg_path):
                     "fill": get_fill(elem, style),
                     "stroke": get_stroke(elem, style),
                     "strokeWidth": get_stroke_width(elem, style),
+                    "strokeDashArray": dasharray,
                     "selectable": True,
                     "hasControls": True
                 }
@@ -100,19 +153,22 @@ def convert_svg_to_fabric(svg_path):
                 y1 = float(elem.get('y1', 0))
                 x2 = float(elem.get('x2', 0))
                 y2 = float(elem.get('y2', 0))
+                left = min(x1, x2)
+                top = min(y1, y2)
                 
                 obj = {
                     "type": "line",
-                    "left": min(x1, x2),
-                    "top": min(y1, y2),
+                    "left": left,
+                    "top": top,
                     "width": abs(x2 - x1),
                     "height": abs(y2 - y1),
-                    "x1": x1,
-                    "y1": y1,
-                    "x2": x2,
-                    "y2": y2,
+                    "x1": x1 - left,
+                    "y1": y1 - top,
+                    "x2": x2 - left,
+                    "y2": y2 - top,
                     "stroke": get_stroke(elem, style),
                     "strokeWidth": get_stroke_width(elem, style),
+                    "strokeDashArray": dasharray,
                     "selectable": True,
                     "hasControls": True
                 }
@@ -134,6 +190,53 @@ def convert_svg_to_fabric(svg_path):
                     "fill": get_fill(elem, style),
                     "stroke": get_stroke(elem, style),
                     "strokeWidth": get_stroke_width(elem, style),
+                    "strokeDashArray": dasharray,
+                    "selectable": True,
+                    "hasControls": True
+                }
+                objects.append(obj)
+            except ValueError:
+                continue
+        elif elem.tag == 'polyline':
+            try:
+                points = parse_points(elem.get('points', ''))
+                if not points:
+                    continue
+                min_x = min(p["x"] for p in points)
+                min_y = min(p["y"] for p in points)
+                rel_points = [{"x": p["x"] - min_x, "y": p["y"] - min_y} for p in points]
+                obj = {
+                    "type": "polyline",
+                    "left": min_x,
+                    "top": min_y,
+                    "points": rel_points,
+                    "fill": get_fill(elem, style),
+                    "stroke": get_stroke(elem, style),
+                    "strokeWidth": get_stroke_width(elem, style),
+                    "strokeDashArray": dasharray,
+                    "selectable": True,
+                    "hasControls": True
+                }
+                objects.append(obj)
+            except ValueError:
+                continue
+        elif elem.tag == 'polygon':
+            try:
+                points = parse_points(elem.get('points', ''))
+                if not points:
+                    continue
+                min_x = min(p["x"] for p in points)
+                min_y = min(p["y"] for p in points)
+                rel_points = [{"x": p["x"] - min_x, "y": p["y"] - min_y} for p in points]
+                obj = {
+                    "type": "polygon",
+                    "left": min_x,
+                    "top": min_y,
+                    "points": rel_points,
+                    "fill": get_fill(elem, style),
+                    "stroke": get_stroke(elem, style),
+                    "strokeWidth": get_stroke_width(elem, style),
+                    "strokeDashArray": dasharray,
                     "selectable": True,
                     "hasControls": True
                 }
@@ -205,4 +308,9 @@ def convert_svg_to_fabric(svg_path):
             except ValueError:
                 continue
 
-    return {"objects": objects, "background": ""}
+    payload = {"version": "4.4.0", "objects": objects, "background": ""}
+    if width:
+        payload["width"] = width
+    if height:
+        payload["height"] = height
+    return payload
