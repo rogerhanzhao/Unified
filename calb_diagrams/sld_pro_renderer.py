@@ -1464,57 +1464,57 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
 
     # AC tap chain（目标：图2那种竖直串联：● → X → 刀闸(开口) → PCS）
 
-        tap = (pcs_center_x, bus_y)     # 母排连接点
-        pcs_in = (pcs_center_x, pcs_y)  # PCS 方框上边缘
+    tap = (pcs_center_x, bus_y)     # 母排连接点
+    pcs_in = (pcs_center_x, pcs_y)  # PCS 方框上边缘
 
      # 1) 母排节点（实心点）
-       _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
+    _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
 
        # 2) X（米字）位置：务必先定义，避免 NameError
-       x_mark_y = bus_y + pcs_ac_x_offset
+    x_mark_y = bus_y + pcs_ac_x_offset
 
     # 母排 → X（竖线）
-      _draw_line_anchored(
-      dwg, tap, (pcs_center_x, x_mark_y),
-      class_="thin",
-      start_anchor=tap, end_anchor=(pcs_center_x, x_mark_y),
-      )
+    _draw_line_anchored(
+    dwg, tap, (pcs_center_x, x_mark_y),
+    class_="thin",
+    start_anchor=tap, end_anchor=(pcs_center_x, x_mark_y),
+    )
 
     # 画 X
-      _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
+    _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
 
     # 3) 刀闸：放在 X 下面，但“中间留空不画竖线”来表现开口
-      knife_top_y = x_mark_y + max(10.0, pcs_ac_switch_offset)
+    knife_top_y = x_mark_y + max(10.0, pcs_ac_switch_offset)
 
     # 刀闸高度（可用 layout_params 覆盖）
-      knife_h = _safe_float(layout_params.get("pcs_ac_knife_h"), 22.0)
-      knife_h = max(14.0, min(28.0, knife_h))
+    knife_h = _safe_float(layout_params.get("pcs_ac_knife_h"), 22.0)
+    knife_h = max(14.0, min(28.0, knife_h))
 
     # 防止刀闸压到 PCS 框：限制刀闸 bottom
-      max_bottom = pcs_y - 2.0
-      if knife_top_y + knife_h > max_bottom:
-      knife_h = max(10.0, max_bottom - knife_top_y)
+    max_bottom = pcs_y - 2.0
+    if knife_top_y + knife_h > max_bottom:
+    knife_h = max(10.0, max_bottom - knife_top_y)
 
     # 刀片方向：左侧PCS向左开，右侧PCS向右开（避免压到文字）
-      side = -1 if pcs_center_x < mv_center_x else 1
+    side = -1 if pcs_center_x < mv_center_x else 1
 
-      anchors = _draw_ac_knife_switch_inline(
-      dwg,
-      pcs_center_x,
-      knife_top_y,
-      knife_h,
-      side=side,
-     )
+    anchors = _draw_ac_knife_switch_inline(
+    dwg,
+    pcs_center_x,
+    knife_top_y,
+    knife_h,
+    side=side,
+    )
 
     # 4) 刀闸底部 → PCS 顶部（竖线）
-      _draw_line_anchored(
-      dwg,
-      anchors["bottom"],
-      pcs_in,
-      class_="thin",
-      start_anchor=anchors["bottom"],
-      end_anchor=pcs_in,
-      )
+    _draw_line_anchored(
+    dwg,
+    anchors["bottom"],
+    pcs_in,
+    class_="thin",
+    start_anchor=anchors["bottom"],
+    end_anchor=pcs_in,
+    )
 
     # =============================================================================
     # 下方：Battery Storage Bank（compact_mode vs full）
