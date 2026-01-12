@@ -356,6 +356,12 @@ def _draw_dc_switch(
     pivot_y = y + h * 0.42
     fuse_top = y + h * 0.62
     fuse_h = max(8.0, min(h * 0.20, h * 0.30))
+    
+# 需求：fuse 高度变为原来的 2 倍
+    fuse_h = fuse_h * 2.0
+
+# 防止 fuse 太长把符号挤爆：限制 fuse 不超过总高度的一半（可再调）
+    fuse_h = min(fuse_h, h * 0.55)
     fuse_bot = fuse_top + fuse_h
 
     # 保险：防止 h 很小时 fuse 顶到底太靠下
