@@ -1422,48 +1422,72 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             dwg.add(dwg.text(rating_text, insert=(pcs_center_x + 6, pcs_y + 38), class_="label", text_anchor="start"))
 
                 # ---------------------------
-        # AC tap chain（目标：X 在上端固定端，刀闸在 PCS 框侧边）
-        # ---------------------------
-        tap = (pcs_center_x, bus_y)     # 上端：母排连接点
-        pcs_in = (pcs_center_x, pcs_y)  # 下端：PCS 方框上边缘
+        # AC tap chain（按图1：节点→X→刀闸→PCS，全都在同一竖线上）
+        tap = (pcs_center_x, bus_y)     # 母排连接点
+        pcs_in = (pcs_center_x, pcs_y)  # PCS 方框上边缘入口
 
         # 1) 母排节点（实心点）
         _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
 
-        # 2) X（米字）放在刚离开母排的固定端位置
-        x_mark_y = bus_y + pcs_ac_x_offset   # 你原来变量 pcs_ac_x_offset 正好用于这个
+        # 2) X（米字）在母排下方的“固定端”
+        x_mark_y = bus_y + pcs_ac_x_offset
         _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
 
-        # 3) 主竖线向下到“准备侧接刀闸”的高度
-        #    这里用 pcs_ac_switch_offset 作为“从母排往下的距离”，保持你原系统变量不丢
-        join_y_1 = bus_y + pcs_ac_switch_offset
-        join_y_1 = min(join_y_1, pcs_y - 10)  # 防止压到 PCS 框
+        # 3) 画“竖直开口刀闸”（不再拐到 PCS 侧边！）
+        #    用你现有变量做定位/比例映射
+        gap = max(3.0, pcs_ac_switch_gap)                 # 开口间隙基准
+        blade_dx = max(6.0, abs(pcs_ac_switch_blade_dx))  # 刀片水平长度（沿用你的变量）
+        blade_side = -1  # 图1是向左开；要向右就改成 +1
 
+        # 固定触点（横杠）y：用 pcs_ac_switch_offset 作为“从母排向下的距离”
+        contact_y = bus_y + pcs_ac_switch_offset
+
+        # 约束：触点必须在 X 的下方，否则会叠在一起
+        min_contact_y = x_mark_y + pcs_ac_x_size * 0.8 + 6
+        if contact_y < min_contact_y:
+            contact_y = min_contact_y
+
+        # 动触点/刀片铰接点（pivot）在触点下方，形成“断开间隙”
+        pivot_y = contact_y + gap * 2.0
+
+        # 再约束：pivot 不能压到 PCS 顶边
+        if pivot_y > pcs_y - 8:
+            pivot_y = pcs_y - 8
+            contact_y = pivot_y - gap * 2.0
+            # 兜底：contact 仍需在 X 下方
+            if contact_y < min_contact_y:
+                contact_y = min_contact_y
+
+        # 刀片尖端 y：靠近触点但不接触（形成“断开”观感）
+        blade_tip_y = contact_y + gap * 0.6
+        blade_tip_x = pcs_center_x + blade_side * blade_dx
+
+        # a) 上段竖线：母排 → 固定触点（到这里为止）
         _draw_line_anchored(
             dwg,
             tap,
-            (pcs_center_x, join_y_1),
+            (pcs_center_x, contact_y),
             class_="thin",
             start_anchor=tap,
-            end_anchor=(pcs_center_x, join_y_1),
+            end_anchor=(pcs_center_x, contact_y),
         )
 
-        # 4) 侧向接到刀闸（放在 PCS 框右侧；要左侧就 side = -1）
-        side = 1
-        knife_x = pcs_center_x + side * (pcs_box_w / 2 + 14)
+        # b) 固定触点横杠（图1里那根小横线）
+        contact_bar_len = max(10.0, gap * 2.4)
+        _draw_contact_bar(dwg, pcs_center_x, contact_y, contact_bar_len, line_class="thin")
 
-        _draw_line_anchored(dwg, (pcs_center_x, join_y_1), (knife_x, join_y_1), class_="thin")
+        # c) 下段竖线：从 pivot 往下到 PCS 顶部（注意：这里从 pivot 开始，制造“断开间隙”）
+        _draw_line_anchored(
+            dwg,
+            (pcs_center_x, pivot_y),
+            pcs_in,
+            class_="thin",
+            start_anchor=(pcs_center_x, pivot_y),
+            end_anchor=pcs_in,
+        )
 
-        # 5) 画侧边刀闸：高度 knife_h 可用 pcs_ac_switch_gap/offset 来“联动缩放”
-        knife_h = max(12.0, min(20.0, pcs_ac_switch_gap * 3.0))  # 这里用你原变量做个合理映射
-        anchors = _draw_ac_knife_switch(dwg, knife_x, join_y_1, knife_h, side=side)
-
-        # 6) 从刀闸底部横向回主竖线，再下到 PCS 顶部入口
-        join_y_2 = anchors["bottom"][1]
-        join_y_2 = min(join_y_2, pcs_y - 2)
-
-        _draw_line_anchored(dwg, (knife_x, join_y_2), (pcs_center_x, join_y_2), class_="thin")
-        _draw_line_anchored(dwg, (pcs_center_x, join_y_2), pcs_in, class_="thin", end_anchor=pcs_in)
+        # d) 斜刀片：从 pivot 指向触点附近（但不接触触点横杠）
+        dwg.add(dwg.line((pcs_center_x, pivot_y), (blade_tip_x, blade_tip_y), class_="thin"))
 
 
     # =============================================================================
