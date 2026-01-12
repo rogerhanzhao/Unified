@@ -286,11 +286,10 @@ def _draw_dc_switch(dwg, x: float, y: float, h: float) -> None:
 
     # --- fuse inner two vertical bars (to match your picture) ---
     inner_top = fuse_top + (fuse_bot - fuse_top) * 0.15
-    inner_bot = fuse_top + (fuse_bot - fuse_top) * 0.85
+    inner_bot = fuse_top + (fuse_bot - fuse_top) * 2.0
     bar_dx = fuse_w * 0.18
-    dwg.add(dwg.line((x - bar_dx, inner_top), (x - bar_dx, inner_bot), class_="thin"))
 
-    # --- bottom lead after fuse ---
+# --- bottom lead after fuse ---
     _draw_line_anchored(
         dwg,
         (x, fuse_bot),
@@ -299,8 +298,6 @@ def _draw_dc_switch(dwg, x: float, y: float, h: float) -> None:
         start_anchor=(x, fuse_bot),
         end_anchor=(x, y + h),
     )
-
-
 def _draw_fuse(dwg, x: float, y: float, w: float, h: float) -> None:
     dwg.add(
         dwg.rect(
@@ -309,7 +306,6 @@ def _draw_fuse(dwg, x: float, y: float, w: float, h: float) -> None:
             class_="thin",
         )
     )
-
 
 def _draw_battery_column(dwg, x: float, y: float, h: float, rows: int) -> None:
     if rows <= 0 or h <= 0:
