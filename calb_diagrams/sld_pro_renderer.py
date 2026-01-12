@@ -374,8 +374,15 @@ def _draw_dc_switch(
     fuse_w = max(8.0, fuse_h * 0.55)
 
     # 刀闸开口方向：左上
-    blade_tip_x = x - h * 0.32
-    blade_tip_y = contact_y + h * 0.10
+    # 刀闸“红线”长度：缩短 1/3 => 乘以 2/3
+    blade_dx = h * 0.32 * (2.0 / 3.0)
+
+    # 刀闸张开角度变小：竖向偏移也调小（你可在 0.06~0.10 之间试）
+    blade_dy = h * 0.08
+
+    # 刀闸尖端坐标（向左 + 向下）
+    blade_tip_x = x - blade_dx
+    blade_tip_y = contact_y + blade_dy
 
     # A) 顶部引线：x,y → contact_y
     _draw_line_anchored(
