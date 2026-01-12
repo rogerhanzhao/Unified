@@ -1558,7 +1558,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             prot_center = (line_x, fuse_center_y)
             branch_bus = (line_x, branch_bus_y)
             raw_h = branch_bus_y - dc_top
-            symbol_h = min(70.0, max(20.0, raw_h * 1))  # 70px 你可以改 50~90
+            symbol_h = min(50.0, max(20.0, raw_h * 1))  # 70px 你可以改 50~90
             _draw_dc_switch(dwg, line_x, dc_top, symbol_h)
             _draw_node(dwg, branch_bus[0], branch_bus[1], dc_node_r, node_fill)
             triangle_center = battery_y + dc_triangle_size + 6.0
