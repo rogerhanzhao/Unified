@@ -1472,10 +1472,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             end_anchor=(pcs_center_x, contact_y),
         )
 
-        # b) 固定触点横杠（图1里那根小横线）
-        contact_bar_len = max(10.0, gap * 2.4)
-        _draw_contact_bar(dwg, pcs_center_x, contact_y, contact_bar_len, line_class="thin")
-
         # c) 下段竖线：从 pivot 往下到 PCS 顶部（注意：这里从 pivot 开始，制造“断开间隙”）
         _draw_line_anchored(
             dwg,
