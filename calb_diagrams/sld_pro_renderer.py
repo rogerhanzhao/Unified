@@ -835,7 +835,7 @@ def _write_png(svg_path: Path, png_path: Path) -> None:
 
 def render_sld_pro_svg(
     spec: SldGroupSpec, out_svg: Path, out_png: Path | None = None
-) -> tuple[Path | None, str | None]:
+    ) -> tuple[Path | None, str | None]:
     """
     渲染 SLD Pro SVG（可选输出 PNG）。
     返回：(out_svg_path, png_warning_message)
