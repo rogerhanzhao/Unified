@@ -341,29 +341,48 @@ def _draw_ac_knife_switch(dwg, x: float, y: float, h: float, side: int = 1) -> d
 
     return {"top": (x, y), "bottom": (x, bottom_y), "contact": (x, contact_y), "pivot": (x, pivot_y)}
 def _draw_ac_knife_switch_inline(
-    dwg, x: float, y: float, h: float, side: int = 1
-    ) -> dict[str, tuple[float, float]]:
+    dwg,
+    x: float,
+    y: float,
+    h: float,
+    side: int = -1,
+    *,
+    line_class: str = "thin",
+) -> dict[str, tuple[float, float]]:
     """
-    画“目标图2风格”的 AC 刀闸：在主竖线上画一个斜刀片，不画固定触点横线。
-    x,y：符号顶部中心点（从这里往下占用高度 h）
-    side：1 刀片向右上挑；-1 刀片向左上挑
+    图2同款 AC knife switch（竖直串联、开口样式）：
+      - 上段导体到 y_contact 就停止（不再往下画）=> 形成开口
+      - 下段导体从 pivot_y 往下画到 y+h
+      - 斜刀片从侧上方连到 pivot（刀闸打开）
+    x,y: 以“开口上端（固定触点位置）”作为 y 基准
+    h  : 该符号自身高度（不含上面的 X）
+    side: -1 刀片向左；+1 刀片向右
     """
     if h <= 0:
-        return {"top": (x, y), "bottom": (x, y), "pivot": (x, y)}
+        return {"top": (x, y), "bottom": (x, y)}
 
-    top_y = y
+    # 关键：上端触点（开口上端），这里“不往下画导体”
+    contact_y = y
+
+    # pivot 在符号中部偏下；下端导体从 pivot 往下
     pivot_y = y + h * 0.55
     bottom_y = y + h
 
-    # 主竖线（符号内部这一段）
-    dwg.add(dwg.line((x, top_y), (x, bottom_y), class_="thin"))
+    # 下段竖直导体（pivot -> bottom）
+    dwg.add(dwg.line((x, pivot_y), (x, bottom_y), class_=line_class))
 
-    # 斜刀片：从 pivot 向“上方侧边”挑起（开断状态）
-    blade_dx = side * (h * 0.40)
-    blade_dy = h * 0.28
-    dwg.add(dwg.line((x, pivot_y), (x + blade_dx, pivot_y - blade_dy), class_="thin"))
+    # 斜刀片：上端悬空（不接触 contact），下端接 pivot
+    blade_dx = side * (h * 0.55)
+    blade_upper_y = y + h * 0.12   # 刀片上端高度（略低于开口上端，形成明显间隙）
+    blade_upper = (x + blade_dx, blade_upper_y)
+    dwg.add(dwg.line(blade_upper, (x, pivot_y), class_=line_class))
 
-    return {"top": (x, top_y), "pivot": (x, pivot_y), "bottom": (x, bottom_y)}
+    return {
+        "top": (x, contact_y),
+        "pivot": (x, pivot_y),
+        "bottom": (x, bottom_y),
+        "blade_upper": blade_upper,
+    }
 def _draw_arrow_box(dwg, x: float, y: float, w: float, h: float) -> None:
     dwg.add(dwg.rect(insert=(x - w / 2, y), size=(w, h), class_="outline"))
     dwg.add(dwg.line((x, y + 4), (x, y + h - 6), class_="thin"))
@@ -1443,63 +1462,59 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             rating_text = f"{rating:.0f} kW" if rating else "TBD"
             dwg.add(dwg.text(rating_text, insert=(pcs_center_x + 6, pcs_y + 38), class_="label", text_anchor="start"))
 
-                # ---------------------------
-        # ---------------------------
-               # ---------------------------
-        # AC tap chain（目标：图2那种竖直串联：● → X → 刀闸 → PCS）
-        # ---------------------------
+    # AC tap chain（目标：图2那种竖直串联：● → X → 刀闸(开口) → PCS）
 
-        tap = (pcs_center_x, bus_y)     # 母排连接点
-        pcs_in = (pcs_center_x, pcs_y)  # PCS 方框上边缘
+    tap = (pcs_center_x, bus_y)     # 母排连接点
+    pcs_in = (pcs_center_x, pcs_y)  # PCS 方框上边缘
 
-        # 1) 母排节点（实心点）
-        _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
+     # 1) 母排节点（实心点）
+    _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
 
-        # 2) X（米字）位置：先定义，避免 NameError
-        x_mark_y = bus_y + pcs_ac_x_offset
-        _draw_line_anchored(
-            dwg, tap, (pcs_center_x, x_mark_y),
-            class_="thin",
-            start_anchor=tap, end_anchor=(pcs_center_x, x_mark_y),
-        )
-        _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
+    # 2) X（米字）位置：务必先定义，避免 NameError
+    x_mark_y = bus_y + pcs_ac_x_offset
 
-        # 3) 刀闸放在 X 下面（竖直串联，不要任何侧向横线）
-        knife_top_y = x_mark_y + max(10.0, pcs_ac_switch_offset)
+    # 母排 → X（竖线）
+    _draw_line_anchored(
+    dwg, tap, (pcs_center_x, x_mark_y),
+    class_="thin",
+    start_anchor=tap, end_anchor=(pcs_center_x, x_mark_y),
+    )
 
-        # 刀闸高度（可用 layout_params 覆盖）
-        knife_h = _safe_float(layout_params.get("pcs_ac_knife_h"), 22.0)
-        knife_h = max(14.0, min(28.0, knife_h))
+    # 画 X
+    _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
 
-        # 防止刀闸/引线压到 PCS 框：把刀闸底部限制在 pcs_y - 2 之上
-        max_bottom = pcs_y - 2.0
-        if knife_top_y + knife_h > max_bottom:
-            knife_h = max(10.0, max_bottom - knife_top_y)
+    # 3) 刀闸：放在 X 下面，但“中间留空不画竖线”来表现开口
+    knife_top_y = x_mark_y + max(10.0, pcs_ac_switch_offset)
 
-        # X → 刀闸顶部
-        _draw_line_anchored(
-            dwg,
-            (pcs_center_x, x_mark_y),
-            (pcs_center_x, knife_top_y),
-            class_="thin",
-            start_anchor=(pcs_center_x, x_mark_y),
-            end_anchor=(pcs_center_x, knife_top_y),
-        )
+    # 刀闸高度（可用 layout_params 覆盖）
+    knife_h = _safe_float(layout_params.get("pcs_ac_knife_h"), 22.0)
+    knife_h = max(14.0, min(28.0, knife_h))
 
-        # 刀片方向：让刀片“向外”开，避免压到 PCS 文本（左边的向左，右边的向右）
-        side = -1 if pcs_center_x < mv_center_x else 1
+    # 防止刀闸压到 PCS 框：限制刀闸 bottom
+    max_bottom = pcs_y - 2.0
+    if knife_top_y + knife_h > max_bottom:
+    knife_h = max(10.0, max_bottom - knife_top_y)
 
-        anchors = _draw_ac_knife_switch_inline(dwg, pcs_center_x, knife_top_y, knife_h, side=side)
+    # 刀片方向：左侧PCS向左开，右侧PCS向右开（避免压到文字）
+    side = -1 if pcs_center_x < mv_center_x else 1
 
-        # 刀闸底部 → PCS 顶部
-        _draw_line_anchored(
-            dwg,
-            anchors["bottom"],
-            pcs_in,
-            class_="thin",
-            start_anchor=anchors["bottom"],
-            end_anchor=pcs_in,
-        )
+    anchors = _draw_ac_knife_switch_inline(
+    dwg,
+    pcs_center_x,
+    knife_top_y,
+    knife_h,
+    side=side,
+    )
+
+    # 4) 刀闸底部 → PCS 顶部（竖线）
+    _draw_line_anchored(
+    dwg,
+    anchors["bottom"],
+    pcs_in,
+    class_="thin",
+    start_anchor=anchors["bottom"],
+    end_anchor=pcs_in,
+    )
 
     # =============================================================================
     # 下方：Battery Storage Bank（compact_mode vs full）
