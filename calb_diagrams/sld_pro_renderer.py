@@ -341,7 +341,6 @@ _draw_line_anchored(dwg, (knife_x, join_y_2), (pcs_center_x, join_y_2), class_="
 # 4) 主竖线继续下到 PCS 顶部入口
 _draw_line_anchored(dwg, (pcs_center_x, join_y_2), pcs_in, class_="thin", end_anchor=pcs_in)
 
-    """避雷器/浪涌一类的箭头盒子符号（保持你原图风格）"""
     dwg.add(dwg.rect(insert=(x - w / 2, y), size=(w, h), class_="outline"))
     dwg.add(dwg.line((x, y + 4), (x, y + h - 6), class_="thin"))
     dwg.add(dwg.line((x, y + h - 6), (x - 4, y + h - 10), class_="thin"))
