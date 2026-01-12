@@ -200,9 +200,9 @@ def _draw_tap_head(
 
 
 def _draw_dc_switch(dwg, x: float, y: float, h: float) -> None:
-    blade_dx = h * 0.45
-    blade_dy = h * 0.45
-    contact_w = h * 0.4
+    blade_dx = h * 0.30
+    blade_dy = h * 0.30
+    contact_w = h * 0.3
     dwg.add(dwg.line((x, y), (x + blade_dx, y + blade_dy), class_="thin"))
     dwg.add(
         dwg.line(
