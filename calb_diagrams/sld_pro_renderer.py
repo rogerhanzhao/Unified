@@ -200,16 +200,105 @@ def _draw_tap_head(
 
 
 def _draw_dc_switch(dwg, x: float, y: float, h: float) -> None:
-    blade_dx = h * 0.30
-    blade_dy = h * 0.30
-    contact_w = h * 0.3
-    dwg.add(dwg.line((x, y), (x + blade_dx, y + blade_dy), class_="thin"))
+    """
+    Draw DC switch symbol as:
+      - Top fixed contact (T shape: vertical lead + horizontal bar)
+      - Open knife blade (diagonal blade not touching the top bar)
+      - Series fuse (rectangle with two inner vertical bars)
+      - Bottom vertical lead
+    Coordinate convention:
+      - (x, y) is the TOP connection point (incoming conductor)
+      - total symbol height is h, ending at (x, y+h)
+    """
+    if h <= 0:
+        return
+
+    # --- proportions (tuned to match your reference image) ---
+    # y positions
+    contact_y = y + h * 0.18          # top fixed contact bar position
+    pivot_y   = y + h * 0.42          # knife pivot (top of moving stem)
+    fuse_top  = y + h * 0.62          # fuse box top
+    fuse_h    = h * 0.20
+    fuse_h    = max(10.0, min(fuse_h, h * 0.28))
+    fuse_bot  = fuse_top + fuse_h
+
+    # if geometry gets too tight, compress fuse region
+    if fuse_bot > y + h * 0.92:
+        fuse_top = y + h * 0.55
+        fuse_bot = min(y + h * 0.92, fuse_top + fuse_h)
+
+    # widths
+    contact_w = max(12.0, min(h * 0.42, h * 0.60))  # top contact bar width
+    fuse_w    = max(10.0, fuse_h * 0.55)           # fuse box width
+
+    # blade tip (open position): left + slightly below the top contact bar
+    blade_tip_x = x - h * 0.32
+    blade_tip_y = contact_y + h * 0.10
+
+    # --- top lead to fixed contact (vertical) ---
+    _draw_line_anchored(
+        dwg,
+        (x, y),
+        (x, contact_y),
+        class_="thin",
+        start_anchor=(x, y),
+        end_anchor=(x, contact_y),
+    )
+
+    # --- fixed contact bar (horizontal) ---
     dwg.add(
         dwg.line(
-            (x - contact_w / 2, y + h),
-            (x + contact_w / 2, y + h),
+            (x - contact_w / 2, contact_y),
+            (x + contact_w / 2, contact_y),
             class_="thin",
         )
+    )
+
+    # NOTE: keep an open gap between fixed contact bar and moving blade (no vertical line here)
+
+    # --- moving stem downwards (from pivot to fuse) ---
+    _draw_line_anchored(
+        dwg,
+        (x, pivot_y),
+        (x, fuse_top),
+        class_="thin",
+        start_anchor=(x, pivot_y),
+        end_anchor=(x, fuse_top),
+    )
+
+    # --- knife blade (diagonal, open) ---
+    dwg.add(
+        dwg.line(
+            (x, pivot_y),
+            (blade_tip_x, blade_tip_y),
+            class_="thin",
+        )
+    )
+
+    # --- fuse box (rectangle) ---
+    dwg.add(
+        dwg.rect(
+            insert=(x - fuse_w / 2, fuse_top),
+            size=(fuse_w, fuse_bot - fuse_top),
+            class_="outline",
+        )
+    )
+
+    # --- fuse inner two vertical bars (to match your picture) ---
+    inner_top = fuse_top + (fuse_bot - fuse_top) * 0.15
+    inner_bot = fuse_top + (fuse_bot - fuse_top) * 0.85
+    bar_dx = fuse_w * 0.18
+    dwg.add(dwg.line((x - bar_dx, inner_top), (x - bar_dx, inner_bot), class_="thin"))
+    dwg.add(dwg.line((x + bar_dx, inner_top), (x + bar_dx, inner_bot), class_="thin"))
+
+    # --- bottom lead after fuse ---
+    _draw_line_anchored(
+        dwg,
+        (x, fuse_bot),
+        (x, y + h),
+        class_="thin",
+        start_anchor=(x, fuse_bot),
+        end_anchor=(x, y + h),
     )
 
 
