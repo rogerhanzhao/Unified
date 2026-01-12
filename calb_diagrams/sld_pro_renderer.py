@@ -3,12 +3,6 @@
 sld_pro_renderer.py
 -------------------
 用于渲染“专业版”单线图（SLD）SVG/PNG 的渲染器。
-
-本文件特点：
-1) 尽量保持你原有的绘制风格（svgwrite + class 样式）
-2) 对 DC switch（开关+Fuse）符号做了重写：符合参考图、可控尺寸、可延长引线
-3) 修复曾出现的 NameError：避免模块 import 时执行依赖局部变量的绘图语句
-4) 增加中文注释，便于后续你/团队维护
 """
 
 import math
@@ -43,7 +37,6 @@ from calb_diagrams.specs import (
 
 
 def _safe_float(value, default=0.0) -> float:
-    """把 value 安全转成 float，失败返回 default。"""
     try:
         return float(value)
     except Exception:
@@ -51,7 +44,6 @@ def _safe_float(value, default=0.0) -> float:
 
 
 def _safe_int(value, default=0) -> int:
-    """把 value 安全转成 int，失败返回 default。"""
     try:
         return int(value)
     except Exception:
@@ -84,7 +76,6 @@ def format_mwh(value) -> str:
 
 
 def format_kv_plain(value) -> str:
-    """kV 简写：如 35kV / 33.0kV"""
     v = _safe_float(value, 0.0)
     if v <= 0:
         return "TBD"
@@ -94,27 +85,23 @@ def format_kv_plain(value) -> str:
 
 
 def format_v_plain(value) -> str:
-    """V 简写（你原来逻辑里 >=1000 仍用 V 显示，这里保持一致）"""
     v = _safe_float(value, 0.0)
     return "TBD" if v <= 0 else f"{v:.0f}V"
 
 
 def _estimate_current_a(power_kw: float, voltage_v: float) -> float:
-    """三相交流电流估算：I = P / (sqrt(3)*V)"""
     if power_kw <= 0 or voltage_v <= 0:
         return 0.0
     return power_kw * 1000.0 / (math.sqrt(3) * voltage_v)
 
 
 def _estimate_dc_current_a(power_kw: float, voltage_v: float) -> float:
-    """直流电流估算：I = P / V"""
     if power_kw <= 0 or voltage_v <= 0:
         return 0.0
     return power_kw * 1000.0 / voltage_v
 
 
 def _pick_pcs_rating_kw(spec: SldGroupSpec) -> float:
-    """从 pcs_rating_kw_list 里取第一个有效值。"""
     for rating in spec.pcs_rating_kw_list:
         if rating:
             return rating
@@ -127,20 +114,15 @@ def _pick_pcs_rating_kw(spec: SldGroupSpec) -> float:
 
 
 def _draw_pcs_dc_ac_symbol(dwg, x: float, y: float, w: float, h: float) -> None:
-    """
-    PCS 方框内部的“DC/AC 转换”符号（对角线 + 左下 DC 双线 + 右上正弦波）
-    """
     if w <= 0 or h <= 0:
         return
 
-    # padding：保证符号不要贴边
     pad = min(w, h) * 0.12
     inner_x = x + pad
     inner_y = y + pad
     inner_w = max(1.0, w - pad * 2)
     inner_h = max(1.0, h - pad * 2)
 
-    # 1) 对角转换斜线（IEC 常见表达）
     dwg.add(
         dwg.line(
             (inner_x, inner_y),
@@ -149,7 +131,6 @@ def _draw_pcs_dc_ac_symbol(dwg, x: float, y: float, w: float, h: float) -> None:
         )
     )
 
-    # 2) DC 双线（左下）
     dc_len = inner_w * 0.35
     dc_x1 = inner_x
     dc_x2 = inner_x + dc_len
@@ -158,7 +139,6 @@ def _draw_pcs_dc_ac_symbol(dwg, x: float, y: float, w: float, h: float) -> None:
     dwg.add(dwg.line((dc_x1, dc_y_base), (dc_x2, dc_y_base), class_="thin"))
     dwg.add(dwg.line((dc_x1, dc_y_base - dc_gap), (dc_x2, dc_y_base - dc_gap), class_="thin"))
 
-    # 3) AC 正弦波（右上）
     ac_x1 = inner_x + inner_w * 0.65
     ac_x2 = inner_x + inner_w
     wave_w = max(1.0, ac_x2 - ac_x1)
@@ -176,14 +156,12 @@ def _draw_pcs_dc_ac_symbol(dwg, x: float, y: float, w: float, h: float) -> None:
 
 
 def _draw_breaker_x(dwg, x: float, y: float, size: float) -> None:
-    """画一个 X（常用于断路器/隔离点标识）"""
     half = size * 0.5
     dwg.add(dwg.line((x - half, y - half), (x + half, y + half), class_="thin"))
     dwg.add(dwg.line((x - half, y + half), (x + half, y - half), class_="thin"))
 
 
 def _draw_contact_bar(dwg, x: float, y: float, length: float, line_class: str = "thin") -> None:
-    """画触点横杠（居中）。"""
     if length <= 0:
         return
     half = length / 2
@@ -191,28 +169,24 @@ def _draw_contact_bar(dwg, x: float, y: float, length: float, line_class: str = 
 
 
 def _draw_open_circle(dwg, x: float, y: float, r: float, line_class: str = "thin") -> None:
-    """画空心圆（可用于端子/测点）"""
     if r <= 0:
         return
     dwg.add(dwg.circle(center=(x, y), r=r, class_=line_class))
 
 
 def _draw_triangle_down(dwg, x: float, y: float, size: float) -> None:
-    """画向下三角形"""
     half = size * 0.6
     points = [(x, y + size), (x - half, y), (x + half, y)]
     dwg.add(dwg.polygon(points=points, class_="thin", fill="none"))
 
 
 def _draw_triangle_up(dwg, x: float, y: float, size: float) -> None:
-    """画向上三角形"""
     half = size * 0.6
     points = [(x, y - size), (x - half, y), (x + half, y)]
     dwg.add(dwg.polygon(points=points, class_="thin", fill="none"))
 
 
 def _draw_triangle_pair(dwg, x: float, y_center: float, size: float, gap: float) -> None:
-    """画上下成对三角形（你图里类似二极管/方向组件符号）"""
     top_apex = y_center - gap / 2
     bottom_apex = y_center + gap / 2
     _draw_triangle_down(dwg, x, top_apex - size, size)
@@ -220,7 +194,6 @@ def _draw_triangle_pair(dwg, x: float, y_center: float, size: float, gap: float)
 
 
 def _draw_breaker_circle(dwg, x: float, y: float, r: float) -> None:
-    """圆圈里画 X 的断路器符号"""
     if r <= 0:
         return
     dwg.add(dwg.circle(center=(x, y), r=r, class_="outline"))
@@ -229,10 +202,6 @@ def _draw_breaker_circle(dwg, x: float, y: float, r: float) -> None:
 
 
 def _draw_transformer_symbol(dwg, x: float, y: float, r: float) -> tuple[tuple[float, float], tuple[float, float]]:
-    """
-    画一个三绕组/三相变压器简图（你原版的三圆+三角）
-    返回：左右两个圆心（用于后续引线定位）
-    """
     gap = r * 0.9
     top_center = (x, y)
     left_center = (x - gap, y + gap)
@@ -256,20 +225,14 @@ def _draw_transformer_symbol(dwg, x: float, y: float, r: float) -> tuple[tuple[f
 
 
 def _draw_node(dwg, x: float, y: float, r: float, fill: str) -> None:
-    """空心节点（outline 样式）"""
     dwg.add(dwg.circle(center=(x, y), r=r, class_="outline", fill=fill))
 
 
 def _draw_solid_node(dwg, x: float, y: float, r: float, fill: str) -> None:
-    """实心节点（用于强显示连接点）"""
     dwg.add(dwg.circle(center=(x, y), r=r, fill=fill, stroke=fill, stroke_width=0.6))
 
 
 def _snap_point(point: tuple[float, float], anchor: tuple[float, float], tol: float = 0.5) -> tuple[float, float]:
-    """
-    “吸附”点：如果点坐标跟 anchor 很接近（在 tol 内），则强制改为 anchor
-    用于避免线端点因为浮点误差导致看起来没贴上。
-    """
     if abs(point[0] - anchor[0]) > tol or abs(point[1] - anchor[1]) > tol:
         return anchor
     return point
@@ -284,7 +247,6 @@ def _draw_line_anchored(
     end_anchor: tuple[float, float] | None = None,
     tol: float = 0.5,
 ) -> None:
-    """画线（可选吸附起点/终点）"""
     if start_anchor is not None:
         start = _snap_point(start, start_anchor, tol)
     if end_anchor is not None:
@@ -293,7 +255,6 @@ def _draw_line_anchored(
 
 
 def _draw_ground(dwg, x: float, y: float) -> None:
-    """接地符号"""
     dwg.add(dwg.line((x, y), (x, y + 6), class_="thin"))
     dwg.add(dwg.line((x - 6, y + 6), (x + 6, y + 6), class_="thin"))
     dwg.add(dwg.line((x - 4, y + 9), (x + 4, y + 9), class_="thin"))
@@ -301,7 +262,6 @@ def _draw_ground(dwg, x: float, y: float) -> None:
 
 
 def _draw_capacitor(dwg, x: float, y: float, w: float, gap: float) -> None:
-    """电容符号（两条平行线）"""
     dwg.add(dwg.line((x - w / 2, y), (x + w / 2, y), class_="thin"))
     dwg.add(dwg.line((x - w / 2, y + gap), (x + w / 2, y + gap), class_="thin"))
 
@@ -309,12 +269,6 @@ def _draw_capacitor(dwg, x: float, y: float, w: float, gap: float) -> None:
 # PCS-AC Switch
 # =============================================================================
 def _draw_ac_knife_switch(dwg, x: float, y: float, h: float, side: int = 1) -> dict[str, tuple[float, float]]:
-    """
-    AC 侧刀闸（简化 IEC 风格）：顶部固定触点横线 + 斜刀片（断开）
-    x,y：符号顶部中心点
-    h：符号高度
-    side：1 表示刀片向右倾斜；-1 表示向左
-    """
     if h <= 0:
         return {"top": (x, y), "bottom": (x, y)}
 
@@ -323,23 +277,17 @@ def _draw_ac_knife_switch(dwg, x: float, y: float, h: float, side: int = 1) -> d
     bottom_y = y + h
 
     contact_w = max(10.0, h * 0.55)
-    blade_dx = side * (h * 0.30)   # 水平长度
-    blade_dy = h * 0.22            # 竖向下落（角度）
+    blade_dx = side * (h * 0.30)
+    blade_dy = h * 0.22
 
-    # 顶部引线到触点
     dwg.add(dwg.line((x, y), (x, contact_y), class_="thin"))
-    # 固定触点横线
     dwg.add(dwg.line((x - contact_w/2, contact_y), (x + contact_w/2, contact_y), class_="thin"))
-
-    # 主干到 pivot
     dwg.add(dwg.line((x, contact_y), (x, pivot_y), class_="thin"))
-    # 断开刀片（从 pivot 斜向一侧）
     dwg.add(dwg.line((x, pivot_y), (x + blade_dx, pivot_y + blade_dy), class_="thin"))
-
-    # 从 pivot 到底部引线（让它串联进回路）
     dwg.add(dwg.line((x, pivot_y), (x, bottom_y), class_="thin"))
 
     return {"top": (x, y), "bottom": (x, bottom_y), "contact": (x, contact_y), "pivot": (x, pivot_y)}
+
 def _draw_ac_knife_switch_inline(
     dwg,
     x: float,
@@ -349,16 +297,6 @@ def _draw_ac_knife_switch_inline(
     *,
     line_class: str = "thin",
 ) -> dict[str, tuple[float, float]]:
-    """
-    图示同款 AC knife switch（竖直串联、开口样式）：
-      - 在 y 处画“固定触点横杠”
-      - 上段导体只画到 y（不再往下画）=> 形成开口
-      - 下段导体从 pivot_y 往下画到 y+h
-      - 斜刀片从侧上方连到 pivot（断开）
-    x,y: 以“固定触点横杠中心线”的 y 作为基准
-    h  : 该符号自身高度（不含上面的 X）
-    side: -1 刀片向左；+1 刀片向右
-    """
     if h <= 0:
         return {"top": (x, y), "bottom": (x, y)}
 
@@ -366,7 +304,6 @@ def _draw_ac_knife_switch_inline(
     pivot_y = y + h * 0.55
     bottom_y = y + h
 
-    # 固定触点横杠（图里那条小横线）
     contact_w = max(10.0, min(h * 0.60, 22.0))
     dwg.add(
         dwg.line(
@@ -376,12 +313,10 @@ def _draw_ac_knife_switch_inline(
         )
     )
 
-    # 下段竖直导体（pivot -> bottom）
     dwg.add(dwg.line((x, pivot_y), (x, bottom_y), class_=line_class))
 
-    # 斜刀片：上端悬空（不碰触点横杠），下端接 pivot
     blade_dx = side * (h * 0.55)
-    blade_upper_y = y + h * 0.12  # 刀片上端略低于触点横杠，形成“开口间隙”
+    blade_upper_y = y + h * 0.12
     blade_upper = (x + blade_dx, blade_upper_y)
     dwg.add(dwg.line(blade_upper, (x, pivot_y), class_=line_class))
 
@@ -396,8 +331,9 @@ def _draw_arrow_box(dwg, x: float, y: float, w: float, h: float) -> None:
     dwg.add(dwg.line((x, y + 4), (x, y + h - 6), class_="thin"))
     dwg.add(dwg.line((x, y + h - 6), (x - 4, y + h - 10), class_="thin"))
     dwg.add(dwg.line((x, y + h - 6), (x + 4, y + h - 10), class_="thin"))
+
 # =============================================================================
-# DC Switch（开关 + Fuse）符号：重写版（关键修复点）
+# DC Switch
 # =============================================================================
 def _draw_dc_switch(
     dwg,
@@ -407,64 +343,32 @@ def _draw_dc_switch(
     *,
     lead_end_y: float | None = None,
 ) -> float:
-    """
-    画 DC switch（开刀闸 + 串联 Fuse）符号，并画顶部/底部引线。
-
-    目标外观（对应你参考图）：
-      - 顶部固定触点：短横杠（T 形触点的横杠部分）
-      - 开刀闸：从 pivot 点向左上斜出，不接触顶部横杠（表示“断开”）
-      - 从 pivot 向下的竖线接到 Fuse 顶部
-      - Fuse：小矩形（按你最新要求：Fuse 内部不画两条竖线）
-      - 底部引线：从 Fuse 底部延长到 lead_end_y（或 y+h）
-
-    参数：
-      x,y  : 顶部连接点坐标
-      h    : 符号“名义高度”（决定内部比例）
-      lead_end_y : 如果要把符号底部引线拉到某个 bus（例如 branch_bus_y），传这个值
-
-    返回值：
-      bottom_y：底部引线最终结束 y，用于调试/对齐
-    """
     if h <= 0:
         return y
 
-    # bottom_y：如果外部希望连接到 branch bus，就用 lead_end_y
     bottom_y = (y + h) if lead_end_y is None else max(lead_end_y, y + h * 0.6)
 
-    # 垂直比例（按参考图调过）
     contact_y = y + h * 0.18
     pivot_y = y + h * 0.42
     fuse_top = y + h * 0.62
     fuse_h = max(8.0, min(h * 0.20, h * 0.30))
     
-# 需求：fuse 高度变为原来的 2 倍
     fuse_h = fuse_h * 2.0
-
-# 防止 fuse 太长把符号挤爆：限制 fuse 不超过总高度的一半（可再调）
     fuse_h = min(fuse_h, h * 0.55)
     fuse_bot = fuse_top + fuse_h
 
-    # 保险：防止 h 很小时 fuse 顶到底太靠下
     if fuse_bot > y + h * 0.92:
         fuse_top = y + h * 0.55
         fuse_bot = fuse_top + fuse_h
 
-    # 水平比例
     contact_w = max(10.0, min(h * 0.42, h * 0.60))
     fuse_w = max(8.0, fuse_h * 0.55)
 
-    # 刀闸开口方向：左上
-    # 刀闸“红线”长度：缩短 1/3 => 乘以 2/3
     blade_dx = h * 0.32 * (2.0 / 3.0)
-
-    # 刀闸张开角度变小：竖向偏移也调小（你可在 0.06~0.10 之间试）
     blade_dy = h * 0.08
-
-    # 刀闸尖端坐标（向左 + 向下）
     blade_tip_x = x - blade_dx
     blade_tip_y = contact_y + blade_dy
 
-    # A) 顶部引线：x,y → contact_y
     _draw_line_anchored(
         dwg,
         (x, y),
@@ -474,10 +378,8 @@ def _draw_dc_switch(
         end_anchor=(x, contact_y),
     )
 
-    # B) 固定触点横杠（不画竖线连接到 pivot，留空表示断开）
     dwg.add(dwg.line((x - contact_w / 2, contact_y), (x + contact_w / 2, contact_y), class_="thin"))
 
-    # C) pivot → fuse_top 的竖线（开关动触点杆）
     _draw_line_anchored(
         dwg,
         (x, pivot_y),
@@ -487,13 +389,10 @@ def _draw_dc_switch(
         end_anchor=(x, fuse_top),
     )
 
-    # D) 斜刀闸（pivot → 左上 blade_tip）
     dwg.add(dwg.line((x, pivot_y), (blade_tip_x, blade_tip_y), class_="thin"))
 
-    # E) Fuse 矩形（按要求不画内部竖线）
     dwg.add(dwg.rect(insert=(x - fuse_w / 2, fuse_top), size=(fuse_w, fuse_bot - fuse_top), class_="outline"))
 
-    # F) Fuse 底部引线：fuse_bot → bottom_y（保证连接到 branch bus / DC Block）
     _draw_line_anchored(
         dwg,
         (x, fuse_bot),
@@ -512,7 +411,6 @@ def _draw_dc_switch(
 
 
 def _wrap_text(text: str, max_chars: int) -> List[str]:
-    """按单词分行，近似控制每行字符数。"""
     words = text.split()
     if not words:
         return [""]
@@ -529,7 +427,6 @@ def _wrap_text(text: str, max_chars: int) -> List[str]:
 
 
 def _approx_chars(width_px: float) -> int:
-    """粗略估算某段宽度可容纳字符数（你原逻辑保留）"""
     return max(6, int(width_px / 7))
 
 
@@ -540,7 +437,6 @@ def _table_row_lines(text: str, max_chars: int) -> List[str]:
 
 
 def _rmu_class_kv(mv_kv: float) -> float:
-    """按常见 RMU 标准档位归类"""
     if mv_kv <= 24:
         return 24.0
     if mv_kv <= 36:
@@ -549,7 +445,6 @@ def _rmu_class_kv(mv_kv: float) -> float:
 
 
 def _range_text(values: List[float], unit: str) -> str:
-    """把一组数表示成 min-max"""
     if not values:
         return "TBD"
     minimum = min(values)
@@ -560,7 +455,6 @@ def _range_text(values: List[float], unit: str) -> str:
 
 
 def _split_pcs_groups(pcs_count: int) -> tuple[list[int], list[int]]:
-    """把 PCS 分成 A/B 两组（用于 DC Busbar A/B）"""
     if pcs_count <= 0:
         return [], []
     split = int(math.ceil(pcs_count / 2))
@@ -568,7 +462,7 @@ def _split_pcs_groups(pcs_count: int) -> tuple[list[int], list[int]]:
 
 
 # =============================================================================
-# Dark mode 设备清单（保持你原有结构）
+# Dark mode 设备清单
 # =============================================================================
 
 
@@ -732,7 +626,6 @@ def _build_dark_equipment_sections(spec: SldGroupSpec) -> list[tuple[str, list[s
 
 
 def _build_equipment_list(spec: SldGroupSpec, compact_mode: bool = False) -> List[Tuple[str, str]]:
-    """非 dark_mode 的设备清单（保持你原结构）"""
     if compact_mode:
         return _build_compact_equipment_list(spec)
 
@@ -823,7 +716,6 @@ def _build_equipment_list(spec: SldGroupSpec, compact_mode: bool = False) -> Lis
 
 
 def _write_png(svg_path: Path, png_path: Path) -> None:
-    """SVG → PNG（依赖 cairosvg）"""
     if cairosvg is None:
         raise ImportError("cairosvg is required to export PNG from SVG.")
     cairosvg.svg2png(url=str(svg_path), write_to=str(png_path))
@@ -835,7 +727,7 @@ def _write_png(svg_path: Path, png_path: Path) -> None:
 
 def render_sld_pro_svg(
     spec: SldGroupSpec, out_svg: Path, out_png: Path | None = None
-    ) -> tuple[Path | None, str | None]:
+) -> tuple[Path | None, str | None]:
     """
     渲染 SLD Pro SVG（可选输出 PNG）。
     返回：(out_svg_path, png_warning_message)
@@ -845,21 +737,16 @@ def render_sld_pro_svg(
 
     out_svg = Path(out_svg)
 
-    # ---------------------------
-    # layout_params：所有可调参数集中在这里
-    # ---------------------------
     layout_params = spec.layout_params if isinstance(spec.layout_params, dict) else {}
     compact_mode = bool(layout_params.get("compact_mode"))
     theme = str(layout_params.get("theme") or "light").lower()
     dark_mode = theme.startswith("dark")
 
-    # dark_mode 默认不画 summary（你原逻辑保留，可手动 override）
     if "draw_summary" in layout_params:
         draw_summary = bool(layout_params.get("draw_summary"))
     else:
         draw_summary = not dark_mode
 
-    # SVG 尺寸/列布局
     width = int(_safe_float(layout_params.get("svg_width"), 1750))
     width = max(1200, width)
     left_margin = _safe_float(layout_params.get("left_margin"), 40)
@@ -877,9 +764,6 @@ def render_sld_pro_svg(
     title_h = 20
     header_h = 18
 
-    # ---------------------------------------
-    # 设备清单区域高度计算
-    # ---------------------------------------
     item_col_w = 150
     spec_col_w = table_w - item_col_w
     rows = []
@@ -912,9 +796,6 @@ def render_sld_pro_svg(
             rows.append({"item_lines": item_lines, "spec_lines": spec_lines, "lines": max(len(item_lines), len(spec_lines))})
         table_h = title_h + header_h + sum(row["lines"] * row_h for row in rows)
 
-    # ---------------------------------------
-    # 图形布局参数（你原结构保留，只做少量整理）
-    # ---------------------------------------
     skid_x = diagram_left
     skid_y = table_y
     skid_pad = _safe_float(layout_params.get("skid_pad"), 60.0)
@@ -939,7 +820,6 @@ def render_sld_pro_svg(
     mv_center_x = skid_x + diagram_width / 2
     gap_center = mv_center_x
 
-    # MV/LV 链条 y 坐标
     mv_bus_y = skid_y + 120
     mv_breaker_offset = 16.0
     mv_switch_gap = 14.0
@@ -953,7 +833,6 @@ def render_sld_pro_svg(
     equip_y = switch_y + mv_switch_h + mv_chain_gap
     tr_top_y = equip_y + mv_to_tr_gap
 
-    # LV busbar y
     bus_y = tr_top_y + tr_radius * 2 + 80.0
     pcs_bus_gap = _safe_float(layout_params.get("pcs_bus_gap"), 32.0)
     pcs_y = bus_y + pcs_bus_gap
@@ -962,9 +841,6 @@ def render_sld_pro_svg(
     battery_x = skid_x + battery_pad
     battery_w = diagram_width - battery_pad * 2
 
-    # ---------------------------------------
-    # DC Block 区域布局
-    # ---------------------------------------
     if compact_mode:
         dc_bus_y = pcs_y + pcs_box_h + 30
         skid_h = max(360.0, dc_bus_y - skid_y + 50)
@@ -1050,9 +926,6 @@ def render_sld_pro_svg(
             "Counts indicate allocation for sizing/configuration; detailed DC wiring is not represented.",
         ]
 
-    # ---------------------------------------
-    # Summary note（右下角）
-    # ---------------------------------------
     wrapped_lines = []
     note_w = note_h = note_x = note_y = 0.0
     if draw_summary:
@@ -1063,22 +936,17 @@ def render_sld_pro_svg(
         note_x = diagram_right - note_w
         note_y = battery_y + battery_h + 24
 
-    # SVG 画布高度
     diagram_bottom = battery_y + battery_h + 40
     height = max(table_y + table_h + 40, diagram_bottom)
     if draw_summary:
         height = max(height, note_y + note_h + 40)
 
-    # ---------------------------------------
-    # 初始化 SVG
-    # ---------------------------------------
     dwg = svgwrite.Drawing(
         filename=str(out_svg),
         size=(f"{width}px", f"{height}px"),
         viewBox=f"0 0 {width} {height}",
     )
 
-    # 颜色/样式（light vs dark）
     outline_color = "#e5e7eb" if dark_mode else "#000000"
     thin_color = "#cbd5e1" if dark_mode else "#000000"
     thick_color = "#e5e7eb" if dark_mode else "#000000"
@@ -1111,9 +979,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     )
     dwg.add(dwg.rect(insert=(0, 0), size=(width, height), fill=bg_color))
 
-    # ---------------------------------------
-    # 左侧设备清单绘制
-    # ---------------------------------------
     if dark_mode:
         list_pad_x = 10
         dwg.add(dwg.rect(insert=(table_x, table_y), size=(table_w, table_h), class_="outline"))
@@ -1155,16 +1020,12 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             current_y += row_h * row["lines"]
             dwg.add(dwg.line((table_x, current_y), (table_x + table_w, current_y), class_="thin"))
 
-    # ---------------------------------------
-    # 右侧框：AC Block（PCS&MV SKID）
-    # ---------------------------------------
     dwg.add(dwg.rect(insert=(skid_x, skid_y), size=(diagram_width, skid_h), class_="dash"))
     if dark_mode:
         dwg.add(dwg.text("AC Block (PCS&MV SKID)", insert=(skid_x + diagram_width - 8, skid_y + 18), class_="label title", text_anchor="end"))
     else:
         dwg.add(dwg.text("PCS&MVT SKID (AC Block)", insert=(skid_x + 8, skid_y + 18), class_="label title"))
 
-    # MV labels（保持你原逻辑）
     mv_labels = spec.equipment_list.get("mv_labels") if isinstance(spec.equipment_list, dict) else {}
     to_switchgear = mv_labels.get("to_switchgear") if isinstance(mv_labels, dict) else None
     to_other_rmu = mv_labels.get("to_other_rmu") if isinstance(mv_labels, dict) else None
@@ -1184,13 +1045,9 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     dwg.add(dwg.text(to_switchgear, insert=(terminal_left_x - 10, terminal_y - 18), class_="label"))
     dwg.add(dwg.text(to_other_rmu, insert=(terminal_right_x + 10, terminal_y - 18), class_="label", text_anchor="end"))
 
-    # 画 MV busbar
     busbar_left_x = hv_bus_left
     busbar_right_x = hv_bus_right
     dwg.add(dwg.line((busbar_left_x, mv_bus_y), (busbar_right_x, mv_bus_y), class_="thick"))
-
-    # 下面这部分（RMU、MV chain、Transformer、LV busbar、PCS）基本保持你原实现
-    # 为了可运行性，这里继续复用你原绘制结构（略做注释与轻微整理）
 
     node_fill = label_color
     switch_contact_r = _safe_float(layout_params.get("switch_contact_r"), 2.4)
@@ -1202,9 +1059,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     mv_bus_x_offset = _safe_float(layout_params.get("mv_bus_x_offset"), 8.0)
     mv_bus_x_size = _safe_float(layout_params.get("mv_bus_x_size"), 6.0)
 
-    # ---------------------------
-    # 复用你原来的“开关链条”绘制函数
-    # ---------------------------
     def _draw_open_switches_vertical(
         dwg,
         x: float,
@@ -1216,7 +1070,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         contact_r: float,
         contact_fill: str,
     ) -> None:
-        """沿竖直方向画一串开关/隔离点（你原逻辑，轻微注释）"""
         if y_bottom < y_top:
             y_top, y_bottom = y_bottom, y_top
         current_y = y_top
@@ -1235,7 +1088,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             dwg.add(dwg.line((x, pivot_y), (x + blade_dx, pivot_y + blade_dy), class_=line_class))
 
             contact_y = min(y_bottom, pivot_y + gap)
-            # contact_style 目前只支持 cross/dot；其他值=不画触点
             if contact_style == "cross":
                 _draw_breaker_x(dwg, x, contact_y, contact_r * 2.0)
             elif contact_style == "dot":
@@ -1253,15 +1105,11 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             _draw_line_anchored(dwg, (x, current_y), (x, y_bottom), class_=line_class, start_anchor=(x, current_y), end_anchor=(x, y_bottom))
 
     def _draw_breaker_with_isolators(dwg, x: float, y: float, r: float, bar_len: float, bar_gap: float, line_class: str) -> None:
-        """断路器（圆圈X）上下加隔离横杠"""
         half = bar_len / 2
         dwg.add(dwg.line((x - half, y - bar_gap), (x + half, y - bar_gap), class_=line_class))
         dwg.add(dwg.line((x - half, y + bar_gap), (x + half, y + bar_gap), class_=line_class))
         _draw_breaker_circle(dwg, x, y, r)
 
-    # ---------------------------
-    # Incoming RMU lines（两侧）
-    # ---------------------------
     incoming_span = mv_bus_y - terminal_y
     incoming_breaker_y = terminal_y + incoming_span * 0.35
     incoming_ground_y = terminal_y + incoming_span * 0.60
@@ -1311,9 +1159,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
 
     dwg.add(dwg.text("RMU", insert=(terminal_left_x - 26, terminal_y + 10), class_="label"))
 
-    # ---------------------------
-    # MV center chain
-    # ---------------------------
     mv_disconnector_offset = _safe_float(layout_params.get("mv_disconnector_offset"), 14.0)
     mv_disconnector_y = mv_bus_y + mv_disconnector_offset
 
@@ -1361,9 +1206,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     )
     _draw_ground(dwg, branch_x, mv_ground_y + mv_ground_len + 2.0)
 
-    # ---------------------------
-    # MV equipment row（避雷器、CT、电容/开关）
-    # ---------------------------
     equip_span = 60.0
     dwg.add(dwg.line((mv_center_x - equip_span, equip_y), (mv_center_x + equip_span, equip_y), class_="thin"))
 
@@ -1380,9 +1222,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     _draw_breaker_circle(dwg, right_x, equip_y + 16, 6.0)
     _draw_ground(dwg, right_x, equip_y + 26)
 
-    # ---------------------------
-    # Transformer + LV busbar
-    # ---------------------------
     tr_center_x = gap_center
     dwg.add(dwg.line((mv_center_x, equip_y), (mv_center_x, tr_top_y - tr_radius), class_="thin"))
     _draw_triangle_down(dwg, mv_center_x, tr_top_y - tr_radius - 8, 8.0)
@@ -1405,7 +1244,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     _draw_line_anchored(dwg, tx_lv_left_start, tx_lv_left, class_="thick", start_anchor=tx_lv_left_start, end_anchor=tx_lv_left)
     _draw_line_anchored(dwg, tx_lv_right_start, tx_lv_right, class_="thick", start_anchor=tx_lv_right_start, end_anchor=tx_lv_right)
 
-    # Transformer text
     tr_text_x = tr_center_x + tr_radius * 2 + 90
     tr_text_y = max(tr_top_y - tr_radius - 6, equip_y + 8)
     tr_lines = [
@@ -1423,7 +1261,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     for idx, line in enumerate(tr_lines):
         dwg.add(dwg.text(line, insert=(tr_text_x, tr_text_y + idx * 16), class_="label"))
 
-    # LV busbar line(s)
     bus_x1 = skid_x + skid_pad
     bus_x2 = skid_x + diagram_width - skid_pad
     busbar_class = "busbar" if dark_mode else "thick"
@@ -1437,129 +1274,113 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     dwg.add(dwg.text("LV Busbar", insert=(bus_x1, bus_y - 8), class_="label"))
 
     # ---------------------------
+    # PCS box + AC tap
     # ---------------------------
-# PCS box + AC tap
-# ---------------------------
-pcs_label_offset = _safe_float(layout_params.get("pcs_label_offset"), 10.0)
-lv_tap_nodes = bool(layout_params.get("lv_tap_nodes", False))
-lv_node_r = 3.0
-pcs_tap_node_r = _safe_float(layout_params.get("pcs_tap_node_r"), 2.6)
-pcs_ac_x_offset = _safe_float(layout_params.get("pcs_ac_x_offset"), 8.0)
-pcs_ac_x_size = _safe_float(layout_params.get("pcs_ac_x_size"), 6.0)
-pcs_ac_switch_offset = _safe_float(layout_params.get("pcs_ac_switch_offset"), 18.0)
+    pcs_label_offset = _safe_float(layout_params.get("pcs_label_offset"), 10.0)
+    lv_tap_nodes = bool(layout_params.get("lv_tap_nodes", False))
+    lv_node_r = 3.0
+    pcs_tap_node_r = _safe_float(layout_params.get("pcs_tap_node_r"), 2.6)
+    pcs_ac_x_offset = _safe_float(layout_params.get("pcs_ac_x_offset"), 8.0)
+    pcs_ac_x_size = _safe_float(layout_params.get("pcs_ac_x_size"), 6.0)
+    pcs_ac_switch_offset = _safe_float(layout_params.get("pcs_ac_switch_offset"), 18.0)
 
-# Transformer 到 LV bus 的两个实心点（保留）
-_draw_solid_node(dwg, tx_lv_left[0], tx_lv_left[1], lv_node_r, node_fill)
-_draw_solid_node(dwg, tx_lv_right[0], tx_lv_right[1], lv_node_r, node_fill)
+    _draw_solid_node(dwg, tx_lv_left[0], tx_lv_left[1], lv_node_r, node_fill)
+    _draw_solid_node(dwg, tx_lv_right[0], tx_lv_right[1], lv_node_r, node_fill)
 
-for idx in range(pcs_count):
-    pcs_center_x = pcs_centers[idx]
-    pcs_left_x = pcs_center_x - pcs_box_w / 2
+    for idx in range(pcs_count):
+        pcs_center_x = pcs_centers[idx]
+        pcs_left_x = pcs_center_x - pcs_box_w / 2
 
-    # 1) PCS 外框
-    dwg.add(dwg.rect(insert=(pcs_left_x, pcs_y), size=(pcs_box_w, pcs_box_h), class_="outline"))
+        dwg.add(dwg.rect(insert=(pcs_left_x, pcs_y), size=(pcs_box_w, pcs_box_h), class_="outline"))
 
-    # 2) PCS 文字（每个 PCS 都要在循环里画）
-    if compact_mode:
-        # compact：标签更靠近 LV busbar
-        label_y = bus_y + pcs_label_offset
-        label_x = pcs_center_x + 6
-        dwg.add(
-            dwg.text(
-                f"PCS-{idx + 1}",
-                insert=(label_x, label_y),
-                class_="label",
-                text_anchor="start",
+        if compact_mode:
+            label_y = bus_y + pcs_label_offset
+            label_x = pcs_center_x + 6
+            dwg.add(
+                dwg.text(
+                    f"PCS-{idx + 1}",
+                    insert=(label_x, label_y),
+                    class_="label",
+                    text_anchor="start",
+                )
             )
-        )
-    else:
-        dwg.add(
-            dwg.text(
-                f"PCS-{idx + 1}",
-                insert=(pcs_center_x + 6, pcs_y + 20),
-                class_="label",
-                text_anchor="start",
+        else:
+            dwg.add(
+                dwg.text(
+                    f"PCS-{idx + 1}",
+                    insert=(pcs_center_x + 6, pcs_y + 20),
+                    class_="label",
+                    text_anchor="start",
+                )
             )
-        )
-        rating = spec.pcs_rating_kw_list[idx] if idx < len(spec.pcs_rating_kw_list) else 0.0
-        rating_text = f"{rating:.0f} kW" if rating else "TBD"
-        dwg.add(
-            dwg.text(
-                rating_text,
-                insert=(pcs_center_x + 6, pcs_y + 38),
-                class_="label",
-                text_anchor="start",
+            rating = spec.pcs_rating_kw_list[idx] if idx < len(spec.pcs_rating_kw_list) else 0.0
+            rating_text = f"{rating:.0f} kW" if rating else "TBD"
+            dwg.add(
+                dwg.text(
+                    rating_text,
+                    insert=(pcs_center_x + 6, pcs_y + 38),
+                    class_="label",
+                    text_anchor="start",
+                )
             )
+
+        _draw_pcs_dc_ac_symbol(
+            dwg,
+            pcs_left_x + pcs_box_w * 0.08,
+            pcs_y + pcs_box_h * 0.18,
+            pcs_box_w * 0.84,
+            pcs_box_h * 0.74,
         )
 
-    # 3) PCS 内部 DC/AC 符号（无论 compact/full 都画，避免“符号丢失”）
-    _draw_pcs_dc_ac_symbol(
-        dwg,
-        pcs_left_x + pcs_box_w * 0.08,
-        pcs_y + pcs_box_h * 0.18,
-        pcs_box_w * 0.84,
-        pcs_box_h * 0.74,
-    )
+        tap = (pcs_center_x, bus_y)
+        pcs_in = (pcs_center_x, pcs_y)
 
-    # ---------------------------
-    # AC tap chain（目标：● → X → 刀闸(开口) → PCS，严格竖直串联）
-    # ---------------------------
-    tap = (pcs_center_x, bus_y)     # LV busbar 上的连接点
-    pcs_in = (pcs_center_x, pcs_y)  # PCS 方框上边缘中心点
+        _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
 
-    # 1) ●（实心点）
-    _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
+        x_mark_y = bus_y + pcs_ac_x_offset
+        _draw_line_anchored(
+            dwg,
+            tap,
+            (pcs_center_x, x_mark_y),
+            class_="thin",
+            start_anchor=tap,
+            end_anchor=(pcs_center_x, x_mark_y),
+        )
+        _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
 
-    # 2) ● → X（竖线 + X）
-    x_mark_y = bus_y + pcs_ac_x_offset
-    _draw_line_anchored(
-        dwg,
-        tap,
-        (pcs_center_x, x_mark_y),
-        class_="thin",
-        start_anchor=tap,
-        end_anchor=(pcs_center_x, x_mark_y),
-    )
-    _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
+        knife_top_y = x_mark_y + max(10.0, pcs_ac_switch_offset)
 
-    # 3) X → 刀闸上端（竖线）
-    knife_top_y = x_mark_y + max(10.0, pcs_ac_switch_offset)
+        knife_h = _safe_float(layout_params.get("pcs_ac_knife_h"), 22.0)
+        knife_h = max(14.0, min(28.0, knife_h))
 
-    knife_h = _safe_float(layout_params.get("pcs_ac_knife_h"), 22.0)
-    knife_h = max(14.0, min(28.0, knife_h))
+        max_bottom = pcs_y - 2.0
+        if knife_top_y + knife_h > max_bottom:
+            knife_h = max(10.0, max_bottom - knife_top_y)
 
-    # 防止刀闸压到 PCS 框：限制刀闸 bottom
-    max_bottom = pcs_y - 2.0
-    if knife_top_y + knife_h > max_bottom:
-        knife_h = max(10.0, max_bottom - knife_top_y)
+        _draw_line_anchored(
+            dwg,
+            (pcs_center_x, x_mark_y),
+            (pcs_center_x, knife_top_y),
+            class_="thin",
+            start_anchor=(pcs_center_x, x_mark_y),
+            end_anchor=(pcs_center_x, knife_top_y),
+        )
+        side = -1 if pcs_center_x < mv_center_x else 1
+        anchors = _draw_ac_knife_switch_inline(dwg, pcs_center_x, knife_top_y, knife_h, side=side)
 
-    _draw_line_anchored(
-        dwg,
-        (pcs_center_x, x_mark_y),
-        (pcs_center_x, knife_top_y),
-        class_="thin",
-        start_anchor=(pcs_center_x, x_mark_y),
-        end_anchor=(pcs_center_x, knife_top_y),
-    )
-    # 4) 刀闸（开口）：左侧向左开，右侧向右开
-    side = -1 if pcs_center_x < mv_center_x else 1
-    anchors = _draw_ac_knife_switch_inline(dwg, pcs_center_x, knife_top_y, knife_h, side=side)
-
-    # 5) 刀闸底部 → PCS 顶部（竖线）
-    _draw_line_anchored(
-        dwg,
-        anchors["bottom"],
-        pcs_in,
-        class_="thin",
-        start_anchor=anchors["bottom"],
-        end_anchor=pcs_in,
-    )
+        _draw_line_anchored(
+            dwg,
+            anchors["bottom"],
+            pcs_in,
+            class_="thin",
+            start_anchor=anchors["bottom"],
+            end_anchor=pcs_in,
+        )
 
     # =============================================================================
     # 下方：Battery Storage Bank（compact_mode vs full）
     # =============================================================================
     if compact_mode:
-        # battery 边框
         dwg.add(dwg.rect(insert=(battery_x, battery_y), size=(battery_w, battery_h), class_="dash"))
         if dark_mode:
             dwg.add(dwg.text("DC Block (BESS)", insert=(battery_x + battery_w - 8, battery_y + 16), class_="label title", text_anchor="end"))
@@ -1570,7 +1391,6 @@ for idx in range(pcs_count):
         dc_triangle_size = _safe_float(layout_params.get("dc_triangle_size"), 8.0)
         dc_triangle_gap = _safe_float(layout_params.get("dc_triangle_gap"), 4.0)
 
-        # 你可以通过 layout_params 强制 DC switch 高度（不用改代码）
         forced_symbol_h = _safe_float(layout_params.get("dc_switch_symbol_h"), 0.0)
 
         for idx in range(pcs_count):
@@ -1583,31 +1403,24 @@ for idx in range(pcs_count):
             stack_h = dc_block_h * block_count + dc_block_gap_y * (block_count - 1)
             stack_top_y = dc_box_y + (dc_stack_h - stack_h) / 2
 
-            # branch bus：放在 DC block stack 上方一点点（你原逻辑）
             branch_bus_y = stack_top_y - 10
 
-            # 自动估算符号高度（按可用空间）
             raw_h = branch_bus_y - dc_top
             auto_symbol_h = min(50.0, max(20.0, raw_h * 1.0))
             symbol_h = forced_symbol_h if forced_symbol_h > 0 else auto_symbol_h
 
-            # 关键：把 DC switch 的底部引线直接拉到 branch_bus_y，保证 Fuse → DC Block 连起来
             _draw_dc_switch(dwg, line_x, dc_top, symbol_h, lead_end_y=branch_bus_y)
 
-            # branch bus node
             _draw_node(dwg, line_x, branch_bus_y, dc_node_r, node_fill)
 
-            # 中间三角对（可选）
             triangle_center = battery_y + dc_triangle_size + 6.0
             if triangle_center + dc_triangle_size < branch_bus_y - 2.0:
                 _draw_triangle_pair(dwg, line_x, triangle_center, dc_triangle_size, dc_triangle_gap)
 
-            # 多 DC block 时画一小段横母线
             if block_count > 1:
                 bus_half = min(16.0, slot_w * 0.18)
                 dwg.add(dwg.line((line_x - bus_half, branch_bus_y), (line_x + bus_half, branch_bus_y), class_="thin"))
 
-            # 逐个 DC block 引下去
             for b in range(block_count):
                 block_y = stack_top_y + b * (dc_block_h + dc_block_gap_y)
                 dc_in = (line_x, block_y)
@@ -1615,16 +1428,13 @@ for idx in range(pcs_count):
                 _draw_line_anchored(dwg, (line_x, branch_bus_y), dc_in, class_="thin", start_anchor=(line_x, branch_bus_y), end_anchor=dc_in)
                 _draw_node(dwg, dc_in[0], dc_in[1], dc_node_r, node_fill)
 
-                # DC block 外框
                 dwg.add(dwg.rect(insert=(line_x - pcs_box_w * 0.4, block_y), size=(pcs_box_w * 0.8, dc_block_h), class_="outline"))
 
-                # 内部电芯列（保持你原来风格）
                 inner_pad = max(10.0, dc_block_h * 0.12)
                 usable_h = max(1.0, dc_block_h - inner_pad * 2)
                 _draw_battery_column(dwg, line_x, block_y + inner_pad, usable_h, 6)
 
     else:
-        # full mode：保留你原来的 DC BUSBAR A/B、Circuit A/B、block grid 逻辑
         busbar_class = "busbar" if dark_mode else "thick"
 
         dc_bus_a_y = pcs_y + pcs_box_h + 28
@@ -1643,14 +1453,12 @@ for idx in range(pcs_count):
             _draw_line_anchored(dwg, pcs_out, target, class_="thin", start_anchor=pcs_out, end_anchor=target)
             _draw_node(dwg, target[0], target[1], dc_node_r, node_fill)
 
-        # battery 框
         dwg.add(dwg.rect(insert=(battery_x, battery_y), size=(battery_w, battery_h), class_="dash"))
         if dark_mode:
             dwg.add(dwg.text("DC Block (BESS)", insert=(battery_x + battery_w - 8, battery_y + 16), class_="label title", text_anchor="end"))
         else:
             dwg.add(dwg.text("Battery Storage Bank", insert=(battery_x + 8, battery_y + 16), class_="label title"))
 
-        # circuit lines
         circuit_x1 = battery_x + 60
         circuit_x2 = battery_x + battery_w - 60
         dc_circuit_a_y = battery_y + battery_title_h + 18
@@ -1665,7 +1473,6 @@ for idx in range(pcs_count):
         dwg.add(dwg.line((link_x, dc_bus_a_y), (link_x, dc_circuit_a_y), class_="thin"))
         dwg.add(dwg.line((link_x, dc_bus_b_y), (link_x, dc_circuit_b_y), class_="thin"))
 
-        # blocks
         show_individual_blocks = 0 < dc_blocks_total <= 6
         blocks_to_draw = dc_blocks_total if show_individual_blocks else 1
         block_cols = min(3, blocks_to_draw) if show_individual_blocks else 1
@@ -1706,20 +1513,15 @@ for idx in range(pcs_count):
             if show_individual_blocks and block_index >= dc_blocks_total:
                 break
 
-    # ---------------------------------------
-    # 右下角 summary note
-    # ---------------------------------------
     if draw_summary:
         dwg.add(dwg.rect(insert=(note_x, note_y), size=(note_w, note_h), class_="outline"))
         dwg.add(dwg.text("Allocation Summary (AC Block group)", insert=(note_x + 8, note_y + 18), class_="label title"))
         for idx, line in enumerate(wrapped_lines):
             dwg.add(dwg.text(line, insert=(note_x + 8, note_y + 36 + idx * 18), class_="label"))
 
-    # 保存 SVG
     out_svg.parent.mkdir(parents=True, exist_ok=True)
     dwg.save()
 
-    # 可选输出 PNG
     png_warning = None
     if out_png is not None:
         out_png = Path(out_png)
@@ -1740,7 +1542,6 @@ for idx in range(pcs_count):
 
 
 def _draw_battery_column(dwg, x: float, y: float, h: float, rows: int) -> None:
-    """DC Block 内部的小电芯列：长短横条 + 中间三个小点"""
     if rows <= 0 or h <= 0:
         return
     cell_pitch = h / rows
