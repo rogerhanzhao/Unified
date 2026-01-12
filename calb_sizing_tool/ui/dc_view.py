@@ -244,7 +244,7 @@ def run_stage1(inputs: dict, defaults: dict) -> dict:
     sc_loss_pct = calc_sc_loss_pct(sc_time_months)
     sc_loss_frac = sc_loss_pct / 100.0
 
-    dod_frac    = to_frac(get("dod_pct", 97.0))
+    dod_frac    = to_frac(get("dod_pct", 95.0))
     dc_rte_frac = to_frac(get("dc_round_trip_efficiency_pct", 94.0))
     dc_one_way_eff = math.sqrt(dc_rte_frac) if dc_rte_frac >= 0 else 0.0
     dc_usable_bol_frac = dod_frac * dc_one_way_eff
@@ -1097,12 +1097,15 @@ def show():
             c7, c8 = st.columns(2)
             dod_pct = c7.number_input(
                 "DOD (%)",
-                key=_init_input("dod_pct", 97.0),
+                key=_init_input("dod_pct", get_default_percent_val("dod_pct", 95.0)),
             )
             dc_inputs["dod_pct"] = dod_pct
             dc_rte_pct = c8.number_input(
                 "DC RTE (%)",
-                key=_init_input("dc_round_trip_efficiency_pct", 94.0),
+                key=_init_input(
+                    "dc_round_trip_efficiency_pct",
+                    get_default_percent_val("dc_round_trip_efficiency_pct", 94.0),
+                ),
             )
             dc_inputs["dc_round_trip_efficiency_pct"] = dc_rte_pct
             
