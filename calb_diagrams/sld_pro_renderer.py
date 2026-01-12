@@ -1422,16 +1422,26 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             dwg.add(dwg.text(rating_text, insert=(pcs_center_x + 6, pcs_y + 38), class_="label", text_anchor="start"))
 
                 # ---------------------------
-        # AC tap chain（按图1：节点→X→刀闸→PCS，全都在同一竖线上）
-        tap = (pcs_center_x, bus_y)     # 母排连接点
-        pcs_in = (pcs_center_x, pcs_y)  # PCS 方框上边缘入口
-        contact_y = bus_y + pcs_ac_switch_offset
-        # 约束一下：别太靠近母排，也别压到 PCS 顶部
-        contact_y = max(contact_y, bus_y + 10)
-        contact_y = min(contact_y, pcs_y - 18)
+        # ---------------------------
+       # AC tap chain（目标：X 在上端固定端，刀闸在 PCS 框侧边）
 
-        # 1) 上段竖线：母排 → contact_y
-        # 母排 → X
+        tap = (pcs_center_x, bus_y)     # 上端：母排连接点
+        pcs_in = (pcs_center_x, pcs_y)  # 下端：PCS 方框上边缘
+
+        # 1) 母排节点（实心点）
+        _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
+
+        # 2) 先定义 x_mark_y（必须在任何使用 x_mark_y 之前！）
+        x_mark_y = bus_y + pcs_ac_x_offset
+
+        # 3) 画 X（米字）
+        _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
+
+        # 4) join_y_1：刀闸分支高度（建议从 x_mark_y 往下加偏移，避免“横线贴着 X”）
+        join_y_1 = x_mark_y + max(8.0, pcs_ac_switch_offset)
+        join_y_1 = min(join_y_1, pcs_y - 10)  # 防止压到 PCS 框
+
+        # 5) 母排 → X
         _draw_line_anchored(
         dwg,
         tap,
@@ -1441,7 +1451,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         end_anchor=(pcs_center_x, x_mark_y),
         )
 
-       # X → join_y_1（再往下走一点，避免横线贴着 X）
+      # 6) X → join_y_1
         _draw_line_anchored(
         dwg,
         (pcs_center_x, x_mark_y),
@@ -1449,46 +1459,21 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         class_="thin",
         start_anchor=(pcs_center_x, x_mark_y),
         end_anchor=(pcs_center_x, join_y_1),
-      )
-       # 2) X（米字）放在 contact_y（= 原来那根横线的位置）
-        _draw_breaker_x(dwg, pcs_center_x, contact_y, pcs_ac_x_size)
-        _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
-        # 2) X（米字）放在“原来那根横线”的位置：用 pcs_ac_switch_offset 来控制
-        x_mark_y = bus_y + pcs_ac_switch_offset
-        x_mark_y = max(x_mark_y, bus_y + 8)       # 别贴母排太近
-        x_mark_y = min(x_mark_y, pcs_y - 26)      # 别压到 PCS 框
+        )
 
-        _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
+     # 7) 侧向接到刀闸（PCS 框右侧）
+        side = 1
+        knife_x = pcs_center_x + side * (pcs_box_w / 2 + 14)
+        _draw_line_anchored(dwg, (pcs_center_x, join_y_1), (knife_x, join_y_1), class_="thin")
 
-        # 3) 分支去刀闸的高度：必须比 X 再低一点（否则就会出现你图里的那截横线贴着X）
-        x_to_knife_gap = max(10.0, pcs_ac_switch_gap * 2.0)   # 10~20 比较像参考图
-        join_y_1 = x_mark_y + x_to_knife_gap
-        join_y_1 = min(join_y_1, pcs_y - 14)                  # 防止压到 PCS 顶边
+        knife_h = max(12.0, min(20.0, pcs_ac_switch_gap * 3.0))
+        anchors = _draw_ac_knife_switch(dwg, knife_x, join_y_1, knife_h, side=side)
 
-        # 固定触点（横杠）y：用 pcs_ac_switch_offset 作为“从母排向下的距离”
-        contact_y = bus_y + pcs_ac_switch_offset
+        # 8) 刀闸回主线 → PCS 顶部
+        join_y_2 = min(anchors["bottom"][1], pcs_y - 2)
+        _draw_line_anchored(dwg, (knife_x, join_y_2), (pcs_center_x, join_y_2), class_="thin")
+        _draw_line_anchored(dwg, (pcs_center_x, join_y_2), pcs_in, class_="thin", end_anchor=pcs_in)
 
-        # 约束：触点必须在 X 的下方，否则会叠在一起
-        min_contact_y = x_mark_y + pcs_ac_x_size * 0.8 + 6
-        if contact_y < min_contact_y:
-           contact_y = min_contact_y
-
-        # 动触点/刀片铰接点（pivot）在触点下方，形成“断开间隙”
-        pivot_y = contact_y + gap * 2.0
-
-        # 再约束：pivot 不能压到 PCS 顶边
-        if pivot_y > pcs_y - 8:
-            pivot_y = pcs_y - 8
-            contact_y = pivot_y - gap * 2.0
-            # 兜底：contact 仍需在 X 下方
-            if contact_y < min_contact_y:
-                contact_y = min_contact_y
-
-        # 刀片尖端 y：靠近触点但不接触（形成“断开”观感）
-        blade_tip_y = contact_y + gap * 0.6
-        blade_tip_x = pcs_center_x + blade_side * blade_dx
-        # c) 斜刀片：从 pivot 指向触点附近（但不接触触点横杠）
-        dwg.add(dwg.line((pcs_center_x, pivot_y), (blade_tip_x, blade_tip_y), class_="thin"))
 
 
     # =============================================================================
