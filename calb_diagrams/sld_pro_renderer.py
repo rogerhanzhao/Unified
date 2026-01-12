@@ -1446,10 +1446,9 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     _draw_solid_node(dwg, tx_lv_right[0], tx_lv_right[1], lv_node_r, node_fill)
 
     for idx in range(pcs_count):
-    pcs_center_x = pcs_centers[idx]
-    pcs_left_x = pcs_center_x - pcs_box_w / 2
-
-    dwg.add(dwg.rect(insert=(pcs_left_x, pcs_y), size=(pcs_box_w, pcs_box_h), class_="outline"))
+        pcs_center_x = pcs_centers[idx]
+        pcs_left_x = pcs_center_x - pcs_box_w / 2
+        dwg.add(dwg.rect(insert=(pcs_left_x, pcs_y), size=(pcs_box_w, pcs_box_h), class_="outline"))
 
     if compact_mode:
         label_y = bus_y + pcs_label_offset
