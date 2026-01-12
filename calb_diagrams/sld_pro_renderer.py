@@ -266,7 +266,7 @@ def _draw_capacitor(dwg, x: float, y: float, w: float, gap: float) -> None:
     dwg.add(dwg.line((x - w / 2, y + gap), (x + w / 2, y + gap), class_="thin"))
 
 # =============================================================================
-# AC Switch Helper (Depreciated/Simplified for inline use, but kept if needed)
+# AC Switch Helper
 # =============================================================================
 def _draw_arrow_box(dwg, x: float, y: float, w: float, h: float) -> None:
     dwg.add(dwg.rect(insert=(x - w / 2, y), size=(w, h), class_="outline"))
@@ -775,8 +775,15 @@ def render_sld_pro_svg(
     equip_y = switch_y + mv_switch_h + mv_chain_gap
     tr_top_y = equip_y + mv_to_tr_gap
 
-    bus_y = tr_top_y + tr_radius * 2 + 80.0
-    pcs_bus_gap = _safe_float(layout_params.get("pcs_bus_gap"), 32.0)
+    # ---------------------------------------------------------------------
+    # CHANGED: Moved Busbar UP (reduced gap from 80 to 50)
+    # ---------------------------------------------------------------------
+    bus_y = tr_top_y + tr_radius * 2 + 50.0
+
+    # ---------------------------------------------------------------------
+    # CHANGED: Increased PCS gap (from 32 to 75) to fit AC switch
+    # ---------------------------------------------------------------------
+    pcs_bus_gap = _safe_float(layout_params.get("pcs_bus_gap"), 75.0)
     pcs_y = bus_y + pcs_bus_gap
 
     dc_blocks_total = _safe_int(spec.dc_blocks_total_in_group, 0)
@@ -1276,25 +1283,20 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
 
         # ---------------------------------------------------------------------
-        # REVISED AC SWITCH LOGIC (Based on PCS-2 Image)
-        # 1. X Mark at TOP
-        # 2. Vertical Line
-        # 3. Gap
-        # 4. Blade from BOTTOM PIVOT upwards
-        # 5. Line from PIVOT to PCS TOP (No Penetration)
+        # REVISED AC SWITCH LOGIC WITH WIDER SPACING
         # ---------------------------------------------------------------------
         
-        # Coordinates
-        y_x_mark = bus_y + 6.0
-        y_switch_gap_top = y_x_mark + 12.0
-        y_switch_pivot = y_switch_gap_top + 14.0 # Blade vertical span
+        # New Spacing Logic
+        y_x_mark = bus_y + 12.0  # Gives space for line from bus
+        y_switch_gap_top = bus_y + 32.0 # Space between X and Switch
+        y_switch_pivot = bus_y + 54.0   # Switch Blade pivot
         
-        # Ensure pivot isn't lower than PCS top (safety check)
+        # Safety: Ensure pivot isn't lower than PCS top
         if y_switch_pivot > pcs_y - 2:
              y_switch_pivot = pcs_y - 10
              y_switch_gap_top = y_switch_pivot - 14.0
 
-        # Draw Line from Bus to X
+        # 1. Draw Line from Bus to X
         _draw_line_anchored(
             dwg,
             tap,
@@ -1304,10 +1306,10 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             end_anchor=(pcs_center_x, y_x_mark - 3)
         )
 
-        # Draw X Mark (Breaker)
+        # 2. Draw X Mark (Breaker)
         _draw_breaker_x(dwg, pcs_center_x, y_x_mark, pcs_ac_x_size)
 
-        # Draw Line from X to Switch Gap Top
+        # 3. Draw Line from X to Switch Gap Top
         _draw_line_anchored(
             dwg,
             (pcs_center_x, y_x_mark + 3),
@@ -1317,15 +1319,14 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             end_anchor=(pcs_center_x, y_switch_gap_top)
         )
         
-        # Draw small horizontal bar at the top of the gap (Fixed Contact)
+        # 4. Draw small horizontal bar at the top of the gap
         dwg.add(dwg.line(
             (pcs_center_x - 3, y_switch_gap_top), 
             (pcs_center_x + 3, y_switch_gap_top), 
             class_="thin"
         ))
 
-        # Draw Line from Pivot to PCS Top (Vertical Drop)
-        # Explicitly ending at pcs_y to avoid penetration
+        # 5. Draw Line from Pivot to PCS Top (Vertical Drop)
         _draw_line_anchored(
             dwg,
             (pcs_center_x, y_switch_pivot),
@@ -1335,9 +1336,8 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             end_anchor=(pcs_center_x, pcs_y)
         )
         
-        # Draw Blade (Pivots at bottom, leans left/upwards)
-        blade_dx = -7.0 if pcs_center_x < mv_center_x else 7.0 # Symmetrical opening
-        # Blade goes from Pivot to (x + dx, gap_top)
+        # 6. Draw Blade (Pivots at bottom, leans left/upwards)
+        blade_dx = -7.0 if pcs_center_x < mv_center_x else 7.0 
         dwg.add(dwg.line(
             (pcs_center_x, y_switch_pivot),
             (pcs_center_x + blade_dx, y_switch_gap_top),
