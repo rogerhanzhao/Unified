@@ -266,66 +266,8 @@ def _draw_capacitor(dwg, x: float, y: float, w: float, gap: float) -> None:
     dwg.add(dwg.line((x - w / 2, y + gap), (x + w / 2, y + gap), class_="thin"))
 
 # =============================================================================
-# PCS-AC Switch
+# AC Switch Helper (Depreciated/Simplified for inline use, but kept if needed)
 # =============================================================================
-def _draw_ac_knife_switch(dwg, x: float, y: float, h: float, side: int = 1) -> dict[str, tuple[float, float]]:
-    if h <= 0:
-        return {"top": (x, y), "bottom": (x, y)}
-
-    contact_y = y + h * 0.25
-    pivot_y = y + h * 0.55
-    bottom_y = y + h
-
-    contact_w = max(10.0, h * 0.55)
-    blade_dx = side * (h * 0.30)
-    blade_dy = h * 0.22
-
-    dwg.add(dwg.line((x, y), (x, contact_y), class_="thin"))
-    dwg.add(dwg.line((x - contact_w/2, contact_y), (x + contact_w/2, contact_y), class_="thin"))
-    dwg.add(dwg.line((x, contact_y), (x, pivot_y), class_="thin"))
-    dwg.add(dwg.line((x, pivot_y), (x + blade_dx, pivot_y + blade_dy), class_="thin"))
-    dwg.add(dwg.line((x, pivot_y), (x, bottom_y), class_="thin"))
-
-    return {"top": (x, y), "bottom": (x, bottom_y), "contact": (x, contact_y), "pivot": (x, pivot_y)}
-
-def _draw_ac_knife_switch_inline(
-    dwg,
-    x: float,
-    y: float,
-    h: float,
-    side: int = -1,
-    *,
-    line_class: str = "thin",
-) -> dict[str, tuple[float, float]]:
-    if h <= 0:
-        return {"top": (x, y), "bottom": (x, y)}
-
-    contact_y = y
-    pivot_y = y + h * 0.55
-    bottom_y = y + h
-
-    # 固定触点横杠（图里那条小横线） - 根据图片2需求，通常不需要这个横杠，但保留一小段作为连接点视觉更好
-    # contact_w = max(10.0, min(h * 0.60, 22.0))
-    # dwg.add(dwg.line((x - contact_w / 2, contact_y), (x + contact_w / 2, contact_y), class_=line_class))
-    
-    # 下段竖直导体（pivot -> bottom）
-    dwg.add(dwg.line((x, pivot_y), (x, bottom_y), class_=line_class))
-
-    # 斜刀片
-    blade_dx = side * (h * 0.55)
-    blade_upper_y = y + h * 0.12  # 刀片上端
-    blade_upper = (x + blade_dx, blade_upper_y)
-    
-    # 画刀片线
-    dwg.add(dwg.line(blade_upper, (x, pivot_y), class_=line_class))
-
-    return {
-        "top": (x, contact_y),
-        "pivot": (x, pivot_y),
-        "bottom": (x, bottom_y),
-        "blade_upper": blade_upper,
-    }
-
 def _draw_arrow_box(dwg, x: float, y: float, w: float, h: float) -> None:
     dwg.add(dwg.rect(insert=(x - w / 2, y), size=(w, h), class_="outline"))
     dwg.add(dwg.line((x, y + 4), (x, y + h - 6), class_="thin"))
@@ -1280,9 +1222,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     lv_tap_nodes = bool(layout_params.get("lv_tap_nodes", False))
     lv_node_r = 3.0
     pcs_tap_node_r = _safe_float(layout_params.get("pcs_tap_node_r"), 2.6)
-    pcs_ac_x_offset = _safe_float(layout_params.get("pcs_ac_x_offset"), 8.0)
     pcs_ac_x_size = _safe_float(layout_params.get("pcs_ac_x_size"), 6.0)
-    pcs_ac_switch_offset = _safe_float(layout_params.get("pcs_ac_switch_offset"), 18.0)
 
     _draw_solid_node(dwg, tx_lv_left[0], tx_lv_left[1], lv_node_r, node_fill)
     _draw_solid_node(dwg, tx_lv_right[0], tx_lv_right[1], lv_node_r, node_fill)
@@ -1333,52 +1273,76 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         )
 
         tap = (pcs_center_x, bus_y)
-        pcs_in = (pcs_center_x, pcs_y)
-
         _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
 
-        # 改为符合 Image 2 的样式： Bus -> X (Breaker) -> Switch -> PCS
-        x_mark_y = bus_y + pcs_ac_x_offset
+        # ---------------------------------------------------------------------
+        # REVISED AC SWITCH LOGIC (Based on PCS-2 Image)
+        # 1. X Mark at TOP
+        # 2. Vertical Line
+        # 3. Gap
+        # 4. Blade from BOTTOM PIVOT upwards
+        # 5. Line from PIVOT to PCS TOP (No Penetration)
+        # ---------------------------------------------------------------------
+        
+        # Coordinates
+        y_x_mark = bus_y + 6.0
+        y_switch_gap_top = y_x_mark + 12.0
+        y_switch_pivot = y_switch_gap_top + 14.0 # Blade vertical span
+        
+        # Ensure pivot isn't lower than PCS top (safety check)
+        if y_switch_pivot > pcs_y - 2:
+             y_switch_pivot = pcs_y - 10
+             y_switch_gap_top = y_switch_pivot - 14.0
+
+        # Draw Line from Bus to X
         _draw_line_anchored(
             dwg,
             tap,
-            (pcs_center_x, x_mark_y),
+            (pcs_center_x, y_x_mark - 3),
             class_="thin",
             start_anchor=tap,
-            end_anchor=(pcs_center_x, x_mark_y),
+            end_anchor=(pcs_center_x, y_x_mark - 3)
         )
-        _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
 
-        knife_top_y = x_mark_y + max(10.0, pcs_ac_switch_offset)
+        # Draw X Mark (Breaker)
+        _draw_breaker_x(dwg, pcs_center_x, y_x_mark, pcs_ac_x_size)
 
-        knife_h = _safe_float(layout_params.get("pcs_ac_knife_h"), 22.0)
-        knife_h = max(14.0, min(28.0, knife_h))
-
-        max_bottom = pcs_y - 2.0
-        if knife_top_y + knife_h > max_bottom:
-            knife_h = max(10.0, max_bottom - knife_top_y)
-
+        # Draw Line from X to Switch Gap Top
         _draw_line_anchored(
             dwg,
-            (pcs_center_x, x_mark_y),
-            (pcs_center_x, knife_top_y),
+            (pcs_center_x, y_x_mark + 3),
+            (pcs_center_x, y_switch_gap_top),
             class_="thin",
-            start_anchor=(pcs_center_x, x_mark_y),
-            end_anchor=(pcs_center_x, knife_top_y),
+            start_anchor=(pcs_center_x, y_x_mark + 3),
+            end_anchor=(pcs_center_x, y_switch_gap_top)
         )
         
-        # 绘制开关 (Image 2样式，开口)
-        side = -1 if pcs_center_x < mv_center_x else 1
-        anchors = _draw_ac_knife_switch_inline(dwg, pcs_center_x, knife_top_y, knife_h, side=side)
+        # Draw small horizontal bar at the top of the gap (Fixed Contact)
+        dwg.add(dwg.line(
+            (pcs_center_x - 3, y_switch_gap_top), 
+            (pcs_center_x + 3, y_switch_gap_top), 
+            class_="thin"
+        ))
 
+        # Draw Line from Pivot to PCS Top (Vertical Drop)
+        # Explicitly ending at pcs_y to avoid penetration
         _draw_line_anchored(
             dwg,
-            anchors["bottom"],
-            pcs_in,
+            (pcs_center_x, y_switch_pivot),
+            (pcs_center_x, pcs_y),
             class_="thin",
-            start_anchor=anchors["bottom"],
-            end_anchor=pcs_in,
+            start_anchor=(pcs_center_x, y_switch_pivot),
+            end_anchor=(pcs_center_x, pcs_y)
         )
+        
+        # Draw Blade (Pivots at bottom, leans left/upwards)
+        blade_dx = -7.0 if pcs_center_x < mv_center_x else 7.0 # Symmetrical opening
+        # Blade goes from Pivot to (x + dx, gap_top)
+        dwg.add(dwg.line(
+            (pcs_center_x, y_switch_pivot),
+            (pcs_center_x + blade_dx, y_switch_gap_top),
+            class_="thin"
+        ))
 
     # =============================================================================
     # 下方：Battery Storage Bank（compact_mode vs full）
