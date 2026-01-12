@@ -880,14 +880,14 @@ def render_sld_pro_svg(
     # MV / RMU Layout Constants
     # -------------------------------------------------------------------------
     # MV Busbar sits here
-    mv_bus_y = skid_y + 120 
+    mv_bus_y = skid_y + 150 # Moved down to give more space for Feeders
     
     # Feeder (Upwards) dimensions
     feeder_top_y = skid_y + 40.0 # Where arrows are
     
     # Center (Downwards) dimensions
-    center_drop_y = mv_bus_y + 180.0 # Just above transformer
-    tr_top_y = center_drop_y + 40.0
+    # Need significant space for: Iso, Earth1, Breaker, Earth2, CT, Surge/VPIS, Cable
+    tr_top_y = mv_bus_y + 220.0
     tr_radius = 14.0
 
     # LV Busbar
@@ -1134,12 +1134,10 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         
         # 4. Line Up from Switch base to Node
         node_y = switch_y - 20
-        _draw_line_anchored(dwg, (x_pos, switch_y + blade_len), (x_pos, node_y), class_="thin") # Wait, LBS is usually blade connected to bus or line?
-        # Re-reading symbol: Standard LBS in single line. 
-        # Let's draw: Line from bus -> Switch Base. Switch Blade -> Top Contact. 
-        # Actually in diagram 1: Bus -> vertical line -> switch blade (pivot at bottom) -> top contact.
+        # Correct logic: Bus -> Pivot (Bottom) -> Blade -> Top Contact
+        # The LBS symbol is often stylized. Let's use a standard: 
+        # Bus -> Line -> Switch Pivot -> Blade -> Top Contact -> Line -> Node
         
-        # Pivot at bottom (connected to bus)
         switch_pivot_y = mv_bus_y - 10
         switch_top_y = switch_pivot_y - 12
         _draw_line_anchored(dwg, (x_pos, mv_bus_y), (x_pos, switch_pivot_y), class_="thin")
