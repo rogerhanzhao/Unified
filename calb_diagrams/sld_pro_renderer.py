@@ -1191,4 +1191,380 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
 
     _draw_breaker_with_isolators(dwg, mv_center_x, breaker_y, mv_breaker_r, mv_bar_len, mv_bar_gap, "thin")
 
-    branch_x = m
+    branch_x = mv_center_x - mv_ground_branch
+    dwg.add(dwg.line((mv_center_x, mv_ground_y), (branch_x, mv_ground_y), class_="thin"))
+    _draw_open_switches_vertical(
+        dwg,
+        branch_x,
+        mv_ground_y,
+        mv_ground_y + mv_ground_len,
+        [{"y": mv_ground_y + mv_ground_len * 0.35, "gap": mv_ground_gap, "blade_dx": -abs(mv_ground_blade_dx), "contact_bar_len": ground_contact_bar_len}],
+        line_class="thin",
+        contact_style="none",
+        contact_r=switch_contact_r,
+        contact_fill=node_fill,
+    )
+    _draw_ground(dwg, branch_x, mv_ground_y + mv_ground_len + 2.0)
+
+    equip_span = 60.0
+    dwg.add(dwg.line((mv_center_x - equip_span, equip_y), (mv_center_x + equip_span, equip_y), class_="thin"))
+
+    left_box_x = mv_center_x - equip_span
+    _draw_arrow_box(dwg, left_box_x, equip_y + 6, 14.0, 22.0)
+    _draw_ground(dwg, left_box_x, equip_y + 30)
+
+    ct_y = equip_y + 10
+    for offset in (-12, 0, 12):
+        dwg.add(dwg.circle(center=(mv_center_x + offset, ct_y), r=3.5, class_="outline"))
+
+    right_x = mv_center_x + equip_span
+    _draw_capacitor(dwg, right_x, equip_y + 4, 14.0, 5.0)
+    _draw_breaker_circle(dwg, right_x, equip_y + 16, 6.0)
+    _draw_ground(dwg, right_x, equip_y + 26)
+
+    tr_center_x = gap_center
+    dwg.add(dwg.line((mv_center_x, equip_y), (mv_center_x, tr_top_y - tr_radius), class_="thin"))
+    _draw_triangle_down(dwg, mv_center_x, tr_top_y - tr_radius - 8, 8.0)
+    left_center, right_center = _draw_transformer_symbol(dwg, tr_center_x, tr_top_y, tr_radius)
+
+    tx_lv_spacing = _safe_float(layout_params.get("tx_lv_spacing"), 14.0)
+    requested_gap = _safe_float(layout_params.get("lv_bus_gap"), 0.0)
+    if requested_gap <= 0:
+        requested_gap = _safe_float(layout_params.get("lv_bus_coupler_r"), 0.0) * 2
+    if requested_gap > 0:
+        tx_lv_spacing = requested_gap / 2
+    tx_lv_spacing = min(18.0, max(12.0, tx_lv_spacing))
+
+    tx_lv_start_y = left_center[1] + tr_radius
+    tx_lv_left_start = (tr_center_x - tx_lv_spacing, tx_lv_start_y)
+    tx_lv_right_start = (tr_center_x + tx_lv_spacing, tx_lv_start_y)
+    tx_lv_left = (tr_center_x - tx_lv_spacing, bus_y)
+    tx_lv_right = (tr_center_x + tx_lv_spacing, bus_y)
+
+    _draw_line_anchored(dwg, tx_lv_left_start, tx_lv_left, class_="thick", start_anchor=tx_lv_left_start, end_anchor=tx_lv_left)
+    _draw_line_anchored(dwg, tx_lv_right_start, tx_lv_right, class_="thick", start_anchor=tx_lv_right_start, end_anchor=tx_lv_right)
+
+    tr_text_x = tr_center_x + tr_radius * 2 + 90
+    tr_text_y = max(tr_top_y - tr_radius - 6, equip_y + 8)
+    tr_lines = [
+        "Transformer",
+        f"{format_kv(spec.mv_voltage_kv)}/{format_v(spec.lv_voltage_v_ll)}",
+        format_mva(spec.transformer_mva),
+    ]
+    if spec.transformer_vector_group:
+        tr_lines.append(str(spec.transformer_vector_group))
+    if spec.transformer_uk_percent:
+        tr_lines.append(f"Uk={format_percent(spec.transformer_uk_percent)}")
+    cooling = spec.equipment_list.get("transformer", {}).get("cooling") if isinstance(spec.equipment_list, dict) else None
+    if cooling:
+        tr_lines.append(str(cooling))
+    for idx, line in enumerate(tr_lines):
+        dwg.add(dwg.text(line, insert=(tr_text_x, tr_text_y + idx * 16), class_="label"))
+
+    bus_x1 = skid_x + skid_pad
+    bus_x2 = skid_x + diagram_width - skid_pad
+    busbar_class = "busbar" if dark_mode else "thick"
+
+    lv_bus_split = bool(layout_params.get("lv_bus_split", True))
+    if lv_bus_split:
+        dwg.add(dwg.line((bus_x1, bus_y), (tx_lv_left[0], bus_y), class_=busbar_class))
+        dwg.add(dwg.line((tx_lv_right[0], bus_y), (bus_x2, bus_y), class_=busbar_class))
+    else:
+        dwg.add(dwg.line((bus_x1, bus_y), (bus_x2, bus_y), class_=busbar_class))
+    dwg.add(dwg.text("LV Busbar", insert=(bus_x1, bus_y - 8), class_="label"))
+
+    # ---------------------------
+    # PCS box + AC tap
+    # ---------------------------
+    pcs_label_offset = _safe_float(layout_params.get("pcs_label_offset"), 10.0)
+    lv_tap_nodes = bool(layout_params.get("lv_tap_nodes", False))
+    lv_node_r = 3.0
+    pcs_tap_node_r = _safe_float(layout_params.get("pcs_tap_node_r"), 2.6)
+    pcs_ac_x_offset = _safe_float(layout_params.get("pcs_ac_x_offset"), 8.0)
+    pcs_ac_x_size = _safe_float(layout_params.get("pcs_ac_x_size"), 6.0)
+    pcs_ac_switch_offset = _safe_float(layout_params.get("pcs_ac_switch_offset"), 18.0)
+
+    _draw_solid_node(dwg, tx_lv_left[0], tx_lv_left[1], lv_node_r, node_fill)
+    _draw_solid_node(dwg, tx_lv_right[0], tx_lv_right[1], lv_node_r, node_fill)
+
+    for idx in range(pcs_count):
+        pcs_center_x = pcs_centers[idx]
+        pcs_left_x = pcs_center_x - pcs_box_w / 2
+
+        dwg.add(dwg.rect(insert=(pcs_left_x, pcs_y), size=(pcs_box_w, pcs_box_h), class_="outline"))
+
+        if compact_mode:
+            label_y = bus_y + pcs_label_offset
+            label_x = pcs_center_x + 6
+            dwg.add(
+                dwg.text(
+                    f"PCS-{idx + 1}",
+                    insert=(label_x, label_y),
+                    class_="label",
+                    text_anchor="start",
+                )
+            )
+        else:
+            dwg.add(
+                dwg.text(
+                    f"PCS-{idx + 1}",
+                    insert=(pcs_center_x + 6, pcs_y + 20),
+                    class_="label",
+                    text_anchor="start",
+                )
+            )
+            rating = spec.pcs_rating_kw_list[idx] if idx < len(spec.pcs_rating_kw_list) else 0.0
+            rating_text = f"{rating:.0f} kW" if rating else "TBD"
+            dwg.add(
+                dwg.text(
+                    rating_text,
+                    insert=(pcs_center_x + 6, pcs_y + 38),
+                    class_="label",
+                    text_anchor="start",
+                )
+            )
+
+        _draw_pcs_dc_ac_symbol(
+            dwg,
+            pcs_left_x + pcs_box_w * 0.08,
+            pcs_y + pcs_box_h * 0.18,
+            pcs_box_w * 0.84,
+            pcs_box_h * 0.74,
+        )
+
+        tap = (pcs_center_x, bus_y)
+        pcs_in = (pcs_center_x, pcs_y)
+
+        _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
+
+        # 改为符合 Image 2 的样式： Bus -> X (Breaker) -> Switch -> PCS
+        x_mark_y = bus_y + pcs_ac_x_offset
+        _draw_line_anchored(
+            dwg,
+            tap,
+            (pcs_center_x, x_mark_y),
+            class_="thin",
+            start_anchor=tap,
+            end_anchor=(pcs_center_x, x_mark_y),
+        )
+        _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
+
+        knife_top_y = x_mark_y + max(10.0, pcs_ac_switch_offset)
+
+        knife_h = _safe_float(layout_params.get("pcs_ac_knife_h"), 22.0)
+        knife_h = max(14.0, min(28.0, knife_h))
+
+        max_bottom = pcs_y - 2.0
+        if knife_top_y + knife_h > max_bottom:
+            knife_h = max(10.0, max_bottom - knife_top_y)
+
+        _draw_line_anchored(
+            dwg,
+            (pcs_center_x, x_mark_y),
+            (pcs_center_x, knife_top_y),
+            class_="thin",
+            start_anchor=(pcs_center_x, x_mark_y),
+            end_anchor=(pcs_center_x, knife_top_y),
+        )
+        
+        # 绘制开关 (Image 2样式，开口)
+        side = -1 if pcs_center_x < mv_center_x else 1
+        anchors = _draw_ac_knife_switch_inline(dwg, pcs_center_x, knife_top_y, knife_h, side=side)
+
+        _draw_line_anchored(
+            dwg,
+            anchors["bottom"],
+            pcs_in,
+            class_="thin",
+            start_anchor=anchors["bottom"],
+            end_anchor=pcs_in,
+        )
+
+    # =============================================================================
+    # 下方：Battery Storage Bank（compact_mode vs full）
+    # =============================================================================
+    if compact_mode:
+        dwg.add(dwg.rect(insert=(battery_x, battery_y), size=(battery_w, battery_h), class_="dash"))
+        if dark_mode:
+            dwg.add(dwg.text("DC Block (BESS)", insert=(battery_x + battery_w - 8, battery_y + 16), class_="label title", text_anchor="end"))
+        else:
+            dwg.add(dwg.text("Battery Storage Bank", insert=(battery_x + 8, battery_y + 16), class_="label title"))
+
+        dc_node_r = 2.5
+        dc_triangle_size = _safe_float(layout_params.get("dc_triangle_size"), 8.0)
+        dc_triangle_gap = _safe_float(layout_params.get("dc_triangle_gap"), 4.0)
+
+        forced_symbol_h = _safe_float(layout_params.get("dc_switch_symbol_h"), 0.0)
+        
+        # 计算两个虚线框的中间空隙位置，用于放置三角形
+        skid_bottom_y = skid_y + skid_h
+        gap_mid_y = (skid_bottom_y + battery_y) / 2
+
+        for idx in range(pcs_count):
+            line_x = pcs_centers[idx]
+            dc_top = pcs_y + pcs_box_h
+
+            per_feeder = per_feeder_counts[idx] if idx < len(per_feeder_counts) else 1
+            block_count = max(1, min(per_feeder, max_blocks))
+
+            stack_h = dc_block_h * block_count + dc_block_gap_y * (block_count - 1)
+            stack_top_y = dc_box_y + (dc_stack_h - stack_h) / 2
+
+            branch_bus_y = stack_top_y - 10
+
+            raw_h = branch_bus_y - dc_top
+            auto_symbol_h = min(50.0, max(20.0, raw_h * 1.0))
+            symbol_h = forced_symbol_h if forced_symbol_h > 0 else auto_symbol_h
+
+            # DC Switch + Fuse: 线条一直拉到 branch_bus_y，穿过 gap
+            _draw_dc_switch(dwg, line_x, dc_top, symbol_h, lead_end_y=branch_bus_y)
+
+            # 在上框和下框的空隙中间画相对的三角形
+            _draw_triangle_pair(dwg, line_x, gap_mid_y, dc_triangle_size, dc_triangle_gap)
+
+            if block_count > 1:
+                bus_half = min(16.0, slot_w * 0.18)
+                dwg.add(dwg.line((line_x - bus_half, branch_bus_y), (line_x + bus_half, branch_bus_y), class_="thin"))
+
+            for b in range(block_count):
+                block_y = stack_top_y + b * (dc_block_h + dc_block_gap_y)
+                dc_in = (line_x, block_y)
+
+                _draw_line_anchored(dwg, (line_x, branch_bus_y), dc_in, class_="thin", start_anchor=(line_x, branch_bus_y), end_anchor=dc_in)
+                # 删除实心圆点连接
+                # _draw_node(dwg, dc_in[0], dc_in[1], dc_node_r, node_fill)
+
+                dwg.add(dwg.rect(insert=(line_x - pcs_box_w * 0.4, block_y), size=(pcs_box_w * 0.8, dc_block_h), class_="outline"))
+
+                inner_pad = max(10.0, dc_block_h * 0.12)
+                usable_h = max(1.0, dc_block_h - inner_pad * 2)
+                _draw_battery_column(dwg, line_x, block_y + inner_pad, usable_h, 6)
+
+    else:
+        busbar_class = "busbar" if dark_mode else "thick"
+
+        dc_bus_a_y = pcs_y + pcs_box_h + 28
+        dc_bus_b_y = dc_bus_a_y + 22
+        dwg.add(dwg.line((bus_x1, dc_bus_a_y), (bus_x2, dc_bus_a_y), class_=busbar_class))
+        dwg.add(dwg.text("DC BUSBAR A", insert=(bus_x1, dc_bus_a_y - 8), class_="label"))
+        dwg.add(dwg.line((bus_x1, dc_bus_b_y), (bus_x2, dc_bus_b_y), class_=busbar_class))
+        dwg.add(dwg.text("DC BUSBAR B", insert=(bus_x1, dc_bus_b_y - 8), class_="label"))
+
+        dc_node_r = 2.5
+        for idx in range(pcs_count):
+            line_x = pcs_centers[idx]
+            target_bus_y = dc_bus_a_y if idx < group_split else dc_bus_b_y
+            pcs_out = (line_x, pcs_y + pcs_box_h)
+            target = (line_x, target_bus_y)
+            _draw_line_anchored(dwg, pcs_out, target, class_="thin", start_anchor=pcs_out, end_anchor=target)
+            _draw_node(dwg, target[0], target[1], dc_node_r, node_fill)
+
+        dwg.add(dwg.rect(insert=(battery_x, battery_y), size=(battery_w, battery_h), class_="dash"))
+        if dark_mode:
+            dwg.add(dwg.text("DC Block (BESS)", insert=(battery_x + battery_w - 8, battery_y + 16), class_="label title", text_anchor="end"))
+        else:
+            dwg.add(dwg.text("Battery Storage Bank", insert=(battery_x + 8, battery_y + 16), class_="label title"))
+
+        circuit_x1 = battery_x + 60
+        circuit_x2 = battery_x + battery_w - 60
+        dc_circuit_a_y = battery_y + battery_title_h + 18
+        dc_circuit_b_y = dc_circuit_a_y + 18
+
+        dwg.add(dwg.line((circuit_x1, dc_circuit_a_y), (circuit_x2, dc_circuit_a_y), class_="thin"))
+        dwg.add(dwg.text("Circuit A", insert=(circuit_x1, dc_circuit_a_y - 6), class_="small"))
+        dwg.add(dwg.line((circuit_x1, dc_circuit_b_y), (circuit_x2, dc_circuit_b_y), class_="thin"))
+        dwg.add(dwg.text("Circuit B", insert=(circuit_x1, dc_circuit_b_y - 6), class_="small"))
+
+        link_x = bus_x2 - 40
+        dwg.add(dwg.line((link_x, dc_bus_a_y), (link_x, dc_circuit_a_y), class_="thin"))
+        dwg.add(dwg.line((link_x, dc_bus_b_y), (link_x, dc_circuit_b_y), class_="thin"))
+
+        show_individual_blocks = 0 < dc_blocks_total <= 6
+        blocks_to_draw = dc_blocks_total if show_individual_blocks else 1
+        block_cols = min(3, blocks_to_draw) if show_individual_blocks else 1
+        block_rows = int(math.ceil(blocks_to_draw / block_cols)) if show_individual_blocks else 1
+        block_gap_x = 20.0
+        block_gap_y = 16.0
+        block_area_w = max(220.0, battery_w - 80.0)
+        dc_box_w = min(160.0, max(110.0, (block_area_w - (block_cols - 1) * block_gap_x) / block_cols))
+        dc_box_h = 54
+        block_grid_w = block_cols * dc_box_w + max(0, block_cols - 1) * block_gap_x
+        block_grid_h = block_rows * dc_box_h + max(0, block_rows - 1) * block_gap_y
+        dc_box_x_start = battery_x + (battery_w - block_grid_w) / 2
+        dc_box_y = dc_circuit_b_y + 24
+
+        block_index = 0
+        for row in range(block_rows):
+            for col in range(block_cols):
+                if show_individual_blocks and block_index >= dc_blocks_total:
+                    break
+                cell_x = dc_box_x_start + col * (dc_box_w + block_gap_x)
+                cell_y = dc_box_y + row * (dc_box_h + block_gap_y)
+
+                dwg.add(dwg.rect(insert=(cell_x, cell_y), size=(dc_box_w, dc_box_h), class_="outline"))
+
+                if show_individual_blocks:
+                    label = f"DC Block #{block_index + 1} ({format_mwh(spec.dc_block_energy_mwh)})"
+                else:
+                    label = f"DC Block ({format_mwh(spec.dc_block_energy_mwh)}) x {dc_blocks_total}"
+                dwg.add(dwg.text(label, insert=(cell_x + 6, cell_y + 20), class_="small"))
+                dwg.add(dwg.text("2 circuits (A/B)", insert=(cell_x + 6, cell_y + 38), class_="small"))
+
+                line_x_a = cell_x + dc_box_w * 0.4
+                line_x_b = cell_x + dc_box_w * 0.6
+                dwg.add(dwg.line((line_x_a, cell_y), (line_x_a, dc_circuit_a_y), class_="thin"))
+                dwg.add(dwg.line((line_x_b, cell_y), (line_x_b, dc_circuit_b_y), class_="thin"))
+
+                block_index += 1
+            if show_individual_blocks and block_index >= dc_blocks_total:
+                break
+
+    if draw_summary:
+        dwg.add(dwg.rect(insert=(note_x, note_y), size=(note_w, note_h), class_="outline"))
+        dwg.add(dwg.text("Allocation Summary (AC Block group)", insert=(note_x + 8, note_y + 18), class_="label title"))
+        for idx, line in enumerate(wrapped_lines):
+            dwg.add(dwg.text(line, insert=(note_x + 8, note_y + 36 + idx * 18), class_="label"))
+
+    out_svg.parent.mkdir(parents=True, exist_ok=True)
+    dwg.save()
+
+    png_warning = None
+    if out_png is not None:
+        out_png = Path(out_png)
+        out_png.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            _write_png(out_svg, out_png)
+        except ImportError:
+            png_warning = "Missing dependency: cairosvg. PNG export skipped."
+        except Exception:
+            png_warning = "PNG export failed."
+
+    return out_svg, png_warning
+
+
+# =============================================================================
+# Battery column（保持你原图风格的“电芯列”）
+# =============================================================================
+
+
+def _draw_battery_column(dwg, x: float, y: float, h: float, rows: int) -> None:
+    if rows <= 0 or h <= 0:
+        return
+    cell_pitch = h / rows
+    long_w = max(8.0, min(16.0, cell_pitch * 0.9))
+    short_w = long_w * 0.6
+    plate_gap = min(4.0, max(2.0, cell_pitch * 0.2))
+
+    dwg.add(dwg.line((x, y - 2), (x, y + h + 2), class_="thin"))
+
+    for row in range(rows):
+        y_center = y + cell_pitch * (row + 0.5)
+        y_long = y_center - plate_gap / 2
+        y_short = y_center + plate_gap / 2
+        dwg.add(dwg.line((x - long_w / 2, y_long), (x + long_w / 2, y_long), class_="thin"))
+        dwg.add(dwg.line((x - short_w / 2, y_short), (x + short_w / 2, y_short), class_="thin"))
+
+    dot_gap = min(6.0, max(3.0, cell_pitch * 0.3))
+    mid_y = y + h * 0.5
+    for offset in (-dot_gap, 0.0, dot_gap):
+        dwg.add(dwg.line((x - 1.5, mid_y + offset), (x + 1.5, mid_y + offset), class_="thin"))
