@@ -1425,16 +1425,28 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         # AC tap chain（按图1：节点→X→刀闸→PCS，全都在同一竖线上）
         tap = (pcs_center_x, bus_y)     # 母排连接点
         pcs_in = (pcs_center_x, pcs_y)  # PCS 方框上边缘入口
+        contact_y = bus_y + pcs_ac_switch_offset
+        # 约束一下：别太靠近母排，也别压到 PCS 顶部
+        contact_y = max(contact_y, bus_y + 10)
+        contact_y = min(contact_y, pcs_y - 18)
 
-        # 1) 母排节点（实心点）
+        # 1) 上段竖线：母排 → contact_y
+        _draw_line_anchored(
+        dwg,
+        tap,
+        (pcs_center_x, contact_y),
+        class_="thin",
+        start_anchor=tap,
+        end_anchor=(pcs_center_x, contact_y),
+        )
+
+       # 2) X（米字）放在 contact_y（= 原来那根横线的位置）
+        _draw_breaker_x(dwg, pcs_center_x, contact_y, pcs_ac_x_size)
         _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
-
-        # 2) X（米字）在母排下方的“固定端”
-        x_mark_y = bus_y + pcs_ac_x_offset
+        x_mark_y = contact_y
         _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
-
         # 3) 画“竖直开口刀闸”（不再拐到 PCS 侧边！）
-        #    用你现有变量做定位/比例映射
+        # 用你现有变量做定位/比例映射
         gap = max(3.0, pcs_ac_switch_gap)                 # 开口间隙基准
         blade_dx = max(6.0, abs(pcs_ac_switch_blade_dx))  # 刀片水平长度（沿用你的变量）
         blade_side = -1  # 图1是向左开；要向右就改成 +1
