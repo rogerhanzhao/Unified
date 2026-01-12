@@ -340,6 +340,30 @@ def _draw_ac_knife_switch(dwg, x: float, y: float, h: float, side: int = 1) -> d
     dwg.add(dwg.line((x, pivot_y), (x, bottom_y), class_="thin"))
 
     return {"top": (x, y), "bottom": (x, bottom_y), "contact": (x, contact_y), "pivot": (x, pivot_y)}
+def _draw_ac_knife_switch_inline(
+    dwg, x: float, y: float, h: float, side: int = 1
+    ) -> dict[str, tuple[float, float]]:
+    """
+    画“目标图2风格”的 AC 刀闸：在主竖线上画一个斜刀片，不画固定触点横线。
+    x,y：符号顶部中心点（从这里往下占用高度 h）
+    side：1 刀片向右上挑；-1 刀片向左上挑
+    """
+    if h <= 0:
+        return {"top": (x, y), "bottom": (x, y), "pivot": (x, y)}
+
+    top_y = y
+    pivot_y = y + h * 0.55
+    bottom_y = y + h
+
+    # 主竖线（符号内部这一段）
+    dwg.add(dwg.line((x, top_y), (x, bottom_y), class_="thin"))
+
+    # 斜刀片：从 pivot 向“上方侧边”挑起（开断状态）
+    blade_dx = side * (h * 0.40)
+    blade_dy = h * 0.28
+    dwg.add(dwg.line((x, pivot_y), (x + blade_dx, pivot_y - blade_dy), class_="thin"))
+
+    return {"top": (x, top_y), "pivot": (x, pivot_y), "bottom": (x, bottom_y)}
 def _draw_arrow_box(dwg, x: float, y: float, w: float, h: float) -> None:
     dwg.add(dwg.rect(insert=(x - w / 2, y), size=(w, h), class_="outline"))
     dwg.add(dwg.line((x, y + 4), (x, y + h - 6), class_="thin"))
@@ -348,8 +372,6 @@ def _draw_arrow_box(dwg, x: float, y: float, w: float, h: float) -> None:
 # =============================================================================
 # DC Switch（开关 + Fuse）符号：重写版（关键修复点）
 # =============================================================================
-
-
 def _draw_dc_switch(
     dwg,
     x: float,
@@ -1423,58 +1445,61 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
 
                 # ---------------------------
         # ---------------------------
-       # AC tap chain（目标：X 在上端固定端，刀闸在 PCS 框侧边）
+               # ---------------------------
+        # AC tap chain（目标：图2那种竖直串联：● → X → 刀闸 → PCS）
+        # ---------------------------
 
-        tap = (pcs_center_x, bus_y)     # 上端：母排连接点
-        pcs_in = (pcs_center_x, pcs_y)  # 下端：PCS 方框上边缘
+        tap = (pcs_center_x, bus_y)     # 母排连接点
+        pcs_in = (pcs_center_x, pcs_y)  # PCS 方框上边缘
 
         # 1) 母排节点（实心点）
         _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
 
-        # 2) 先定义 x_mark_y（必须在任何使用 x_mark_y 之前！）
+        # 2) X（米字）位置：先定义，避免 NameError
         x_mark_y = bus_y + pcs_ac_x_offset
-
-        # 3) 画 X（米字）
+        _draw_line_anchored(
+            dwg, tap, (pcs_center_x, x_mark_y),
+            class_="thin",
+            start_anchor=tap, end_anchor=(pcs_center_x, x_mark_y),
+        )
         _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
 
-        # 4) join_y_1：刀闸分支高度（建议从 x_mark_y 往下加偏移，避免“横线贴着 X”）
-        join_y_1 = x_mark_y + max(8.0, pcs_ac_switch_offset)
-        join_y_1 = min(join_y_1, pcs_y - 10)  # 防止压到 PCS 框
+        # 3) 刀闸放在 X 下面（竖直串联，不要任何侧向横线）
+        knife_top_y = x_mark_y + max(10.0, pcs_ac_switch_offset)
 
-        # 5) 母排 → X
+        # 刀闸高度（可用 layout_params 覆盖）
+        knife_h = _safe_float(layout_params.get("pcs_ac_knife_h"), 22.0)
+        knife_h = max(14.0, min(28.0, knife_h))
+
+        # 防止刀闸/引线压到 PCS 框：把刀闸底部限制在 pcs_y - 2 之上
+        max_bottom = pcs_y - 2.0
+        if knife_top_y + knife_h > max_bottom:
+            knife_h = max(10.0, max_bottom - knife_top_y)
+
+        # X → 刀闸顶部
         _draw_line_anchored(
-        dwg,
-        tap,
-        (pcs_center_x, x_mark_y),
-        class_="thin",
-        start_anchor=tap,
-        end_anchor=(pcs_center_x, x_mark_y),
+            dwg,
+            (pcs_center_x, x_mark_y),
+            (pcs_center_x, knife_top_y),
+            class_="thin",
+            start_anchor=(pcs_center_x, x_mark_y),
+            end_anchor=(pcs_center_x, knife_top_y),
         )
 
-      # 6) X → join_y_1
+        # 刀片方向：让刀片“向外”开，避免压到 PCS 文本（左边的向左，右边的向右）
+        side = -1 if pcs_center_x < mv_center_x else 1
+
+        anchors = _draw_ac_knife_switch_inline(dwg, pcs_center_x, knife_top_y, knife_h, side=side)
+
+        # 刀闸底部 → PCS 顶部
         _draw_line_anchored(
-        dwg,
-        (pcs_center_x, x_mark_y),
-        (pcs_center_x, join_y_1),
-        class_="thin",
-        start_anchor=(pcs_center_x, x_mark_y),
-        end_anchor=(pcs_center_x, join_y_1),
+            dwg,
+            anchors["bottom"],
+            pcs_in,
+            class_="thin",
+            start_anchor=anchors["bottom"],
+            end_anchor=pcs_in,
         )
-
-     # 7) 侧向接到刀闸（PCS 框右侧）
-        side = 1
-        knife_x = pcs_center_x + side * (pcs_box_w / 2 + 14)
-        _draw_line_anchored(dwg, (pcs_center_x, join_y_1), (knife_x, join_y_1), class_="thin")
-
-        knife_h = max(12.0, min(20.0, pcs_ac_switch_gap * 3.0))
-        anchors = _draw_ac_knife_switch(dwg, knife_x, join_y_1, knife_h, side=side)
-
-        # 8) 刀闸回主线 → PCS 顶部
-        join_y_2 = min(anchors["bottom"][1], pcs_y - 2)
-        _draw_line_anchored(dwg, (knife_x, join_y_2), (pcs_center_x, join_y_2), class_="thin")
-        _draw_line_anchored(dwg, (pcs_center_x, join_y_2), pcs_in, class_="thin", end_anchor=pcs_in)
-
-
 
     # =============================================================================
     # 下方：Battery Storage Bank（compact_mode vs full）
