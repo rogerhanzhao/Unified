@@ -350,30 +350,38 @@ def _draw_ac_knife_switch_inline(
     line_class: str = "thin",
 ) -> dict[str, tuple[float, float]]:
     """
-    图2同款 AC knife switch（竖直串联、开口样式）：
-      - 上段导体到 y_contact 就停止（不再往下画）=> 形成开口
+    图示同款 AC knife switch（竖直串联、开口样式）：
+      - 在 y 处画“固定触点横杠”
+      - 上段导体只画到 y（不再往下画）=> 形成开口
       - 下段导体从 pivot_y 往下画到 y+h
-      - 斜刀片从侧上方连到 pivot（刀闸打开）
-    x,y: 以“开口上端（固定触点位置）”作为 y 基准
+      - 斜刀片从侧上方连到 pivot（断开）
+    x,y: 以“固定触点横杠中心线”的 y 作为基准
     h  : 该符号自身高度（不含上面的 X）
     side: -1 刀片向左；+1 刀片向右
     """
     if h <= 0:
         return {"top": (x, y), "bottom": (x, y)}
 
-    # 关键：上端触点（开口上端），这里“不往下画导体”
     contact_y = y
-
-    # pivot 在符号中部偏下；下端导体从 pivot 往下
     pivot_y = y + h * 0.55
     bottom_y = y + h
+
+    # 固定触点横杠（图里那条小横线）
+    contact_w = max(10.0, min(h * 0.60, 22.0))
+    dwg.add(
+        dwg.line(
+            (x - contact_w / 2, contact_y),
+            (x + contact_w / 2, contact_y),
+            class_=line_class,
+        )
+    )
 
     # 下段竖直导体（pivot -> bottom）
     dwg.add(dwg.line((x, pivot_y), (x, bottom_y), class_=line_class))
 
-    # 斜刀片：上端悬空（不接触 contact），下端接 pivot
+    # 斜刀片：上端悬空（不碰触点横杠），下端接 pivot
     blade_dx = side * (h * 0.55)
-    blade_upper_y = y + h * 0.12   # 刀片上端高度（略低于开口上端，形成明显间隙）
+    blade_upper_y = y + h * 0.12  # 刀片上端略低于触点横杠，形成“开口间隙”
     blade_upper = (x + blade_dx, blade_upper_y)
     dwg.add(dwg.line(blade_upper, (x, pivot_y), class_=line_class))
 
@@ -824,7 +832,6 @@ def _write_png(svg_path: Path, png_path: Path) -> None:
 # =============================================================================
 # 主渲染入口：render_sld_pro_svg
 # =============================================================================
-
 
 def render_sld_pro_svg(
     spec: SldGroupSpec, out_svg: Path, out_png: Path | None = None
@@ -1430,56 +1437,81 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     dwg.add(dwg.text("LV Busbar", insert=(bus_x1, bus_y - 8), class_="label"))
 
     # ---------------------------
-    # PCS box + AC tap
     # ---------------------------
-    pcs_label_offset = _safe_float(layout_params.get("pcs_label_offset"), 10.0)
-    lv_tap_nodes = bool(layout_params.get("lv_tap_nodes", False))
-    lv_node_r = 3.0
-    pcs_tap_node_r = _safe_float(layout_params.get("pcs_tap_node_r"), 2.6)
-    pcs_ac_x_offset = _safe_float(layout_params.get("pcs_ac_x_offset"), 8.0)
-    pcs_ac_x_size = _safe_float(layout_params.get("pcs_ac_x_size"), 6.0)
-    pcs_ac_switch_offset = _safe_float(layout_params.get("pcs_ac_switch_offset"), 18.0)
-    pcs_ac_switch_gap = _safe_float(layout_params.get("pcs_ac_switch_gap"), 5.0)
-    pcs_ac_switch_blade_dx = _safe_float(layout_params.get("pcs_ac_switch_blade_dx"), 10.0)
+# PCS box + AC tap
+# ---------------------------
+pcs_label_offset = _safe_float(layout_params.get("pcs_label_offset"), 10.0)
+lv_tap_nodes = bool(layout_params.get("lv_tap_nodes", False))
+lv_node_r = 3.0
+pcs_tap_node_r = _safe_float(layout_params.get("pcs_tap_node_r"), 2.6)
+pcs_ac_x_offset = _safe_float(layout_params.get("pcs_ac_x_offset"), 8.0)
+pcs_ac_x_size = _safe_float(layout_params.get("pcs_ac_x_size"), 6.0)
+pcs_ac_switch_offset = _safe_float(layout_params.get("pcs_ac_switch_offset"), 18.0)
 
-    _draw_solid_node(dwg, tx_lv_left[0], tx_lv_left[1], lv_node_r, node_fill)
-    _draw_solid_node(dwg, tx_lv_right[0], tx_lv_right[1], lv_node_r, node_fill)
+# Transformer 到 LV bus 的两个实心点（保留）
+_draw_solid_node(dwg, tx_lv_left[0], tx_lv_left[1], lv_node_r, node_fill)
+_draw_solid_node(dwg, tx_lv_right[0], tx_lv_right[1], lv_node_r, node_fill)
 
-    for idx in range(pcs_count):
-        pcs_center_x = pcs_centers[idx]
-        pcs_left_x = pcs_center_x - pcs_box_w / 2
-        dwg.add(dwg.rect(insert=(pcs_left_x, pcs_y), size=(pcs_box_w, pcs_box_h), class_="outline"))
+for idx in range(pcs_count):
+    pcs_center_x = pcs_centers[idx]
+    pcs_left_x = pcs_center_x - pcs_box_w / 2
 
+    # 1) PCS 外框
+    dwg.add(dwg.rect(insert=(pcs_left_x, pcs_y), size=(pcs_box_w, pcs_box_h), class_="outline"))
+
+    # 2) PCS 文字（每个 PCS 都要在循环里画）
     if compact_mode:
+        # compact：标签更靠近 LV busbar
         label_y = bus_y + pcs_label_offset
         label_x = pcs_center_x + 6
-        dwg.add(dwg.text(f"PCS-{idx + 1}", insert=(label_x, label_y), class_="label", text_anchor="start"))
-        _draw_pcs_dc_ac_symbol(
+        dwg.add(
+            dwg.text(
+                f"PCS-{idx + 1}",
+                insert=(label_x, label_y),
+                class_="label",
+                text_anchor="start",
+            )
+        )
+    else:
+        dwg.add(
+            dwg.text(
+                f"PCS-{idx + 1}",
+                insert=(pcs_center_x + 6, pcs_y + 20),
+                class_="label",
+                text_anchor="start",
+            )
+        )
+        rating = spec.pcs_rating_kw_list[idx] if idx < len(spec.pcs_rating_kw_list) else 0.0
+        rating_text = f"{rating:.0f} kW" if rating else "TBD"
+        dwg.add(
+            dwg.text(
+                rating_text,
+                insert=(pcs_center_x + 6, pcs_y + 38),
+                class_="label",
+                text_anchor="start",
+            )
+        )
+
+    # 3) PCS 内部 DC/AC 符号（无论 compact/full 都画，避免“符号丢失”）
+    _draw_pcs_dc_ac_symbol(
         dwg,
         pcs_left_x + pcs_box_w * 0.08,
         pcs_y + pcs_box_h * 0.18,
         pcs_box_w * 0.84,
         pcs_box_h * 0.74,
-        )
-    else:
-        dwg.add(dwg.text(f"PCS-{idx + 1}", insert=(pcs_center_x + 6, pcs_y + 20), class_="label", text_anchor="start"))
-        rating = spec.pcs_rating_kw_list[idx] if idx < len(spec.pcs_rating_kw_list) else 0.0
-        rating_text = f"{rating:.0f} kW" if rating else "TBD"
-        dwg.add(dwg.text(rating_text, insert=(pcs_center_x + 6, pcs_y + 38), class_="label", text_anchor="start"))
+    )
 
     # ---------------------------
-    # AC tap chain（目标：图2那种竖直串联：● → X → 刀闸(开口) → PCS）
+    # AC tap chain（目标：● → X → 刀闸(开口) → PCS，严格竖直串联）
     # ---------------------------
-    tap = (pcs_center_x, bus_y)     # 母排连接点
-    pcs_in = (pcs_center_x, pcs_y)  # PCS 方框上边缘
+    tap = (pcs_center_x, bus_y)     # LV busbar 上的连接点
+    pcs_in = (pcs_center_x, pcs_y)  # PCS 方框上边缘中心点
 
-    # 1) 母排节点（实心点）
+    # 1) ●（实心点）
     _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
 
-    # 2) X（米字）位置：务必先定义，避免 NameError
+    # 2) ● → X（竖线 + X）
     x_mark_y = bus_y + pcs_ac_x_offset
-
-    # 母排 → X（竖线）
     _draw_line_anchored(
         dwg,
         tap,
@@ -1488,11 +1520,9 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         start_anchor=tap,
         end_anchor=(pcs_center_x, x_mark_y),
     )
-
-    # 画 X
     _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
 
-    # 3) 刀闸：放在 X 下面，但“中间留空不画竖线”来表现开口
+    # 3) X → 刀闸上端（竖线）
     knife_top_y = x_mark_y + max(10.0, pcs_ac_switch_offset)
 
     knife_h = _safe_float(layout_params.get("pcs_ac_knife_h"), 22.0)
@@ -1503,12 +1533,19 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     if knife_top_y + knife_h > max_bottom:
         knife_h = max(10.0, max_bottom - knife_top_y)
 
-    # 刀片方向：左侧向左开，右侧向右开
+    _draw_line_anchored(
+        dwg,
+        (pcs_center_x, x_mark_y),
+        (pcs_center_x, knife_top_y),
+        class_="thin",
+        start_anchor=(pcs_center_x, x_mark_y),
+        end_anchor=(pcs_center_x, knife_top_y),
+    )
+    # 4) 刀闸（开口）：左侧向左开，右侧向右开
     side = -1 if pcs_center_x < mv_center_x else 1
-
     anchors = _draw_ac_knife_switch_inline(dwg, pcs_center_x, knife_top_y, knife_h, side=side)
 
-    # 4) 刀闸底部 → PCS 顶部
+    # 5) 刀闸底部 → PCS 顶部（竖线）
     _draw_line_anchored(
         dwg,
         anchors["bottom"],
@@ -1517,7 +1554,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         start_anchor=anchors["bottom"],
         end_anchor=pcs_in,
     )
-
 
     # =============================================================================
     # 下方：Battery Storage Bank（compact_mode vs full）
