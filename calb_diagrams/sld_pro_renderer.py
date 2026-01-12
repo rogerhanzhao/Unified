@@ -1455,11 +1455,11 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         label_x = pcs_center_x + 6
         dwg.add(dwg.text(f"PCS-{idx + 1}", insert=(label_x, label_y), class_="label", text_anchor="start"))
         _draw_pcs_dc_ac_symbol(
-            dwg,
-            pcs_left_x + pcs_box_w * 0.08,
-            pcs_y + pcs_box_h * 0.18,
-            pcs_box_w * 0.84,
-            pcs_box_h * 0.74,
+        dwg,
+        pcs_left_x + pcs_box_w * 0.08,
+        pcs_y + pcs_box_h * 0.18,
+        pcs_box_w * 0.84,
+        pcs_box_h * 0.74,
         )
     else:
         dwg.add(dwg.text(f"PCS-{idx + 1}", insert=(pcs_center_x + 6, pcs_y + 20), class_="label", text_anchor="start"))
