@@ -1557,40 +1557,8 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             pcs_out = (line_x, dc_top)
             prot_center = (line_x, fuse_center_y)
             branch_bus = (line_x, branch_bus_y)
-            _draw_open_switches_vertical(
-                dwg,
-                line_x,
-                pcs_out[1],
-                prot_center[1],
-                [
-                    {
-                        "y": switch_y,
-                        "gap": dc_switch_gap,
-                        "blade_dx": dc_switch_blade_dx,
-                    }
-                ],
-                line_class="thin",
-                contact_style="none",
-                contact_r=switch_contact_r,
-                contact_fill=node_fill,
-            )
-            terminal_y = dc_top + dc_terminal_offset
-            dwg.add(
-                dwg.line(
-                    (line_x - dc_terminal_len / 2, terminal_y),
-                    (line_x + dc_terminal_len / 2, terminal_y),
-                    class_="thin",
-                )
-            )
-            _draw_fuse(dwg, line_x, fuse_top, max(6.0, pcs_box_w * 0.1), fuse_h)
-            _draw_line_anchored(
-                dwg,
-                prot_center,
-                branch_bus,
-                class_="thin",
-                start_anchor=prot_center,
-                end_anchor=branch_bus,
-            )
+            symbol_h = max(20.0, branch_bus_y - dc_top)
+            _draw_dc_switch(dwg, line_x, dc_top, symbol_h)
             _draw_node(dwg, branch_bus[0], branch_bus[1], dc_node_r, node_fill)
             triangle_center = battery_y + dc_triangle_size + 6.0
             if triangle_center + dc_triangle_size < branch_bus_y - 2.0:
