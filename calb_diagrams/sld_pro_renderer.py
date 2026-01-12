@@ -305,45 +305,6 @@ def _draw_capacitor(dwg, x: float, y: float, w: float, gap: float) -> None:
     dwg.add(dwg.line((x - w / 2, y), (x + w / 2, y), class_="thin"))
     dwg.add(dwg.line((x - w / 2, y + gap), (x + w / 2, y + gap), class_="thin"))
 
-
-def _draw_arrow_box(dwg, x: float, y: float, w: float, h: float) -> None:tap = (pcs_center_x, bus_y)     # 上端：母排连接点
-    pcs_in = (pcs_center_x, pcs_y)  # 下端：PCS 方框上边缘
-
-    # 1) 上端固定点：先画节点 + X（米字）放在“上端直线固定端”
-    _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
-
-    # 米字 X 放在刚离开母排的地方（你要“上端直线定端”，建议就放 bus_y + 6）
-    x_mark_y = bus_y + 6
-    _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
-
-    # 2) 竖线先下到“刀闸插入高度”的上方
-    # 刀闸要在 PCS 交流框一侧：我们把它放到 PCS 方框右侧（也可左侧）
-    knife_h = 16.0
-    knife_top_y = pcs_y - 24        # 刀闸整体靠近 PCS 顶部（可调：-20 ~ -30）
-    join_y_1 = knife_top_y - 2       # 先到这里
-
-    _draw_line_anchored(dwg, tap, (pcs_center_x, join_y_1), class_="thin", start_anchor=tap, end_anchor=(pcs_center_x, join_y_1))
-
-    # 3) 从主竖线“侧向”连到刀闸位置（PCS 一侧）
-    side = 1  # 1=右侧，-1=左侧
-    knife_x = pcs_center_x + side * (pcs_box_w / 2 + 14)  # 刀闸在 PCS 方框侧边外一点
-
-    # 横向过去
-    _draw_line_anchored(dwg, (pcs_center_x, join_y_1), (knife_x, join_y_1), class_="thin")
-
-    # 画刀闸（在侧边）
-    anchors = _draw_ac_knife_switch(dwg, knife_x, join_y_1, knife_h, side=side)
-
-    # 从刀闸底部横向回主竖线
-    join_y_2 = anchors["bottom"][1]
-    _draw_line_anchored(dwg, (knife_x, join_y_2), (pcs_center_x, join_y_2), class_="thin")
-
-    # 4) 主竖线继续下到 PCS 顶部入口
-    _draw_line_anchored(dwg, (pcs_center_x, join_y_2), pcs_in, class_="thin", end_anchor=pcs_in)
-    dwg.add(dwg.rect(insert=(x - w / 2, y), size=(w, h), class_="outline"))
-    dwg.add(dwg.line((x, y + 4), (x, y + h - 6), class_="thin"))
-    dwg.add(dwg.line((x, y + h - 6), (x - 4, y + h - 10), class_="thin"))
-    dwg.add(dwg.line((x, y + h - 6), (x + 4, y + h - 10), class_="thin"))
 # =============================================================================
 # PCS-AC Switch
 # =============================================================================
@@ -379,7 +340,11 @@ def _draw_ac_knife_switch(dwg, x: float, y: float, h: float, side: int = 1) -> d
     dwg.add(dwg.line((x, pivot_y), (x, bottom_y), class_="thin"))
 
     return {"top": (x, y), "bottom": (x, bottom_y), "contact": (x, contact_y), "pivot": (x, pivot_y)}
-
+def _draw_arrow_box(dwg, x: float, y: float, w: float, h: float) -> None:
+    dwg.add(dwg.rect(insert=(x - w / 2, y), size=(w, h), class_="outline"))
+    dwg.add(dwg.line((x, y + 4), (x, y + h - 6), class_="thin"))
+    dwg.add(dwg.line((x, y + h - 6), (x - 4, y + h - 10), class_="thin"))
+    dwg.add(dwg.line((x, y + h - 6), (x + 4, y + h - 10), class_="thin"))
 # =============================================================================
 # DC Switch（开关 + Fuse）符号：重写版（关键修复点）
 # =============================================================================
@@ -1456,40 +1421,48 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             rating_text = f"{rating:.0f} kW" if rating else "TBD"
             dwg.add(dwg.text(rating_text, insert=(pcs_center_x + 6, pcs_y + 38), class_="label", text_anchor="start"))
 
-        # AC tap chain
+                # ---------------------------
+        # AC tap chain（目标：X 在上端固定端，刀闸在 PCS 框侧边）
+        # ---------------------------
         tap = (pcs_center_x, bus_y)     # 上端：母排连接点
         pcs_in = (pcs_center_x, pcs_y)  # 下端：PCS 方框上边缘
 
-        # 1) 上端固定点：先画节点 + X（米字）放在“上端直线固定端”
+        # 1) 母排节点（实心点）
         _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
 
-        # 米字 X 放在刚离开母排的地方（你要“上端直线定端”，建议就放 bus_y + 6）
-        x_mark_y = bus_y + 6
+        # 2) X（米字）放在刚离开母排的固定端位置
+        x_mark_y = bus_y + pcs_ac_x_offset   # 你原来变量 pcs_ac_x_offset 正好用于这个
         _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
 
-        # 2) 竖线先下到“刀闸插入高度”的上方
-        #    刀闸要在 PCS 交流框一侧：我们把它放到 PCS 方框右侧（也可左侧）
-        knife_h = 16.0
-        knife_top_y = pcs_y - 24        # 刀闸整体靠近 PCS 顶部（可调：-20 ~ -30）
-        join_y_1 = knife_top_y - 2       # 先到这里
+        # 3) 主竖线向下到“准备侧接刀闸”的高度
+        #    这里用 pcs_ac_switch_offset 作为“从母排往下的距离”，保持你原系统变量不丢
+        join_y_1 = bus_y + pcs_ac_switch_offset
+        join_y_1 = min(join_y_1, pcs_y - 10)  # 防止压到 PCS 框
 
-        _draw_line_anchored(dwg, tap, (pcs_center_x, join_y_1), class_="thin", start_anchor=tap, end_anchor=(pcs_center_x, join_y_1))
+        _draw_line_anchored(
+            dwg,
+            tap,
+            (pcs_center_x, join_y_1),
+            class_="thin",
+            start_anchor=tap,
+            end_anchor=(pcs_center_x, join_y_1),
+        )
 
-        # 3) 从主竖线“侧向”连到刀闸位置（PCS 一侧）
-        side = 1  # 1=右侧，-1=左侧
-        knife_x = pcs_center_x + side * (pcs_box_w / 2 + 14)  # 刀闸在 PCS 方框侧边外一点
+        # 4) 侧向接到刀闸（放在 PCS 框右侧；要左侧就 side = -1）
+        side = 1
+        knife_x = pcs_center_x + side * (pcs_box_w / 2 + 14)
 
-        # 横向过去
         _draw_line_anchored(dwg, (pcs_center_x, join_y_1), (knife_x, join_y_1), class_="thin")
 
-        # 画刀闸（在侧边）
+        # 5) 画侧边刀闸：高度 knife_h 可用 pcs_ac_switch_gap/offset 来“联动缩放”
+        knife_h = max(12.0, min(20.0, pcs_ac_switch_gap * 3.0))  # 这里用你原变量做个合理映射
         anchors = _draw_ac_knife_switch(dwg, knife_x, join_y_1, knife_h, side=side)
 
-        # 从刀闸底部横向回主竖线
+        # 6) 从刀闸底部横向回主竖线，再下到 PCS 顶部入口
         join_y_2 = anchors["bottom"][1]
-        _draw_line_anchored(dwg, (knife_x, join_y_2), (pcs_center_x, join_y_2), class_="thin")
+        join_y_2 = min(join_y_2, pcs_y - 2)
 
-        # 4) 主竖线继续下到 PCS 顶部入口
+        _draw_line_anchored(dwg, (knife_x, join_y_2), (pcs_center_x, join_y_2), class_="thin")
         _draw_line_anchored(dwg, (pcs_center_x, join_y_2), pcs_in, class_="thin", end_anchor=pcs_in)
 
 
