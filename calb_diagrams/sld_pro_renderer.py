@@ -273,7 +273,23 @@ def _draw_arrow_up(dwg, x: float, y: float, size: float = 10.0) -> None:
     """画一个向上的箭头（用于进出线终端）"""
     points = [(x, y - size), (x - size * 0.5, y), (x + size * 0.5, y)]
     dwg.add(dwg.polygon(points=points, class_="outline", fill="none"))
-    # draw connection line down a bit if needed, but usually line connects to y
+
+def _draw_cable_termination_down(dwg, x: float, y: float, size: float = 8.0) -> None:
+    """
+    画两个向下的连续三角形 (Cable Sealing End / Plug-in)
+    用于变压器柜底部
+    """
+    # Triangle 1
+    points1 = [(x - size*0.5, y), (x + size*0.5, y), (x, y + size)]
+    dwg.add(dwg.polygon(points=points1, class_="outline", fill="none"))
+    
+    # Triangle 2 (below)
+    y2 = y + size
+    points2 = [(x - size*0.5, y2), (x + size*0.5, y2), (x, y2 + size)]
+    dwg.add(dwg.polygon(points=points2, class_="outline", fill="none"))
+    
+    # Line continuing down from tip
+    dwg.add(dwg.line((x, y2 + size), (x, y2 + size + 4), class_="thin"))
 
 def _draw_earth_switch_lateral(dwg, x: float, y: float, side: str = 'left') -> None:
     """
@@ -298,9 +314,8 @@ def _draw_earth_switch_lateral(dwg, x: float, y: float, side: str = 'left') -> N
     earth_y = y + switch_gap + blade_len
     
     # 4. Blade (Open)
-    # Pivot is at earth_y, blade leans towards fixed contact but stays open
-    # For diagram simplicity in RMU, often drawn as a diagonal line from pivot
     pivot_x = end_x
+    # Blade drawn open
     dwg.add(dwg.line((pivot_x, earth_y), (pivot_x - direction * 6, earth_y - 8), class_="thin"))
     
     # 5. Connection to ground
@@ -311,7 +326,7 @@ def _draw_vpis_symbol(dwg, x: float, y: float, side: str = 'right') -> None:
     """
     带电显示器 (VPIS): 横向引出 -> 电容 -> 节点 -> 圆圈X -> 接地
     """
-    arm_len = 16.0
+    arm_len = 24.0 # Slightly longer to clear vertical line
     direction = 1.0 if side == 'right' else -1.0
     
     # 1. Horizontal arm
@@ -353,7 +368,7 @@ def _draw_surge_arrester_symbol(dwg, x: float, y: float) -> None:
     # Head
     dwg.add(dwg.line((x, y + h - 4), (x - 3, y + h - 8), class_="thin"))
     dwg.add(dwg.line((x, y + h - 4), (x + 3, y + h - 8), class_="thin"))
-    # Shaft (zig zag or straight? usually simple arrow for arrester)
+    # Shaft
     dwg.add(dwg.line((x, y + 4), (x, y + h - 4), class_="thin"))
     
     # Ground
@@ -1212,7 +1227,11 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     # -------------------------------------------------------------------------
     # Transformer & Below (UNCHANGED LOGIC, just pos adjustment)
     # -------------------------------------------------------------------------
-    _draw_triangle_down(dwg, cx, tr_top_y - tr_radius - 8, 8.0)
+    # Cable Termination Symbol (New per request)
+    term_y = tr_top_y - tr_radius - 12
+    _draw_cable_termination_down(dwg, cx, term_y)
+    
+    # Transformer Symbol
     left_center, right_center = _draw_transformer_symbol(dwg, cx, tr_top_y, tr_radius)
 
     tx_lv_spacing = _safe_float(layout_params.get("tx_lv_spacing"), 14.0)
