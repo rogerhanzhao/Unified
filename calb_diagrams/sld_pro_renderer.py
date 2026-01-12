@@ -290,21 +290,14 @@ def _draw_dc_switch(dwg, x: float, y: float, h: float) -> None:
     bar_dx = fuse_w * 0.18
 
 # --- bottom lead after fuse ---
-   # --- bottom lead after fuse (DIRECT) ---
-# --- bottom lead after fuse (FIX: connect to branch bus) ---
-# fuse_bot 通常是保险丝底边 y；branch_bus_y 是 DC Block 上方的小母线 y
-lead_end_y = branch_bus_y
-# 兜底：避免 end_y <= fuse_bot 导致画出“零长度线”
-if lead_end_y <= fuse_bot + 0.5:
-    lead_end_y = fuse_bot + 12.0
-_draw_line_anchored(
-    dwg,
-    (line_x, fuse_bot),
-    (line_x, lead_end_y),
-    class_="thin",
-    start_anchor=(line_x, fuse_bot),
-    end_anchor=(line_x, lead_end_y),
-)
+    _draw_line_anchored(
+        dwg,
+        (x, fuse_bot),
+        (x, y + h),
+        class_="thin",
+        start_anchor=(x, fuse_bot),
+        end_anchor=(x, y + h),
+    )
 def _draw_fuse(dwg, x: float, y: float, w: float, h: float) -> None:
     dwg.add(
         dwg.rect(
