@@ -289,7 +289,6 @@ def _draw_dc_switch(dwg, x: float, y: float, h: float) -> None:
     inner_bot = fuse_top + (fuse_bot - fuse_top) * 0.85
     bar_dx = fuse_w * 0.18
     dwg.add(dwg.line((x - bar_dx, inner_top), (x - bar_dx, inner_bot), class_="thin"))
-    dwg.add(dwg.line((x + bar_dx, inner_top), (x + bar_dx, inner_bot), class_="thin"))
 
     # --- bottom lead after fuse ---
     _draw_line_anchored(
