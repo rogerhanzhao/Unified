@@ -281,12 +281,12 @@ def _draw_cable_termination_down(dwg, x: float, y: float, size: float = 8.0) -> 
     """
     # Triangle 1
     points1 = [(x - size*0.5, y), (x + size*0.5, y), (x, y + size)]
-    dwg.add(dwg.polygon(points=points1, class_="outline", fill="none"))
+    dwg.add(dwg.polygon(points=points1, class_="thin", fill="none"))
     
     # Triangle 2 (below)
     y2 = y + size
     points2 = [(x - size*0.5, y2), (x + size*0.5, y2), (x, y2 + size)]
-    dwg.add(dwg.polygon(points=points2, class_="outline", fill="none"))
+    dwg.add(dwg.polygon(points=points2, class_="thin", fill="none"))
     
     # Line continuing down from tip
     dwg.add(dwg.line((x, y2 + size), (x, y2 + size + 4), class_="thin"))
@@ -339,14 +339,14 @@ def _draw_vpis_symbol(dwg, x: float, y: float, side: str = 'right') -> None:
     dwg.add(dwg.line((cap_x - cap_w/2, y + 4), (cap_x + cap_w/2, y + 4), class_="thin"))
     
     # 3. Line down
-    circle_y = y + 20.0
+    circle_y = y + 24.0
     dwg.add(dwg.line((cap_x, y + 4), (cap_x, circle_y - 6), class_="thin"))
     
     # 4. Circle with X
     r = 6.0
     dwg.add(dwg.circle(center=(cap_x, circle_y), r=r, class_="outline"))
     # X inside
-    d = r * 0.707
+    d = r * 0.6
     dwg.add(dwg.line((cap_x - d, circle_y - d), (cap_x + d, circle_y + d), class_="thin"))
     dwg.add(dwg.line((cap_x - d, circle_y + d), (cap_x + d, circle_y - d), class_="thin"))
     
@@ -361,19 +361,23 @@ def _draw_surge_arrester_symbol(dwg, x: float, y: float) -> None:
     w = 12.0
     h = 24.0
     
+    # Connection line down to box
+    dwg.add(dwg.line((x, y), (x, y + 6), class_="thin"))
+    box_y = y + 6
+    
     # Box
-    dwg.add(dwg.rect(insert=(x - w/2, y), size=(w, h), class_="outline"))
+    dwg.add(dwg.rect(insert=(x - w/2, box_y), size=(w, h), class_="outline"))
     
     # Arrow inside (Down)
     # Head
-    dwg.add(dwg.line((x, y + h - 4), (x - 3, y + h - 8), class_="thin"))
-    dwg.add(dwg.line((x, y + h - 4), (x + 3, y + h - 8), class_="thin"))
+    dwg.add(dwg.line((x, box_y + h - 4), (x - 3, box_y + h - 8), class_="thin"))
+    dwg.add(dwg.line((x, box_y + h - 4), (x + 3, box_y + h - 8), class_="thin"))
     # Shaft
-    dwg.add(dwg.line((x, y + 4), (x, y + h - 4), class_="thin"))
+    dwg.add(dwg.line((x, box_y + 4), (x, box_y + h - 4), class_="thin"))
     
     # Ground
-    dwg.add(dwg.line((x, y + h), (x, y + h + 4), class_="thin"))
-    _draw_ground(dwg, x, y + h + 4)
+    dwg.add(dwg.line((x, box_y + h), (x, box_y + h + 4), class_="thin"))
+    _draw_ground(dwg, x, box_y + h + 4)
 
 # =============================================================================
 # AC Switch Helper
