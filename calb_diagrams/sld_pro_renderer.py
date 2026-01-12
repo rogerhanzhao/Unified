@@ -1465,7 +1465,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
 
         # 3) 刀闸放在 X 下面（竖直串联，不要任何侧向横线）
-        knife_top_y = x_mark_y + max(10.0, pcs_ac_switch_offset)
+        knife_top_y = x_mark_y + max(5.0, pcs_ac_switch_offset)
 
         # 刀闸高度（可用 layout_params 覆盖）
         knife_h = _safe_float(layout_params.get("pcs_ac_knife_h"), 22.0)
