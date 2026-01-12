@@ -266,6 +266,101 @@ def _draw_capacitor(dwg, x: float, y: float, w: float, gap: float) -> None:
     dwg.add(dwg.line((x - w / 2, y + gap), (x + w / 2, y + gap), class_="thin"))
 
 # =============================================================================
+# Helper: Specific Symbols for Picture 1 (RMU)
+# =============================================================================
+
+def _draw_arrow_up(dwg, x: float, y: float, size: float = 10.0) -> None:
+    """画一个向上的箭头（用于进出线终端）"""
+    points = [(x, y - size), (x - size * 0.5, y), (x + size * 0.5, y)]
+    dwg.add(dwg.polygon(points=points, class_="outline", fill="none"))
+    # draw connection line down a bit if needed, but usually line connects to y
+
+def _draw_earth_switch_lateral(dwg, x: float, y: float, side: str = 'left') -> None:
+    """
+    画侧向接地开关（图1样式）。
+    x, y: 连接点（T接点）
+    side: 'left' or 'right'
+    """
+    arm_len = 16.0
+    switch_gap = 6.0
+    blade_len = 10.0
+    
+    direction = -1.0 if side == 'left' else 1.0
+    
+    # 1. Horizontal arm
+    end_x = x + direction * arm_len
+    dwg.add(dwg.line((x, y), (end_x, y), class_="thin"))
+    
+    # 2. Fixed contact (small vertical bar)
+    dwg.add(dwg.line((end_x, y - 3), (end_x, y + 3), class_="thin"))
+    
+    # 3. Earth symbol position (below)
+    earth_y = y + switch_gap + blade_len
+    
+    # 4. Blade (Open)
+    # Pivot is at earth_y, blade leans towards fixed contact but stays open
+    # For diagram simplicity in RMU, often drawn as a diagonal line from pivot
+    pivot_x = end_x
+    dwg.add(dwg.line((pivot_x, earth_y), (pivot_x - direction * 6, earth_y - 8), class_="thin"))
+    
+    # 5. Connection to ground
+    dwg.add(dwg.line((pivot_x, earth_y), (pivot_x, earth_y + 4), class_="thin"))
+    _draw_ground(dwg, pivot_x, earth_y + 4)
+
+def _draw_vpis_symbol(dwg, x: float, y: float, side: str = 'right') -> None:
+    """
+    带电显示器 (VPIS): 横向引出 -> 电容 -> 节点 -> 圆圈X -> 接地
+    """
+    arm_len = 16.0
+    direction = 1.0 if side == 'right' else -1.0
+    
+    # 1. Horizontal arm
+    cap_x = x + direction * arm_len
+    dwg.add(dwg.line((x, y), (cap_x, y), class_="thin"))
+    
+    # 2. Capacitor (Horizontal plates)
+    cap_w = 12.0
+    dwg.add(dwg.line((cap_x - cap_w/2, y), (cap_x + cap_w/2, y), class_="thin"))
+    dwg.add(dwg.line((cap_x - cap_w/2, y + 4), (cap_x + cap_w/2, y + 4), class_="thin"))
+    
+    # 3. Line down
+    circle_y = y + 20.0
+    dwg.add(dwg.line((cap_x, y + 4), (cap_x, circle_y - 6), class_="thin"))
+    
+    # 4. Circle with X
+    r = 6.0
+    dwg.add(dwg.circle(center=(cap_x, circle_y), r=r, class_="outline"))
+    # X inside
+    d = r * 0.707
+    dwg.add(dwg.line((cap_x - d, circle_y - d), (cap_x + d, circle_y + d), class_="thin"))
+    dwg.add(dwg.line((cap_x - d, circle_y + d), (cap_x + d, circle_y - d), class_="thin"))
+    
+    # 5. Ground
+    dwg.add(dwg.line((cap_x, circle_y + r), (cap_x, circle_y + r + 4), class_="thin"))
+    _draw_ground(dwg, cap_x, circle_y + r + 4)
+
+def _draw_surge_arrester_symbol(dwg, x: float, y: float) -> None:
+    """
+    避雷器: 矩形 + 内部箭头 + 接地
+    """
+    w = 12.0
+    h = 24.0
+    
+    # Box
+    dwg.add(dwg.rect(insert=(x - w/2, y), size=(w, h), class_="outline"))
+    
+    # Arrow inside (Down)
+    # Head
+    dwg.add(dwg.line((x, y + h - 4), (x - 3, y + h - 8), class_="thin"))
+    dwg.add(dwg.line((x, y + h - 4), (x + 3, y + h - 8), class_="thin"))
+    # Shaft (zig zag or straight? usually simple arrow for arrester)
+    dwg.add(dwg.line((x, y + 4), (x, y + h - 4), class_="thin"))
+    
+    # Ground
+    dwg.add(dwg.line((x, y + h), (x, y + h + 4), class_="thin"))
+    _draw_ground(dwg, x, y + h + 4)
+
+# =============================================================================
 # AC Switch Helper
 # =============================================================================
 def _draw_arrow_box(dwg, x: float, y: float, w: float, h: float) -> None:
@@ -762,27 +857,24 @@ def render_sld_pro_svg(
     mv_center_x = skid_x + diagram_width / 2
     gap_center = mv_center_x
 
-    mv_bus_y = skid_y + 120
-    mv_breaker_offset = 16.0
-    mv_switch_gap = 14.0
-    mv_switch_h = 12.0
-    mv_chain_gap = 18.0
-    mv_to_tr_gap = 46.0
+    # -------------------------------------------------------------------------
+    # MV / RMU Layout Constants
+    # -------------------------------------------------------------------------
+    # MV Busbar sits here
+    mv_bus_y = skid_y + 120 
+    
+    # Feeder (Upwards) dimensions
+    feeder_top_y = skid_y + 40.0 # Where arrows are
+    
+    # Center (Downwards) dimensions
+    center_drop_y = mv_bus_y + 180.0 # Just above transformer
+    tr_top_y = center_drop_y + 40.0
     tr_radius = 14.0
 
-    breaker_y = mv_bus_y + mv_breaker_offset
-    switch_y = breaker_y + mv_switch_gap
-    equip_y = switch_y + mv_switch_h + mv_chain_gap
-    tr_top_y = equip_y + mv_to_tr_gap
-
-    # ---------------------------------------------------------------------
-    # CHANGED: Moved Busbar UP (reduced gap from 80 to 50)
-    # ---------------------------------------------------------------------
+    # LV Busbar
     bus_y = tr_top_y + tr_radius * 2 + 50.0
-
-    # ---------------------------------------------------------------------
-    # CHANGED: Increased PCS gap (from 32 to 75) to fit AC switch
-    # ---------------------------------------------------------------------
+    
+    # PCS
     pcs_bus_gap = _safe_float(layout_params.get("pcs_bus_gap"), 75.0)
     pcs_y = bus_y + pcs_bus_gap
 
@@ -790,6 +882,9 @@ def render_sld_pro_svg(
     battery_x = skid_x + battery_pad
     battery_w = diagram_width - battery_pad * 2
 
+    # -------------------------------------------------------------------------
+    # Layout DC Block / Summary
+    # -------------------------------------------------------------------------
     if compact_mode:
         dc_bus_y = pcs_y + pcs_box_h + 30
         skid_h = max(360.0, dc_bus_y - skid_y + 50)
@@ -988,193 +1083,137 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     hv_bus_left = mv_center_x - hv_bus_span / 2
     hv_bus_right = mv_center_x + hv_bus_span / 2
 
-    terminal_y = skid_y + max(56.0, skid_pad)
-    terminal_left_x = hv_bus_left
-    terminal_right_x = hv_bus_right
-    dwg.add(dwg.text(to_switchgear, insert=(terminal_left_x - 10, terminal_y - 18), class_="label"))
-    dwg.add(dwg.text(to_other_rmu, insert=(terminal_right_x + 10, terminal_y - 18), class_="label", text_anchor="end"))
-
-    busbar_left_x = hv_bus_left
-    busbar_right_x = hv_bus_right
-    dwg.add(dwg.line((busbar_left_x, mv_bus_y), (busbar_right_x, mv_bus_y), class_="thick"))
+    # Draw MV Busbar
+    dwg.add(dwg.line((hv_bus_left, mv_bus_y), (hv_bus_right, mv_bus_y), class_="thick"))
 
     node_fill = label_color
     switch_contact_r = _safe_float(layout_params.get("switch_contact_r"), 2.4)
-    switch_contact_bar_len = _safe_float(layout_params.get("switch_contact_bar_len"), 10.0)
-    switch_contact_circle_r = _safe_float(layout_params.get("switch_contact_circle_r"), 0.0)
-    switch_contact_circle_gap = _safe_float(layout_params.get("switch_contact_circle_gap"), 1.0)
-    ground_contact_bar_len = _safe_float(layout_params.get("ground_switch_contact_bar_len"), switch_contact_bar_len)
     mv_bus_node_r = _safe_float(layout_params.get("mv_bus_node_r"), 3.0)
-    mv_bus_x_offset = _safe_float(layout_params.get("mv_bus_x_offset"), 8.0)
-    mv_bus_x_size = _safe_float(layout_params.get("mv_bus_x_size"), 6.0)
+    
+    # -------------------------------------------------------------------------
+    # FEEDERS (Left / Right) - UPWARD
+    # -------------------------------------------------------------------------
+    # Topology: Bus -> Switch (LBS) -> Node -> (Left: Earth, Right: VPIS) -> Arrow
+    
+    feeder_xs = [hv_bus_left, hv_bus_right]
+    feeder_labels = [to_switchgear, to_other_rmu]
+    
+    for i, x_pos in enumerate(feeder_xs):
+        # 1. Bus Connection
+        _draw_solid_node(dwg, x_pos, mv_bus_y, mv_bus_node_r, node_fill)
+        
+        # 2. Line Up to Switch
+        switch_y = mv_bus_y - 20
+        _draw_line_anchored(dwg, (x_pos, mv_bus_y), (x_pos, switch_y), class_="thin")
+        
+        # 3. LBS Switch (Blade opens to right)
+        # Fixed contact at switch_y
+        dwg.add(dwg.circle(center=(x_pos, switch_y), r=switch_contact_r, class_="outline", fill="none"))
+        blade_len = 12.0
+        # Open blade angled right-up
+        dwg.add(dwg.line((x_pos, switch_y + blade_len), (x_pos + 6, switch_y + 4), class_="thin"))
+        
+        # 4. Line Up from Switch base to Node
+        node_y = switch_y - 20
+        _draw_line_anchored(dwg, (x_pos, switch_y + blade_len), (x_pos, node_y), class_="thin") # Wait, LBS is usually blade connected to bus or line?
+        # Re-reading symbol: Standard LBS in single line. 
+        # Let's draw: Line from bus -> Switch Base. Switch Blade -> Top Contact. 
+        # Actually in diagram 1: Bus -> vertical line -> switch blade (pivot at bottom) -> top contact.
+        
+        # Pivot at bottom (connected to bus)
+        switch_pivot_y = mv_bus_y - 10
+        switch_top_y = switch_pivot_y - 12
+        _draw_line_anchored(dwg, (x_pos, mv_bus_y), (x_pos, switch_pivot_y), class_="thin")
+        # Blade
+        dwg.add(dwg.line((x_pos, switch_pivot_y), (x_pos + 6, switch_top_y + 2), class_="thin"))
+        # Top contact
+        dwg.add(dwg.line((x_pos - 3, switch_top_y), (x_pos + 3, switch_top_y), class_="thin"))
+        
+        # 5. Node for Earth/VPIS
+        node_y = switch_top_y - 15
+        _draw_line_anchored(dwg, (x_pos, switch_top_y), (x_pos, node_y), class_="thin")
+        _draw_solid_node(dwg, x_pos, node_y, 2.0, node_fill)
+        
+        # 6. Earth Switch (Left)
+        _draw_earth_switch_lateral(dwg, x_pos, node_y, side='left')
+        
+        # 7. VPIS (Right)
+        _draw_vpis_symbol(dwg, x_pos, node_y, side='right')
+        
+        # 8. Line Up to Arrow
+        arrow_y = feeder_top_y
+        _draw_line_anchored(dwg, (x_pos, node_y), (x_pos, arrow_y), class_="thin")
+        _draw_arrow_up(dwg, x_pos, arrow_y)
+        
+        # Label
+        align = "start" if i == 0 else "end"
+        label_x = x_pos - 10 if i == 0 else x_pos + 10
+        dwg.add(dwg.text(feeder_labels[i], insert=(label_x, arrow_y - 10), class_="label", text_anchor=align))
 
-    def _draw_open_switches_vertical(
-        dwg,
-        x: float,
-        y_top: float,
-        y_bottom: float,
-        switches: list[dict],
-        line_class: str,
-        contact_style: str,
-        contact_r: float,
-        contact_fill: str,
-    ) -> None:
-        if y_bottom < y_top:
-            y_top, y_bottom = y_bottom, y_top
-        current_y = y_top
-        for sw in sorted(switches, key=lambda item: item.get("y", 0.0)):
-            pivot_y = _safe_float(sw.get("y"), current_y)
-            pivot_y = min(max(pivot_y, current_y + 1.0), y_bottom - 1.0)
-
-            gap = max(4.0, _safe_float(sw.get("gap"), 6.0))
-            blade_dx = max(6.0, _safe_float(sw.get("blade_dx"), gap * 1.2))
-            blade_dy = max(3.0, _safe_float(sw.get("blade_dy"), gap * 0.6))
-            contact_bar_len = _safe_float(sw.get("contact_bar_len"), 0.0)
-            contact_circle_r = _safe_float(sw.get("contact_circle_r"), 0.0)
-            contact_circle_gap = _safe_float(sw.get("contact_circle_gap"), 1.0)
-
-            _draw_line_anchored(dwg, (x, current_y), (x, pivot_y), class_=line_class, start_anchor=(x, current_y), end_anchor=(x, pivot_y))
-            dwg.add(dwg.line((x, pivot_y), (x + blade_dx, pivot_y + blade_dy), class_=line_class))
-
-            contact_y = min(y_bottom, pivot_y + gap)
-            if contact_style == "cross":
-                _draw_breaker_x(dwg, x, contact_y, contact_r * 2.0)
-            elif contact_style == "dot":
-                _draw_solid_node(dwg, x, contact_y, contact_r, contact_fill)
-
-            if contact_bar_len > 0:
-                _draw_contact_bar(dwg, x, contact_y, contact_bar_len, line_class)
-            if contact_circle_r > 0:
-                circle_y = contact_y - contact_circle_gap - contact_circle_r
-                _draw_open_circle(dwg, x, circle_y, contact_circle_r, line_class)
-
-            current_y = contact_y
-
-        if current_y < y_bottom:
-            _draw_line_anchored(dwg, (x, current_y), (x, y_bottom), class_=line_class, start_anchor=(x, current_y), end_anchor=(x, y_bottom))
-
-    def _draw_breaker_with_isolators(dwg, x: float, y: float, r: float, bar_len: float, bar_gap: float, line_class: str) -> None:
-        half = bar_len / 2
-        dwg.add(dwg.line((x - half, y - bar_gap), (x + half, y - bar_gap), class_=line_class))
-        dwg.add(dwg.line((x - half, y + bar_gap), (x + half, y + bar_gap), class_=line_class))
-        _draw_breaker_circle(dwg, x, y, r)
-
-    incoming_span = mv_bus_y - terminal_y
-    incoming_breaker_y = terminal_y + incoming_span * 0.35
-    incoming_ground_y = terminal_y + incoming_span * 0.60
-    incoming_disconnector_offset = _safe_float(layout_params.get("rmu_disconnector_offset"), 16.0)
-    incoming_disconnector_y = mv_bus_y - incoming_disconnector_offset
-
-    incoming_gap = _safe_float(layout_params.get("rmu_switch_gap"), 7.0)
-    incoming_blade_dx = abs(_safe_float(layout_params.get("rmu_switch_blade_dx"), 10.0))
-    incoming_breaker_r = _safe_float(layout_params.get("rmu_breaker_r"), 6.0)
-    incoming_bar_len = _safe_float(layout_params.get("rmu_breaker_bar_len"), 14.0)
-    incoming_bar_gap = _safe_float(layout_params.get("rmu_breaker_bar_gap"), 6.0)
-    incoming_ground_branch = _safe_float(layout_params.get("rmu_ground_branch"), 16.0)
-    incoming_ground_len = _safe_float(layout_params.get("rmu_ground_len"), 18.0)
-    incoming_ground_gap = _safe_float(layout_params.get("rmu_ground_gap"), 6.0)
-    incoming_ground_blade_dx = abs(_safe_float(layout_params.get("rmu_ground_blade_dx"), 8.0))
-
-    for idx, tap_x in enumerate((terminal_left_x, terminal_right_x)):
-        blade_dx = incoming_blade_dx if idx == 0 else -incoming_blade_dx
-        _draw_open_switches_vertical(
-            dwg,
-            tap_x,
-            terminal_y,
-            mv_bus_y,
-            [{"y": incoming_disconnector_y, "gap": incoming_gap, "blade_dx": blade_dx}],
-            line_class="thin",
-            contact_style="none",
-            contact_r=switch_contact_r,
-            contact_fill=node_fill,
-        )
-        _draw_breaker_with_isolators(dwg, tap_x, incoming_breaker_y, incoming_breaker_r, incoming_bar_len, incoming_bar_gap, "thin")
-
-        branch_dir = -1.0 if idx == 0 else 1.0
-        branch_x = tap_x + branch_dir * incoming_ground_branch
-        dwg.add(dwg.line((tap_x, incoming_ground_y), (branch_x, incoming_ground_y), class_="thin"))
-        _draw_open_switches_vertical(
-            dwg,
-            branch_x,
-            incoming_ground_y,
-            incoming_ground_y + incoming_ground_len,
-            [{"y": incoming_ground_y + incoming_ground_len * 0.35, "gap": incoming_ground_gap, "blade_dx": branch_dir * incoming_ground_blade_dx, "contact_bar_len": ground_contact_bar_len}],
-            line_class="thin",
-            contact_style="none",
-            contact_r=switch_contact_r,
-            contact_fill=node_fill,
-        )
-        _draw_ground(dwg, branch_x, incoming_ground_y + incoming_ground_len + 2.0)
-
-    dwg.add(dwg.text("RMU", insert=(terminal_left_x - 26, terminal_y + 10), class_="label"))
-
-    mv_disconnector_offset = _safe_float(layout_params.get("mv_disconnector_offset"), 14.0)
-    mv_disconnector_y = mv_bus_y + mv_disconnector_offset
-
-    mv_breaker_r = _safe_float(layout_params.get("mv_breaker_r"), 6.0)
-    mv_bar_len = _safe_float(layout_params.get("mv_breaker_bar_len"), 14.0)
-    mv_bar_gap = _safe_float(layout_params.get("mv_breaker_bar_gap"), 6.0)
-
-    mv_ground_offset = _safe_float(layout_params.get("mv_ground_offset"), 14.0)
-    mv_ground_y = mv_bus_y + mv_ground_offset
-    mv_ground_branch = _safe_float(layout_params.get("mv_ground_branch"), 16.0)
-    mv_ground_len = _safe_float(layout_params.get("mv_ground_len"), 18.0)
-    mv_ground_gap = _safe_float(layout_params.get("mv_ground_gap"), 6.0)
-    mv_ground_blade_dx = abs(_safe_float(layout_params.get("mv_ground_blade_dx"), 8.0))
-    mv_ground_y = min(max(mv_ground_y, mv_disconnector_y + 6.0), breaker_y - 6.0)
-
-    _draw_open_switches_vertical(
-        dwg,
-        mv_center_x,
-        mv_bus_y,
-        equip_y,
-        [{"y": mv_disconnector_y, "gap": mv_ground_gap, "blade_dx": -abs(mv_ground_blade_dx), "contact_bar_len": switch_contact_bar_len, "contact_circle_r": switch_contact_circle_r, "contact_circle_gap": switch_contact_circle_gap}],
-        line_class="thin",
-        contact_style="none",
-        contact_r=switch_contact_r,
-        contact_fill=node_fill,
-    )
-
-    _draw_solid_node(dwg, mv_center_x, mv_bus_y, mv_bus_node_r, node_fill)
-    _draw_breaker_x(dwg, mv_center_x, mv_bus_y + mv_bus_x_offset, mv_bus_x_size)
-
-    _draw_breaker_with_isolators(dwg, mv_center_x, breaker_y, mv_breaker_r, mv_bar_len, mv_bar_gap, "thin")
-
-    branch_x = mv_center_x - mv_ground_branch
-    dwg.add(dwg.line((mv_center_x, mv_ground_y), (branch_x, mv_ground_y), class_="thin"))
-    _draw_open_switches_vertical(
-        dwg,
-        branch_x,
-        mv_ground_y,
-        mv_ground_y + mv_ground_len,
-        [{"y": mv_ground_y + mv_ground_len * 0.35, "gap": mv_ground_gap, "blade_dx": -abs(mv_ground_blade_dx), "contact_bar_len": ground_contact_bar_len}],
-        line_class="thin",
-        contact_style="none",
-        contact_r=switch_contact_r,
-        contact_fill=node_fill,
-    )
-    _draw_ground(dwg, branch_x, mv_ground_y + mv_ground_len + 2.0)
-
-    equip_span = 60.0
-    dwg.add(dwg.line((mv_center_x - equip_span, equip_y), (mv_center_x + equip_span, equip_y), class_="thin"))
-
-    left_box_x = mv_center_x - equip_span
-    _draw_arrow_box(dwg, left_box_x, equip_y + 6, 14.0, 22.0)
-    _draw_ground(dwg, left_box_x, equip_y + 30)
-
-    ct_y = equip_y + 10
-    for offset in (-12, 0, 12):
-        dwg.add(dwg.circle(center=(mv_center_x + offset, ct_y), r=3.5, class_="outline"))
-
-    right_x = mv_center_x + equip_span
-    _draw_capacitor(dwg, right_x, equip_y + 4, 14.0, 5.0)
-    _draw_breaker_circle(dwg, right_x, equip_y + 16, 6.0)
-    _draw_ground(dwg, right_x, equip_y + 26)
-
-    tr_center_x = gap_center
-    dwg.add(dwg.line((mv_center_x, equip_y), (mv_center_x, tr_top_y - tr_radius), class_="thin"))
-    _draw_triangle_down(dwg, mv_center_x, tr_top_y - tr_radius - 8, 8.0)
-    left_center, right_center = _draw_transformer_symbol(dwg, tr_center_x, tr_top_y, tr_radius)
+    # -------------------------------------------------------------------------
+    # CENTER FEEDER (Transformer) - DOWNWARD
+    # -------------------------------------------------------------------------
+    # Topology: Bus -> Disconnector -> Earth(Top) -> Breaker -> Earth(Bot) -> CT -> Node(Surge/VPIS) -> Transformer
+    
+    cx = mv_center_x
+    
+    # 1. Bus Connection
+    _draw_solid_node(dwg, cx, mv_bus_y, mv_bus_node_r, node_fill)
+    
+    # 2. Disconnector (Isolation)
+    iso_top_y = mv_bus_y + 12
+    iso_pivot_y = iso_top_y + 12
+    
+    _draw_line_anchored(dwg, (cx, mv_bus_y), (cx, iso_top_y), class_="thin")
+    dwg.add(dwg.line((cx - 3, iso_top_y), (cx + 3, iso_top_y), class_="thin")) # Fixed contact
+    dwg.add(dwg.line((cx, iso_pivot_y), (cx + 6, iso_top_y + 2), class_="thin")) # Blade
+    
+    # 3. Earth Switch (Top)
+    earth1_y = iso_pivot_y + 10
+    _draw_line_anchored(dwg, (cx, iso_pivot_y), (cx, earth1_y), class_="thin")
+    _draw_earth_switch_lateral(dwg, cx, earth1_y, side='left')
+    
+    # 4. Circuit Breaker (X)
+    cb_y = earth1_y + 20
+    _draw_line_anchored(dwg, (cx, earth1_y), (cx, cb_y - 6), class_="thin")
+    _draw_breaker_x(dwg, cx, cb_y, 12.0)
+    
+    # 5. Earth Switch (Bottom)
+    earth2_y = cb_y + 20
+    _draw_line_anchored(dwg, (cx, cb_y + 6), (cx, earth2_y), class_="thin")
+    _draw_earth_switch_lateral(dwg, cx, earth2_y, side='left')
+    
+    # 6. CTs (3 circles)
+    ct_y = earth2_y + 15
+    _draw_line_anchored(dwg, (cx, earth2_y), (cx, ct_y - 8), class_="thin")
+    # Draw 3 small circles on the line
+    for offset in [-6, 0, 6]:
+        dwg.add(dwg.circle(center=(cx, ct_y + offset), r=2.5, class_="outline"))
+    _draw_line_anchored(dwg, (cx, ct_y - 8), (cx, ct_y + 8), class_="thin") # Line goes through
+    
+    # 7. Surge / VPIS Node
+    sv_node_y = ct_y + 20
+    _draw_line_anchored(dwg, (cx, ct_y + 8), (cx, sv_node_y), class_="thin")
+    _draw_solid_node(dwg, cx, sv_node_y, 2.0, node_fill)
+    
+    # Surge Arrester (Left)
+    surge_x = cx - 20
+    dwg.add(dwg.line((cx, sv_node_y), (surge_x, sv_node_y), class_="thin"))
+    dwg.add(dwg.line((surge_x, sv_node_y), (surge_x, sv_node_y + 6), class_="thin"))
+    _draw_surge_arrester_symbol(dwg, surge_x, sv_node_y + 6)
+    
+    # VPIS (Right)
+    # Note: Pic 1 shows VPIS on the right for the center feeder too
+    _draw_vpis_symbol(dwg, cx, sv_node_y, side='right')
+    
+    # 8. To Transformer
+    _draw_line_anchored(dwg, (cx, sv_node_y), (cx, tr_top_y - tr_radius), class_="thin")
+    
+    # -------------------------------------------------------------------------
+    # Transformer & Below (UNCHANGED LOGIC, just pos adjustment)
+    # -------------------------------------------------------------------------
+    _draw_triangle_down(dwg, cx, tr_top_y - tr_radius - 8, 8.0)
+    left_center, right_center = _draw_transformer_symbol(dwg, cx, tr_top_y, tr_radius)
 
     tx_lv_spacing = _safe_float(layout_params.get("tx_lv_spacing"), 14.0)
     requested_gap = _safe_float(layout_params.get("lv_bus_gap"), 0.0)
@@ -1185,16 +1224,17 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     tx_lv_spacing = min(18.0, max(12.0, tx_lv_spacing))
 
     tx_lv_start_y = left_center[1] + tr_radius
-    tx_lv_left_start = (tr_center_x - tx_lv_spacing, tx_lv_start_y)
-    tx_lv_right_start = (tr_center_x + tx_lv_spacing, tx_lv_start_y)
-    tx_lv_left = (tr_center_x - tx_lv_spacing, bus_y)
-    tx_lv_right = (tr_center_x + tx_lv_spacing, bus_y)
+    tx_lv_left_start = (cx - tx_lv_spacing, tx_lv_start_y)
+    tx_lv_right_start = (cx + tx_lv_spacing, tx_lv_start_y)
+    tx_lv_left = (cx - tx_lv_spacing, bus_y)
+    tx_lv_right = (cx + tx_lv_spacing, bus_y)
 
     _draw_line_anchored(dwg, tx_lv_left_start, tx_lv_left, class_="thick", start_anchor=tx_lv_left_start, end_anchor=tx_lv_left)
     _draw_line_anchored(dwg, tx_lv_right_start, tx_lv_right, class_="thick", start_anchor=tx_lv_right_start, end_anchor=tx_lv_right)
 
-    tr_text_x = tr_center_x + tr_radius * 2 + 90
-    tr_text_y = max(tr_top_y - tr_radius - 6, equip_y + 8)
+    # Transformer Text (Positioned to the right of transformer)
+    tr_text_x = cx + tr_radius * 2 + 60
+    tr_text_y = tr_top_y - 20
     tr_lines = [
         "Transformer",
         f"{format_kv(spec.mv_voltage_kv)}/{format_v(spec.lv_voltage_v_ll)}",
@@ -1282,23 +1322,14 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         tap = (pcs_center_x, bus_y)
         _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
 
-        # ---------------------------------------------------------------------
         # REVISED AC SWITCH LOGIC
-        # ---------------------------------------------------------------------
+        y_x_mark = bus_y + 35.0  
+        y_switch_pivot = y_x_mark + 22.0
         
-        # 1. Define Y coordinates
-        # The X mark is now the "top" of the switch assembly.
-        y_x_mark = bus_y + 35.0  # Move it down from +12 to +35 (closer to switch area)
-        y_switch_pivot = y_x_mark + 22.0 # The bottom pivot of the blade
-        
-        # Safety check
         if y_switch_pivot > pcs_y - 2:
              y_switch_pivot = pcs_y - 10
              y_x_mark = y_switch_pivot - 22.0
 
-        # 2. Continuous Vertical Line (Bus -> Top of X mark)
-        # The X mark has a size (pcs_ac_x_size). We stop the line at the top of the X.
-        # pcs_ac_x_size is usually 6.0. Half is 3.0.
         _draw_line_anchored(
             dwg,
             tap,
@@ -1308,24 +1339,16 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             end_anchor=(pcs_center_x, y_x_mark - pcs_ac_x_size/2)
         )
 
-        # 3. Draw the X Mark
-        # Replaces the horizontal bar.
         _draw_breaker_x(dwg, pcs_center_x, y_x_mark, pcs_ac_x_size)
 
-        # 4. Draw the Switch Blade
-        # Blade swings from Pivot (bottom) up to the X mark (top).
-        # It shouldn't touch the X mark perfectly (it's open).
-        # The gap top is effectively the bottom of the X mark.
         gap_top_y = y_x_mark + pcs_ac_x_size/2
-        
         blade_dx = -7.0 if pcs_center_x < mv_center_x else 7.0
         dwg.add(dwg.line(
             (pcs_center_x, y_switch_pivot),
-            (pcs_center_x + blade_dx, gap_top_y + 2.0), # +2.0 to leave a tiny visual gap
+            (pcs_center_x + blade_dx, gap_top_y + 2.0),
             class_="thin"
         ))
 
-        # 5. Vertical Drop from Pivot to PCS
         _draw_line_anchored(
             dwg,
             (pcs_center_x, y_switch_pivot),
@@ -1351,7 +1374,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
 
         forced_symbol_h = _safe_float(layout_params.get("dc_switch_symbol_h"), 0.0)
         
-        # 计算两个虚线框的中间空隙位置，用于放置三角形
         skid_bottom_y = skid_y + skid_h
         gap_mid_y = (skid_bottom_y + battery_y) / 2
 
@@ -1371,10 +1393,8 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             auto_symbol_h = min(50.0, max(20.0, raw_h * 1.0))
             symbol_h = forced_symbol_h if forced_symbol_h > 0 else auto_symbol_h
 
-            # DC Switch + Fuse: 线条一直拉到 branch_bus_y，穿过 gap
             _draw_dc_switch(dwg, line_x, dc_top, symbol_h, lead_end_y=branch_bus_y)
 
-            # 在上框和下框的空隙中间画相对的三角形
             _draw_triangle_pair(dwg, line_x, gap_mid_y, dc_triangle_size, dc_triangle_gap)
 
             if block_count > 1:
@@ -1386,8 +1406,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
                 dc_in = (line_x, block_y)
 
                 _draw_line_anchored(dwg, (line_x, branch_bus_y), dc_in, class_="thin", start_anchor=(line_x, branch_bus_y), end_anchor=dc_in)
-                # 删除实心圆点连接
-                # _draw_node(dwg, dc_in[0], dc_in[1], dc_node_r, node_fill)
 
                 dwg.add(dwg.rect(insert=(line_x - pcs_box_w * 0.4, block_y), size=(pcs_box_w * 0.8, dc_block_h), class_="outline"))
 
