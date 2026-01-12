@@ -1283,50 +1283,49 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
 
         # ---------------------------------------------------------------------
-        # REVISED AC SWITCH LOGIC WITH WIDER SPACING
+        # REVISED AC SWITCH LOGIC
         # ---------------------------------------------------------------------
         
-        # New Spacing Logic
-        y_x_mark = bus_y + 12.0  # Gives space for line from bus
-        y_switch_gap_top = bus_y + 32.0 # Space between X and Switch
-        y_switch_pivot = bus_y + 54.0   # Switch Blade pivot
+        # 1. Define Y coordinates
+        # The X mark is now the "top" of the switch assembly.
+        y_x_mark = bus_y + 35.0  # Move it down from +12 to +35 (closer to switch area)
+        y_switch_pivot = y_x_mark + 22.0 # The bottom pivot of the blade
         
-        # Safety: Ensure pivot isn't lower than PCS top
+        # Safety check
         if y_switch_pivot > pcs_y - 2:
              y_switch_pivot = pcs_y - 10
-             y_switch_gap_top = y_switch_pivot - 14.0
+             y_x_mark = y_switch_pivot - 22.0
 
-        # 1. Draw Line from Bus to X
+        # 2. Continuous Vertical Line (Bus -> Top of X mark)
+        # The X mark has a size (pcs_ac_x_size). We stop the line at the top of the X.
+        # pcs_ac_x_size is usually 6.0. Half is 3.0.
         _draw_line_anchored(
             dwg,
             tap,
-            (pcs_center_x, y_x_mark - 3),
+            (pcs_center_x, y_x_mark - pcs_ac_x_size/2), 
             class_="thin",
             start_anchor=tap,
-            end_anchor=(pcs_center_x, y_x_mark - 3)
+            end_anchor=(pcs_center_x, y_x_mark - pcs_ac_x_size/2)
         )
 
-        # 2. Draw X Mark (Breaker)
+        # 3. Draw the X Mark
+        # Replaces the horizontal bar.
         _draw_breaker_x(dwg, pcs_center_x, y_x_mark, pcs_ac_x_size)
 
-        # 3. Draw Line from X to Switch Gap Top
-        _draw_line_anchored(
-            dwg,
-            (pcs_center_x, y_x_mark + 3),
-            (pcs_center_x, y_switch_gap_top),
-            class_="thin",
-            start_anchor=(pcs_center_x, y_x_mark + 3),
-            end_anchor=(pcs_center_x, y_switch_gap_top)
-        )
+        # 4. Draw the Switch Blade
+        # Blade swings from Pivot (bottom) up to the X mark (top).
+        # It shouldn't touch the X mark perfectly (it's open).
+        # The gap top is effectively the bottom of the X mark.
+        gap_top_y = y_x_mark + pcs_ac_x_size/2
         
-        # 4. Draw small horizontal bar at the top of the gap
+        blade_dx = -7.0 if pcs_center_x < mv_center_x else 7.0
         dwg.add(dwg.line(
-            (pcs_center_x - 3, y_switch_gap_top), 
-            (pcs_center_x + 3, y_switch_gap_top), 
+            (pcs_center_x, y_switch_pivot),
+            (pcs_center_x + blade_dx, gap_top_y + 2.0), # +2.0 to leave a tiny visual gap
             class_="thin"
         ))
 
-        # 5. Draw Line from Pivot to PCS Top (Vertical Drop)
+        # 5. Vertical Drop from Pivot to PCS
         _draw_line_anchored(
             dwg,
             (pcs_center_x, y_switch_pivot),
@@ -1335,14 +1334,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             start_anchor=(pcs_center_x, y_switch_pivot),
             end_anchor=(pcs_center_x, pcs_y)
         )
-        
-        # 6. Draw Blade (Pivots at bottom, leans left/upwards)
-        blade_dx = -7.0 if pcs_center_x < mv_center_x else 7.0 
-        dwg.add(dwg.line(
-            (pcs_center_x, y_switch_pivot),
-            (pcs_center_x + blade_dx, y_switch_gap_top),
-            class_="thin"
-        ))
 
     # =============================================================================
     # 下方：Battery Storage Bank（compact_mode vs full）
