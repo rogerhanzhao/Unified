@@ -1431,25 +1431,39 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         contact_y = min(contact_y, pcs_y - 18)
 
         # 1) 上段竖线：母排 → contact_y
+        # 母排 → X
         _draw_line_anchored(
         dwg,
         tap,
-        (pcs_center_x, contact_y),
+        (pcs_center_x, x_mark_y),
         class_="thin",
         start_anchor=tap,
-        end_anchor=(pcs_center_x, contact_y),
+        end_anchor=(pcs_center_x, x_mark_y),
         )
 
+       # X → join_y_1（再往下走一点，避免横线贴着 X）
+        _draw_line_anchored(
+        dwg,
+        (pcs_center_x, x_mark_y),
+        (pcs_center_x, join_y_1),
+        class_="thin",
+        start_anchor=(pcs_center_x, x_mark_y),
+        end_anchor=(pcs_center_x, join_y_1),
+      )
        # 2) X（米字）放在 contact_y（= 原来那根横线的位置）
         _draw_breaker_x(dwg, pcs_center_x, contact_y, pcs_ac_x_size)
         _draw_solid_node(dwg, tap[0], tap[1], pcs_tap_node_r, node_fill)
-        x_mark_y = contact_y
+        # 2) X（米字）放在“原来那根横线”的位置：用 pcs_ac_switch_offset 来控制
+        x_mark_y = bus_y + pcs_ac_switch_offset
+        x_mark_y = max(x_mark_y, bus_y + 8)       # 别贴母排太近
+        x_mark_y = min(x_mark_y, pcs_y - 26)      # 别压到 PCS 框
+
         _draw_breaker_x(dwg, pcs_center_x, x_mark_y, pcs_ac_x_size)
-        # 3) 画“竖直开口刀闸”（不再拐到 PCS 侧边！）
-        # 用你现有变量做定位/比例映射
-        gap = max(3.0, pcs_ac_switch_gap)                 # 开口间隙基准
-        blade_dx = max(6.0, abs(pcs_ac_switch_blade_dx))  # 刀片水平长度（沿用你的变量）
-        blade_side = -1  # 图1是向左开；要向右就改成 +1
+
+        # 3) 分支去刀闸的高度：必须比 X 再低一点（否则就会出现你图里的那截横线贴着X）
+        x_to_knife_gap = max(10.0, pcs_ac_switch_gap * 2.0)   # 10~20 比较像参考图
+        join_y_1 = x_mark_y + x_to_knife_gap
+        join_y_1 = min(join_y_1, pcs_y - 14)                  # 防止压到 PCS 顶边
 
         # 固定触点（横杠）y：用 pcs_ac_switch_offset 作为“从母排向下的距离”
         contact_y = bus_y + pcs_ac_switch_offset
@@ -1457,7 +1471,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         # 约束：触点必须在 X 的下方，否则会叠在一起
         min_contact_y = x_mark_y + pcs_ac_x_size * 0.8 + 6
         if contact_y < min_contact_y:
-            contact_y = min_contact_y
+           contact_y = min_contact_y
 
         # 动触点/刀片铰接点（pivot）在触点下方，形成“断开间隙”
         pivot_y = contact_y + gap * 2.0
@@ -1473,28 +1487,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         # 刀片尖端 y：靠近触点但不接触（形成“断开”观感）
         blade_tip_y = contact_y + gap * 0.6
         blade_tip_x = pcs_center_x + blade_side * blade_dx
-
-        # a) 上段竖线：母排 → 固定触点（到这里为止）
-        _draw_line_anchored(
-            dwg,
-            tap,
-            (pcs_center_x, contact_y),
-            class_="thin",
-            start_anchor=tap,
-            end_anchor=(pcs_center_x, contact_y),
-        )
-
-        # c) 下段竖线：从 pivot 往下到 PCS 顶部（注意：这里从 pivot 开始，制造“断开间隙”）
-        _draw_line_anchored(
-            dwg,
-            (pcs_center_x, pivot_y),
-            pcs_in,
-            class_="thin",
-            start_anchor=(pcs_center_x, pivot_y),
-            end_anchor=pcs_in,
-        )
-
-        # d) 斜刀片：从 pivot 指向触点附近（但不接触触点横杠）
+        # c) 斜刀片：从 pivot 指向触点附近（但不接触触点横杠）
         dwg.add(dwg.line((pcs_center_x, pivot_y), (blade_tip_x, blade_tip_y), class_="thin"))
 
 
