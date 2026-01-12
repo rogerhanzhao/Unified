@@ -306,7 +306,6 @@ def _draw_fuse(dwg, x: float, y: float, w: float, h: float) -> None:
             class_="thin",
         )
     )
-
 def _draw_battery_column(dwg, x: float, y: float, h: float, rows: int) -> None:
     if rows <= 0 or h <= 0:
         return
