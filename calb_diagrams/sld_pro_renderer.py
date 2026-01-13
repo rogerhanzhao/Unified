@@ -295,11 +295,45 @@ def _draw_cable_termination_down(dwg, x: float, y: float, size: float = 8.0) -> 
     # Line continuing down from the base of the bottom triangle
     dwg.add(dwg.line((x, y + 2 * height), (x, y + 2 * height + 4), class_="thin"))
 
-def _draw_earth_switch_lateral(dwg, x: float, y: float, side: str = 'left') -> None:
+def _draw_lbs_symbol_feeder(dwg, x: float, y: float, open_right: bool = True) -> dict:
     """
-    画侧向接地开关（用于中间变压器柜）。
-    x, y: 连接点（T接点）
-    side: 'left' or 'right'
+    绘制 RMU 进出线负荷开关 (LBS) - UPWARD VERSION:
+    - 顶部：短横线 (静触头 Fixed Contact)
+    - 底部：小圆圈 (Pivot) + 短横线 (Base)
+    - 刀闸：从顶部向下断开 (Open state)
+    *Correction*: User requested "Blade moves to TOP short line, Bottom is circle+line".
+    This implies the Blade *originates* from the top (bus side) or connects to it?
+    Standard LBS: Pivot usually at bottom.
+    User instruction: "Gate knife (blade) moved to top short horizontal line position".
+    Interpretation: Pivot is at TOP. Blade swings DOWN. Bottom is Circle+Line.
+    """
+    h = 24.0
+    # y is the bottom coordinate (Circle + Line)
+    top_y = y - h
+    
+    # Bottom: Circle + Line
+    r_pivot = 2.5
+    dwg.add(dwg.circle(center=(x, y), r=r_pivot, class_="outline", fill="none"))
+    dwg.add(dwg.line((x - 6, y), (x + 6, y), class_="thin"))
+    
+    # Top: Fixed Contact (Pivot of blade per user req?)
+    # "Blade moved to top short horizontal line position" -> Blade pivot is top.
+    dwg.add(dwg.line((x - 4, top_y), (x + 4, top_y), class_="thin"))
+    
+    # Blade
+    # Pivot at Top (top_y)
+    # End near Bottom (y) but open
+    dx = 8.0 if open_right else -8.0
+    dwg.add(dwg.line((x, top_y), (x + dx, y - 6), class_="thin"))
+    
+    return {"top": top_y, "bottom": y}
+
+
+def _draw_earth_switch_feeder(dwg, x: float, y: float, side: str = 'left') -> None:
+    """
+    画进出线柜的接地开关。
+    结构：横向引出线 -> 竖直静触头 -> 下方接地 -> 刀闸（下支点，向上闭合）
+    刀闸方向：向左（远离触头）。
     """
     arm_len = 16.0
     direction = -1.0 if side == 'left' else 1.0
@@ -308,62 +342,21 @@ def _draw_earth_switch_lateral(dwg, x: float, y: float, side: str = 'left') -> N
     end_x = x + direction * arm_len
     dwg.add(dwg.line((x, y), (end_x, y), class_="thin"))
     
-    # 2. Fixed contact (small vertical bar)
+    # 2. Fixed contact (small vertical bar) at end_x, y
     dwg.add(dwg.line((end_x, y - 3), (end_x, y + 3), class_="thin"))
     
-    # 3. Ground Symbol (Below)
-    ground_y = y + 16.0
-    pivot_x = end_x
-    _draw_ground(dwg, pivot_x, ground_y)
+    # 3. Ground Pivot (Below)
+    ground_pivot_y = y + 14.0
     
-    # Line up from ground
-    dwg.add(dwg.line((pivot_x, ground_y), (pivot_x, ground_y - 4), class_="thin"))
+    # Line from ground pivot up towards contact (but stop short)
+    _draw_ground(dwg, end_x, ground_pivot_y + 4)
+    dwg.add(dwg.line((end_x, ground_pivot_y), (end_x, ground_pivot_y + 4), class_="thin"))
     
     # 4. Blade (Open state)
-    # Pivot is at ground side, blade moves UP towards contact
-    # Angled away to show open
-    blade_pivot_y = ground_y - 4
-    dwg.add(dwg.line((pivot_x, blade_pivot_y), (pivot_x - direction * 6, blade_pivot_y - 10), class_="thin"))
-
-
-def _draw_vpis_symbol(dwg, x: float, y: float, side: str = 'right') -> None:
-    """
-    带电显示器 (VPIS) - 中间柜用: 横向引出 -> 向下竖线 -> 电容(横杠) -> 指示灯(圆圈X) -> 接地
-    """
-    arm_len = 24.0 
-    direction = 1.0 if side == 'right' else -1.0
-    
-    # 1. Horizontal arm (Main Bus to Side)
-    turn_x = x + direction * arm_len
-    dwg.add(dwg.line((x, y), (turn_x, y), class_="thin"))
-    
-    # 2. Vertical Line Down to Capacitor
-    cap_top_y = y + 8.0
-    dwg.add(dwg.line((turn_x, y), (turn_x, cap_top_y), class_="thin"))
-    
-    # 3. Capacitor (Horizontal plates)
-    cap_w = 12.0
-    # Top plate
-    dwg.add(dwg.line((turn_x - cap_w/2, cap_top_y), (turn_x + cap_w/2, cap_top_y), class_="thin"))
-    # Bottom plate (gap = 4)
-    cap_bot_y = cap_top_y + 4.0
-    dwg.add(dwg.line((turn_x - cap_w/2, cap_bot_y), (turn_x + cap_w/2, cap_bot_y), class_="thin"))
-    
-    # 4. Line down to Indicator
-    circle_y = cap_bot_y + 16.0
-    dwg.add(dwg.line((turn_x, cap_bot_y), (turn_x, circle_y - 6.0), class_="thin"))
-    
-    # 5. Circle with X (Indicator)
-    r = 6.0
-    dwg.add(dwg.circle(center=(turn_x, circle_y), r=r, class_="outline"))
-    # X inside
-    d = r * 0.6
-    dwg.add(dwg.line((turn_x - d, circle_y - d), (turn_x + d, circle_y + d), class_="thin"))
-    dwg.add(dwg.line((turn_x - d, circle_y + d), (turn_x + d, circle_y - d), class_="thin"))
-    
-    # 6. Ground
-    dwg.add(dwg.line((turn_x, circle_y + r), (turn_x, circle_y + r + 4), class_="thin"))
-    _draw_ground(dwg, turn_x, circle_y + r + 4)
+    # Pivot at bottom (ground_pivot_y), moves UP towards contact (y).
+    # To show open: blade leans LEFT (if direction is left).
+    blade_len = 12.0
+    dwg.add(dwg.line((end_x, ground_pivot_y), (end_x - direction * 6, ground_pivot_y - blade_len), class_="thin"))
 
 
 def _draw_vpis_symbol_feeder(dwg, x: float, y: float, side: str = 'right') -> None:
@@ -395,7 +388,7 @@ def _draw_vpis_symbol_feeder(dwg, x: float, y: float, side: str = 'right') -> No
     
     # 6. Ground
     _draw_ground(dwg, bend_x, ind_y + 6)
-
+    dwg.add(dwg.line((bend_x, ind_y + 6), (bend_x, ind_y + 10), class_="thin")) # Small extension
 
 def _draw_surge_arrester_symbol(dwg, x: float, y: float) -> None:
     """
@@ -421,65 +414,6 @@ def _draw_surge_arrester_symbol(dwg, x: float, y: float) -> None:
     # Ground
     dwg.add(dwg.line((x, box_y + h), (x, box_y + h + 4), class_="thin"))
     _draw_ground(dwg, x, box_y + h + 4)
-
-def _draw_lbs_symbol(dwg, x: float, y_bottom: float, h: float = 20.0, open_right: bool = True) -> dict:
-    """
-    绘制负荷开关 LBS (Load Break Switch):
-    - 底部：小圆圈（Pivot） + 短横线（Base）
-    - 顶部：短横线（Fixed Contact）
-    - 中间：刀闸
-    """
-    y_top = y_bottom - h
-    r_pivot = 2.5
-    
-    # Bottom Pivot (Circle)
-    dwg.add(dwg.circle(center=(x, y_bottom), r=r_pivot, class_="outline"))
-    # Bottom Base Line (horizontal through circle)
-    dwg.add(dwg.line((x - 6, y_bottom), (x + 6, y_bottom), class_="thin"))
-    
-    # Top Contact Bar
-    dwg.add(dwg.line((x - 4, y_top), (x + 4, y_top), class_="thin"))
-    
-    # Blade (Open)
-    # Starts from pivot top
-    blade_start_y = y_bottom - r_pivot
-    dx = 8.0 if open_right else -8.0
-    dwg.add(dwg.line((x, blade_start_y), (x + dx, y_top + 6), class_="thin"))
-    
-    return {"top": y_top, "bottom": y_bottom}
-
-def _draw_earth_switch_feeder(dwg, x: float, y: float, side: str = 'left') -> None:
-    """
-    画进出线柜的接地开关。
-    结构：横向引出线 -> 竖直静触头 -> 下方接地 -> 刀闸（下支点，向上闭合）
-    刀闸方向：向左（远离触头）。
-    """
-    arm_len = 16.0
-    direction = -1.0 if side == 'left' else 1.0
-    
-    # 1. Horizontal arm (from main line)
-    end_x = x + direction * arm_len
-    dwg.add(dwg.line((x, y), (end_x, y), class_="thin"))
-    
-    # 2. Fixed contact (small vertical bar) at end_x, y
-    dwg.add(dwg.line((end_x, y - 3), (end_x, y + 3), class_="thin"))
-    
-    # 3. Ground Pivot (Below)
-    ground_pivot_y = y + 14.0
-    
-    # Line from ground pivot up towards contact (but stop short)
-    # Actually, the pivot is connected to ground.
-    _draw_ground(dwg, end_x, ground_pivot_y + 4)
-    dwg.add(dwg.line((end_x, ground_pivot_y), (end_x, ground_pivot_y + 4), class_="thin"))
-    
-    # 4. Blade (Open state)
-    # Pivot at bottom (ground_pivot_y), moves UP towards contact (y).
-    # To show open: blade leans LEFT (if direction is left).
-    blade_len = 12.0
-    # Blade starts at pivot
-    # Leans further left
-    dwg.add(dwg.line((end_x, ground_pivot_y), (end_x - 6, ground_pivot_y - blade_len), class_="thin"))
-
 
 # =============================================================================
 # AC Switch Helper
@@ -1212,7 +1146,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     mv_bus_node_r = _safe_float(layout_params.get("mv_bus_node_r"), 3.0)
     
     # -------------------------------------------------------------------------
-    # FEEDERS (Left / Right) - UPWARD
+    # FEEDERS (Left / Right) - UPWARD - Ref: Image 4
     # -------------------------------------------------------------------------
     # Topology: Bus -> Switch (LBS) -> Node -> (Left: Earth, Right: VPIS) -> Arrow
     
@@ -1254,17 +1188,16 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         dwg.add(dwg.text(feeder_labels[i], insert=(label_x, arrow_y - 10), class_="label", text_anchor=align))
 
     # -------------------------------------------------------------------------
-    # CENTER FEEDER (Transformer) - DOWNWARD
+    # CENTER FEEDER (Transformer) - DOWNWARD - Ref: Image 4
     # -------------------------------------------------------------------------
-    # Topology: Bus -> Breaker (X) -> SPDT(Iso + Earth) -> Branch(Surge/VPIS) -> CT -> Transformer
+    # Topology: Bus -> X(Breaker) -> Switch(Iso) -> Earth -> Branch(VPIS/Surge) -> CT -> Cable -> Transformer
     
     cx = mv_center_x
     
     # 1. Bus Connection
     _draw_solid_node(dwg, cx, mv_bus_y, mv_bus_node_r, node_fill)
     
-    # 2. Circuit Breaker (X)
-    # Immediately below the bus connection as per Diagram 2
+    # 2. Circuit Breaker (X) - Immediate
     cb_y = mv_bus_y + 20
     _draw_line_anchored(dwg, (cx, mv_bus_y), (cx, cb_y - 6), class_="thin")
     _draw_breaker_x(dwg, cx, cb_y, 12.0)
