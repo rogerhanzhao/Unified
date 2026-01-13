@@ -295,12 +295,13 @@ def _draw_cable_termination_down(dwg, x: float, y: float, size: float = 8.0) -> 
     # Line continuing down from the base of the bottom triangle
     dwg.add(dwg.line((x, y + 2 * height), (x, y + 2 * height + 4), class_="thin"))
 
-def _draw_lbs_symbol_feeder(dwg, x: float, y: float, open_right: bool = True) -> dict:
+def _draw_lbs_symbol(dwg, x: float, y: float, open_right: bool = True) -> dict:
     """
-    绘制 RMU 进出线负荷开关 (LBS) - UPWARD VERSION (Final Corrected):
-    - 顶部：短横线 (静触头 / 刀闸支点位置，但无实体支点圆)
-    - 底部：小圆圈 + **下方切线 (Tangent Line)**
-    - 刀闸：从顶部向下断开 (Open state)，连接到顶部横线
+    绘制 RMU 进出线负荷开关 (LBS) - 修正版:
+    - 顶部：短横线 (静触头 Fixed Contact)
+    - 底部：小圆圈 (Pivot) + **圆圈下方的短切线**
+    - 刀闸：从顶部连接点延伸，向下断开 (Open state)
+    x, y: 底部圆圈中心坐标
     """
     h = 24.0
     # y is the bottom coordinate center
@@ -308,17 +309,20 @@ def _draw_lbs_symbol_feeder(dwg, x: float, y: float, open_right: bool = True) ->
     
     r_pivot = 2.5
     
-    # Bottom: Circle + Tangent Line below
+    # Bottom 1: Circle
     dwg.add(dwg.circle(center=(x, y), r=r_pivot, class_="outline", fill="none"))
-    tangent_y = y + r_pivot + 1.0 # Tangent line below circle
+    
+    # Bottom 2: Tangent Line (Below Circle) - Touching bottom of circle
+    tangent_y = y + r_pivot
     dwg.add(dwg.line((x - 6, tangent_y), (x + 6, tangent_y), class_="thin"))
     
     # Top: Fixed Contact Bar
     dwg.add(dwg.line((x - 4, top_y), (x + 4, top_y), class_="thin"))
     
-    # Blade: Starts from Top Contact, ends near Bottom Circle
+    # Blade: Pivot at Top Contact, ends near Bottom Circle
     dx = 8.0 if open_right else -8.0
-    dwg.add(dwg.line((x, top_y), (x + dx, y - 6), class_="thin"))
+    # Draw line from top contact center to a point offset from bottom
+    dwg.add(dwg.line((x, top_y), (x + dx, y - r_pivot - 2), class_="thin"))
     
     return {"top": top_y, "bottom": y}
 
@@ -1148,7 +1152,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     mv_bus_node_r = _safe_float(layout_params.get("mv_bus_node_r"), 3.0)
     
     # -------------------------------------------------------------------------
-    # FEEDERS (Left / Right) - UPWARD
+    # FEEDERS (Left / Right) - UPWARD - Ref: Image 4
     # -------------------------------------------------------------------------
     # Topology: Bus -> Switch (LBS) -> Node -> (Left: Earth, Right: VPIS) -> Arrow
     
@@ -1190,7 +1194,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         dwg.add(dwg.text(feeder_labels[i], insert=(label_x, arrow_y - 10), class_="label", text_anchor=align))
 
     # -------------------------------------------------------------------------
-    # CENTER FEEDER (Transformer) - DOWNWARD
+    # CENTER FEEDER (Transformer) - DOWNWARD - Ref: Image 4
     # -------------------------------------------------------------------------
     # Topology: Bus -> X(Breaker) -> Switch(Iso) -> SPDT_Earth -> Branch(VPIS/Surge) -> CT -> Cable -> Transformer
     # NEW LOGIC: Bus -> Breaker(X) -> Disconnector -> SPDT Earth Switch
@@ -1517,7 +1521,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         block_gap_y = 16.0
         block_area_w = max(220.0, battery_w - 80.0)
         dc_box_w = min(160.0, max(110.0, (block_area_w - (block_cols - 1) * block_gap_x) / block_cols))
-        dc_box_h = 54
         block_grid_w = block_cols * dc_box_w + max(0, block_cols - 1) * block_gap_x
         block_grid_h = block_rows * dc_box_h + max(0, block_rows - 1) * block_gap_y
         dc_box_x_start = battery_x + (battery_w - block_grid_w) / 2
