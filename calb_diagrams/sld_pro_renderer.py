@@ -331,7 +331,7 @@ def _draw_vpis_symbol(dwg, x: float, y: float, side: str = 'right') -> None:
     带电显示器 (VPIS): 横向引出 -> 向下竖线 -> 电容 -> 节点 -> 圆圈X -> 接地
     **修改**：实现 L 型连接，电容在竖线上。
     """
-    arm_len = 20.0 
+    arm_len = 24.0 
     direction = 1.0 if side == 'right' else -1.0
     
     # 1. Horizontal arm (Main Bus to Side)
@@ -339,7 +339,7 @@ def _draw_vpis_symbol(dwg, x: float, y: float, side: str = 'right') -> None:
     dwg.add(dwg.line((x, y), (turn_x, y), class_="thin"))
     
     # 2. Vertical Line Down to Capacitor
-    cap_top_y = y + 6.0
+    cap_top_y = y + 8.0
     dwg.add(dwg.line((turn_x, y), (turn_x, cap_top_y), class_="thin"))
     
     # 3. Capacitor (Horizontal plates)
@@ -351,7 +351,7 @@ def _draw_vpis_symbol(dwg, x: float, y: float, side: str = 'right') -> None:
     dwg.add(dwg.line((turn_x - cap_w/2, cap_bot_y), (turn_x + cap_w/2, cap_bot_y), class_="thin"))
     
     # 4. Line down to Indicator
-    circle_y = cap_bot_y + 12.0
+    circle_y = cap_bot_y + 16.0
     dwg.add(dwg.line((turn_x, cap_bot_y), (turn_x, circle_y - 6.0), class_="thin"))
     
     # 5. Circle with X (Indicator)
@@ -1146,9 +1146,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         
         # 4. Line Up from Switch base to Node
         node_y = switch_y - 20
-        # Correct logic: Bus -> Pivot (Bottom) -> Blade -> Top Contact
-        # The LBS symbol is often stylized. Let's use a standard: 
-        # Bus -> Line -> Switch Pivot -> Blade -> Top Contact -> Line -> Node
         
         switch_pivot_y = mv_bus_y - 10
         switch_top_y = switch_pivot_y - 12
@@ -1182,7 +1179,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     # -------------------------------------------------------------------------
     # CENTER FEEDER (Transformer) - DOWNWARD
     # -------------------------------------------------------------------------
-    # Topology: Bus -> Disconnector -> Earth(Top) -> Breaker -> Earth(Bot) -> CT -> Node(Surge/VPIS) -> Transformer
+    # Topology: Bus -> Disconnector -> Earth(Top) -> Breaker -> Earth(Bot) -> Junction(Surge/VPIS) -> CT -> Transformer
     
     cx = mv_center_x
     
@@ -1212,19 +1209,9 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     _draw_line_anchored(dwg, (cx, cb_y + 6), (cx, earth2_y), class_="thin")
     _draw_earth_switch_lateral(dwg, cx, earth2_y, side='left')
     
-    # 6. CTs (3 circles) - Horizontal
-    ct_y = earth2_y + 15
-    # Draw the main vertical line passing through the CT area
-    # From earth switch bottom to the node below CTs
-    _draw_line_anchored(dwg, (cx, earth2_y), (cx, ct_y + 8), class_="thin")
-    
-    # Draw circles horizontally
-    for offset in [-6, 0, 6]:
-        dwg.add(dwg.circle(center=(cx + offset, ct_y), r=2.5, class_="outline"))
-    
-    # 7. Surge / VPIS Node
-    sv_node_y = ct_y + 20
-    _draw_line_anchored(dwg, (cx, ct_y + 8), (cx, sv_node_y), class_="thin")
+    # 6. Surge / VPIS Node (BRANCH POINT) - MOVED ABOVE CTs
+    sv_node_y = earth2_y + 20
+    _draw_line_anchored(dwg, (cx, earth2_y), (cx, sv_node_y), class_="thin")
     _draw_solid_node(dwg, cx, sv_node_y, 2.0, node_fill)
     
     # Surge Arrester (Left)
@@ -1234,11 +1221,16 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     _draw_surge_arrester_symbol(dwg, surge_x, sv_node_y + 6)
     
     # VPIS (Right)
-    # Note: Pic 1 shows VPIS on the right for the center feeder too
     _draw_vpis_symbol(dwg, cx, sv_node_y, side='right')
     
+    # 7. CTs (3 horizontal circles) - MOVED BELOW BRANCH
+    ct_y = sv_node_y + 20
+    _draw_line_anchored(dwg, (cx, sv_node_y), (cx, ct_y + 8), class_="thin") # Main line through
+    for offset in [-6, 0, 6]:
+        dwg.add(dwg.circle(center=(cx + offset, ct_y), r=2.5, class_="outline"))
+    
     # 8. To Transformer
-    _draw_line_anchored(dwg, (cx, sv_node_y), (cx, tr_top_y - tr_radius), class_="thin")
+    _draw_line_anchored(dwg, (cx, ct_y + 8), (cx, tr_top_y - tr_radius), class_="thin")
     
     # -------------------------------------------------------------------------
     # Transformer & Below (UNCHANGED LOGIC, just pos adjustment)
@@ -1428,10 +1420,8 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             auto_symbol_h = min(50.0, max(20.0, raw_h * 1.0))
             symbol_h = forced_symbol_h if forced_symbol_h > 0 else auto_symbol_h
 
-            # DC Switch + Fuse: 线条一直拉到 branch_bus_y，穿过 gap
             _draw_dc_switch(dwg, line_x, dc_top, symbol_h, lead_end_y=branch_bus_y)
 
-            # 在上框和下框的空隙中间画相对的三角形
             _draw_triangle_pair(dwg, line_x, gap_mid_y, dc_triangle_size, dc_triangle_gap)
 
             if block_count > 1:
