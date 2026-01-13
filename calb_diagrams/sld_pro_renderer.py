@@ -282,12 +282,12 @@ def _draw_cable_termination_down(dwg, x: float, y: float, size: float = 8.0) -> 
     half = size * 0.6
     height = size
     
-    # Top Triangle: Points DOWN
+    # Top Triangle: Points DOWN (倒三角)
     # Base at y, Tip at y+height
     points_top = [(x - half, y), (x + half, y), (x, y + height)]
     dwg.add(dwg.polygon(points=points_top, class_="thin", fill="none"))
     
-    # Bottom Triangle: Points UP
+    # Bottom Triangle: Points UP (正三角)
     # Tip at y+height, Base at y+2*height
     points_bot = [(x, y + height), (x - half, y + 2 * height), (x + half, y + 2 * height)]
     dwg.add(dwg.polygon(points=points_bot, class_="thin", fill="none"))
@@ -329,7 +329,6 @@ def _draw_earth_switch_lateral(dwg, x: float, y: float, side: str = 'left') -> N
 def _draw_vpis_symbol(dwg, x: float, y: float, side: str = 'right') -> None:
     """
     带电显示器 (VPIS): 横向引出 -> 向下竖线 -> 电容 -> 节点 -> 圆圈X -> 接地
-    **修改**：实现 L 型连接，电容在竖线上。
     """
     arm_len = 24.0 
     direction = 1.0 if side == 'right' else -1.0
@@ -1421,8 +1420,10 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             auto_symbol_h = min(50.0, max(20.0, raw_h * 1.0))
             symbol_h = forced_symbol_h if forced_symbol_h > 0 else auto_symbol_h
 
+            # DC Switch + Fuse: 线条一直拉到 branch_bus_y，穿过 gap
             _draw_dc_switch(dwg, line_x, dc_top, symbol_h, lead_end_y=branch_bus_y)
 
+            # 在上框和下框的空隙中间画相对的三角形
             _draw_triangle_pair(dwg, line_x, gap_mid_y, dc_triangle_size, dc_triangle_gap)
 
             if block_count > 1:
