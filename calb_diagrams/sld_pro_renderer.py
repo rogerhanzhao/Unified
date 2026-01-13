@@ -299,7 +299,7 @@ def _draw_lbs_symbol(dwg, x: float, y: float, open_right: bool = True) -> dict:
     """
     绘制 RMU 进出线负荷开关 (LBS) - 修正版:
     - 顶部：短横线 (静触头 Fixed Contact)
-    - 底部：小圆圈 (Pivot) + **圆圈下方的短切线**
+    - 底部：小圆圈 (Pivot) (已删除圆圈下方的短切线)
     - 刀闸：从顶部连接点延伸，向下断开 (Open state)
     x, y: 底部圆圈中心坐标
     """
@@ -312,9 +312,9 @@ def _draw_lbs_symbol(dwg, x: float, y: float, open_right: bool = True) -> dict:
     # Bottom 1: Circle
     dwg.add(dwg.circle(center=(x, y), r=r_pivot, class_="outline", fill="none"))
     
-    # Bottom 2: Tangent Line (Below Circle) - Touching bottom of circle
-    tangent_y = y + r_pivot
-    dwg.add(dwg.line((x - 6, tangent_y), (x + 6, tangent_y), class_="thin"))
+    # [Deleted] Bottom 2: Tangent Line (Below Circle) - 已删除
+    # tangent_y = y + r_pivot
+    # dwg.add(dwg.line((x - 6, tangent_y), (x + 6, tangent_y), class_="thin"))
     
     # Top: Fixed Contact Bar
     dwg.add(dwg.line((x - 4, top_y), (x + 4, top_y), class_="thin"))
