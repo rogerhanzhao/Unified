@@ -1193,7 +1193,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         dwg.add(dwg.text(feeder_labels[i], insert=(label_x, arrow_y - 10), class_="label", text_anchor=align))
 
     # -------------------------------------------------------------------------
-    # CENTER FEEDER (Transformer) - DOWNWARD - Ref: Compact SPDT
+    # CENTER FEEDER (Transformer) - DOWNWARD - Ref: Compact SPDT (No Circles)
     # -------------------------------------------------------------------------
     
     cx = mv_center_x
@@ -1202,7 +1202,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     _draw_solid_node(dwg, cx, mv_bus_y, mv_bus_node_r, node_fill)
     
     # 2. Circuit Breaker Schema
-    # Structure: Bus -> Line -> X Mark -> Blade (Open) -> Pivot (Bottom)
+    # Structure: Bus -> Line -> X Mark -> Blade (Open) -> Connection Point (No Circle)
     
     cb_x_y = mv_bus_y + 20.0       
     cb_pivot_y = cb_x_y + 22.0     
@@ -1214,36 +1214,38 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     # 2.2 X Mark
     _draw_breaker_x(dwg, cx, cb_x_y, cb_size)
     
-    # 2.3 CB Switch (Blade & Pivot)
-    dwg.add(dwg.circle(center=(cx, cb_pivot_y), r=2.5, class_="outline"))
-    
-    # CB Blade (Open to Left)
+    # 2.3 CB Blade (Open to Left, No Pivot Circle)
+    # Blade draws from the bottom connection point UPWARDS to near X
     blade_dx = -7.0
     cb_blade_tip_y = cb_x_y + cb_size/2 + 2.0
+    
+    # Draw Blade Line directly from pivot coordinate (clean connection)
     dwg.add(dwg.line(
-        (cx, cb_pivot_y - 2.5),             
+        (cx, cb_pivot_y),             
         (cx + blade_dx, cb_blade_tip_y),    
         class_="thin"
     ))
     
     # 3. SPDT Disconnector / Selector Switch (COMPACT VERSION)
-    # Located below the CB Pivot
+    # Located below the CB connection point
     
-    # Distance from CB Pivot to Switch Top Contact
-    switch_top_y = cb_pivot_y + 14.0 # Slightly closer to CB
-    _draw_line_anchored(dwg, (cx, cb_pivot_y + 2.5), (cx, switch_top_y), class_="thin")
+    # Distance from CB connection to Switch Top Contact
+    switch_top_y = cb_pivot_y + 14.0 
     
-    # DISTANCE: Top Contact to Pivot (Reduced for Compactness)
-    spdt_height = 16.0 # Was 24.0
+    # Draw line connecting CB bottom to SPDT top
+    _draw_line_anchored(dwg, (cx, cb_pivot_y), (cx, switch_top_y), class_="thin")
+    
+    # DISTANCE: Top Contact to Pivot
+    spdt_height = 16.0 
     spdt_pivot_y = switch_top_y + spdt_height
     
     # 3.1 Top Static Contact (Horizontal Bar)
     dwg.add(dwg.line((cx - 4, switch_top_y), (cx + 4, switch_top_y), class_="thin"))
     
-    # 3.2 Earth Static Contact (Left Side) - Moved Closer
-    earth_gap_x = 11.0 # Was 18.0 (Closer to main line)
+    # 3.2 Earth Static Contact (Left Side) - Compact
+    earth_gap_x = 11.0 
     earth_contact_x = cx - earth_gap_x
-    earth_contact_y = switch_top_y + spdt_height * 0.4 # Roughly between top and pivot
+    earth_contact_y = switch_top_y + spdt_height * 0.4 
     
     # Vertical static contact bar for Earth
     dwg.add(dwg.line((earth_contact_x, earth_contact_y - 3), (earth_contact_x, earth_contact_y + 3), class_="thin"))
@@ -1251,20 +1253,18 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     dwg.add(dwg.line((earth_contact_x, earth_contact_y), (earth_contact_x - 4, earth_contact_y), class_="thin"))
     _draw_ground(dwg, earth_contact_x - 4, earth_contact_y)
     
-    # 3.3 SPDT Pivot (Bottom)
-    dwg.add(dwg.circle(center=(cx, spdt_pivot_y), r=2.5, class_="outline"))
-    
-    # 3.4 SPDT Blade (Angled Left, Compact)
-    # Blade length adjusted to fit the 16.0 height without touching
+    # 3.3 SPDT Blade (Angled Left, Compact, No Pivot Circle)
+    # Blade draws from the bottom connection point UPWARDS
     spdt_blade_end_x = cx - 7.0
     spdt_blade_end_y = spdt_pivot_y - 12.0
-    dwg.add(dwg.line((cx, spdt_pivot_y - 2.5), (spdt_blade_end_x, spdt_blade_end_y), class_="thin"))
+    
+    dwg.add(dwg.line((cx, spdt_pivot_y), (spdt_blade_end_x, spdt_blade_end_y), class_="thin"))
 
     # 4. Branch Node & Symmetrical Layout (Surge / VPIS)
-    sv_node_y = spdt_pivot_y + 24.0 # Reduced gap
+    sv_node_y = spdt_pivot_y + 24.0 
     
-    # Line from SPDT Pivot down to Branch Node
-    _draw_line_anchored(dwg, (cx, spdt_pivot_y + 2.5), (cx, sv_node_y), class_="thin")
+    # Line from SPDT connection point down to Branch Node
+    _draw_line_anchored(dwg, (cx, spdt_pivot_y), (cx, sv_node_y), class_="thin")
     _draw_solid_node(dwg, cx, sv_node_y, 2.0, node_fill)
     
     sym_offset = 24.0
