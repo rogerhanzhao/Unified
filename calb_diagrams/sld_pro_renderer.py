@@ -298,8 +298,8 @@ def _draw_cable_termination_down(dwg, x: float, y: float, size: float = 8.0) -> 
 def _draw_lbs_symbol(dwg, x: float, y: float, open_right: bool = True) -> dict:
     """
     绘制 RMU 进出线负荷开关 (LBS) - 修正版:
-    - 顶部：短横线 (静触头 Fixed Contact)
-    - 底部：小圆圈 (Pivot) (已删除圆圈下方的短切线)
+    - 顶部：无短横线 (已删除刀闸支点位置的短横线)
+    - 底部：小圆圈 (Pivot) + 圆圈下方的短切线 (已加回)
     - 刀闸：从顶部连接点延伸，向下断开 (Open state)
     x, y: 底部圆圈中心坐标
     """
@@ -309,15 +309,15 @@ def _draw_lbs_symbol(dwg, x: float, y: float, open_right: bool = True) -> dict:
     
     r_pivot = 2.5
     
-    # Bottom 1: Circle
+    # Bottom 1: Circle (Pivot/Contact)
     dwg.add(dwg.circle(center=(x, y), r=r_pivot, class_="outline", fill="none"))
     
-    # [Deleted] Bottom 2: Tangent Line (Below Circle) - 已删除
-    # tangent_y = y + r_pivot
-    # dwg.add(dwg.line((x - 6, tangent_y), (x + 6, tangent_y), class_="thin"))
+    # Bottom 2: Tangent Line (Below Circle) - 已加回
+    tangent_y = y + r_pivot
+    dwg.add(dwg.line((x - 6, tangent_y), (x + 6, tangent_y), class_="thin"))
     
-    # Top: Fixed Contact Bar
-    dwg.add(dwg.line((x - 4, top_y), (x + 4, top_y), class_="thin"))
+    # Top: Fixed Contact Bar - 已删除 (Requested: 删除刀闸支点位置的短横线)
+    # dwg.add(dwg.line((x - 4, top_y), (x + 4, top_y), class_="thin"))
     
     # Blade: Pivot at Top Contact, ends near Bottom Circle
     dx = 8.0 if open_right else -8.0
