@@ -295,17 +295,13 @@ def _draw_cable_termination_down(dwg, x: float, y: float, size: float = 8.0) -> 
     # Line continuing down from the base of the bottom triangle
     dwg.add(dwg.line((x, y + 2 * height), (x, y + 2 * height + 4), class_="thin"))
 
-def _draw_lbs_symbol_feeder(dwg, x: float, y: float, open_right: bool = True) -> dict:
+def _draw_lbs_symbol(dwg, x: float, y: float, open_right: bool = True) -> dict:
     """
     绘制 RMU 进出线负荷开关 (LBS) - UPWARD VERSION:
     - 顶部：短横线 (静触头 Fixed Contact)
     - 底部：小圆圈 (Pivot) + 短横线 (Base)
     - 刀闸：从顶部向下断开 (Open state)
-    *Correction*: User requested "Blade moves to TOP short line, Bottom is circle+line".
-    This implies the Blade *originates* from the top (bus side) or connects to it?
-    Standard LBS: Pivot usually at bottom.
-    User instruction: "Gate knife (blade) moved to top short horizontal line position".
-    Interpretation: Pivot is at TOP. Blade swings DOWN. Bottom is Circle+Line.
+    x, y: 底部坐标
     """
     h = 24.0
     # y is the bottom coordinate (Circle + Line)
@@ -1146,7 +1142,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     mv_bus_node_r = _safe_float(layout_params.get("mv_bus_node_r"), 3.0)
     
     # -------------------------------------------------------------------------
-    # FEEDERS (Left / Right) - UPWARD - Ref: Image 4
+    # FEEDERS (Left / Right) - UPWARD
     # -------------------------------------------------------------------------
     # Topology: Bus -> Switch (LBS) -> Node -> (Left: Earth, Right: VPIS) -> Arrow
     
@@ -1188,33 +1184,34 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         dwg.add(dwg.text(feeder_labels[i], insert=(label_x, arrow_y - 10), class_="label", text_anchor=align))
 
     # -------------------------------------------------------------------------
-    # CENTER FEEDER (Transformer) - DOWNWARD - Ref: Image 4
+    # CENTER FEEDER (Transformer) - DOWNWARD
     # -------------------------------------------------------------------------
-    # Topology: Bus -> X(Breaker) -> Switch(Iso) -> Earth -> Branch(VPIS/Surge) -> CT -> Cable -> Transformer
+    # Topology: Bus -> Switch(Iso) -> X(Breaker) -> SPDT_Earth -> Branch(VPIS/Surge) -> CT -> Cable -> Transformer
+    # NEW LOGIC: Bus -> Disconnector -> Breaker -> Earth Switch (SPDT style)
     
     cx = mv_center_x
     
     # 1. Bus Connection
     _draw_solid_node(dwg, cx, mv_bus_y, mv_bus_node_r, node_fill)
     
-    # 2. Circuit Breaker (X) - Immediate
-    cb_y = mv_bus_y + 20
-    _draw_line_anchored(dwg, (cx, mv_bus_y), (cx, cb_y - 6), class_="thin")
-    _draw_breaker_x(dwg, cx, cb_y, 12.0)
-    
-    # 3. Disconnector (Switch)
-    iso_top_y = cb_y + 20
+    # 2. Disconnector (Switch) - FIRST
+    iso_top_y = mv_bus_y + 20
     iso_pivot_y = iso_top_y + 20
     
-    _draw_line_anchored(dwg, (cx, cb_y + 6), (cx, iso_top_y), class_="thin")
+    _draw_line_anchored(dwg, (cx, mv_bus_y), (cx, iso_top_y), class_="thin")
     # Fixed contact
     dwg.add(dwg.line((cx - 3, iso_top_y), (cx + 3, iso_top_y), class_="thin"))
     # Blade (Open to right-up)
     dwg.add(dwg.line((cx, iso_pivot_y), (cx + 6, iso_top_y + 4), class_="thin"))
     
-    # 4. Earth Switch (Lateral)
-    earth_y = iso_pivot_y + 15
-    _draw_line_anchored(dwg, (cx, iso_pivot_y), (cx, earth_y), class_="thin")
+    # 3. Circuit Breaker (X) - SECOND
+    cb_y = iso_pivot_y + 20
+    _draw_line_anchored(dwg, (cx, iso_pivot_y), (cx, cb_y - 6), class_="thin")
+    _draw_breaker_x(dwg, cx, cb_y, 12.0)
+    
+    # 4. Earth Switch (Lateral SPDT) - THIRD
+    earth_y = cb_y + 20
+    _draw_line_anchored(dwg, (cx, cb_y + 6), (cx, earth_y), class_="thin")
     
     # Horizontal arm left
     earth_arm_len = 16.0
@@ -1232,7 +1229,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     blade_pivot_y = earth_pivot_y - 4
     dwg.add(dwg.line((earth_x, blade_pivot_y), (earth_x + 6, blade_pivot_y - 8), class_="thin"))
     
-    # 5. Branch Node (Surge / VPIS) - RECOVERED
+    # 5. Branch Node (Surge / VPIS)
     sv_node_y = earth_y + 30 
     _draw_line_anchored(dwg, (cx, earth_y), (cx, sv_node_y), class_="thin")
     _draw_solid_node(dwg, cx, sv_node_y, 2.0, node_fill)
