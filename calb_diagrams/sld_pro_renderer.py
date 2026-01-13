@@ -297,49 +297,38 @@ def _draw_cable_termination_down(dwg, x: float, y: float, size: float = 8.0) -> 
 
 def _draw_earth_switch_lateral(dwg, x: float, y: float, side: str = 'left') -> None:
     """
-    画侧向接地开关（图3样式）。
+    画侧向接地开关（用于进出线柜）。
     x, y: 连接点（T接点）
     side: 'left' or 'right'
     """
     arm_len = 16.0
+    switch_gap = 6.0
+    blade_len = 10.0
     
     direction = -1.0 if side == 'left' else 1.0
     
-    # 1. Horizontal arm outwards
+    # 1. Horizontal arm
     end_x = x + direction * arm_len
     dwg.add(dwg.line((x, y), (end_x, y), class_="thin"))
     
-    # 2. Fixed contact (small vertical bar at end of horizontal arm)
+    # 2. Fixed contact (small vertical bar)
     dwg.add(dwg.line((end_x, y - 3), (end_x, y + 3), class_="thin"))
     
-    # 3. Blade (Open) - Angled
-    # Blade is connected to Ground. The symbol usually shows the blade
-    # originating from the ground side and moving towards the contact.
-    # We draw a blade angled away from the contact.
+    # 3. Earth symbol position (below)
+    earth_y = y + switch_gap + blade_len
     
-    blade_start_x = end_x - direction * 6.0 # Gap from contact
-    blade_start_y = y + 8.0 # Lower than contact
+    # 4. Blade (Open)
+    pivot_x = end_x
+    # Blade drawn open
+    dwg.add(dwg.line((pivot_x, earth_y), (pivot_x - direction * 6, earth_y - 8), class_="thin"))
     
-    # Draw blade
-    dwg.add(dwg.line((end_x, y), (blade_start_x, blade_start_y), class_="thin")) 
-    # Wait, usually earth switch blade is connected to earth.
-    # Let's draw: Fixed contact on line. Blade pivot connected to ground.
-    
-    pivot_x = end_x 
-    pivot_y = y + 14.0 # Below the horizontal arm
-    
-    # Draw Blade (Open)
-    dwg.add(dwg.line((pivot_x, pivot_y), (pivot_x - direction * 6, pivot_y - 10), class_="thin"))
-    
-    # Connection to Ground
-    dwg.add(dwg.line((pivot_x, pivot_y), (pivot_x, pivot_y + 4), class_="thin"))
-    _draw_ground(dwg, pivot_x, pivot_y + 4)
-
+    # 5. Connection to ground
+    dwg.add(dwg.line((pivot_x, earth_y), (pivot_x, earth_y + 4), class_="thin"))
+    _draw_ground(dwg, pivot_x, earth_y + 4)
 
 def _draw_vpis_symbol(dwg, x: float, y: float, side: str = 'right') -> None:
     """
     带电显示器 (VPIS): 横向引出 -> 向下竖线 -> 电容 -> 节点 -> 圆圈X -> 接地
-    **修改**：严格参考图3，电容在上方，指示灯在下方。
     """
     arm_len = 24.0 
     direction = 1.0 if side == 'right' else -1.0
@@ -1189,40 +1178,44 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     # -------------------------------------------------------------------------
     # CENTER FEEDER (Transformer) - DOWNWARD
     # -------------------------------------------------------------------------
-    # Topology: Bus -> Breaker (X) -> SPDT(Iso + Earth) -> Branch(Surge/VPIS) -> CT -> Transformer
+    # Topology: Bus -> SPDT(Iso + Earth) -> Breaker (X) -> Branch(Surge/VPIS) -> CT -> Transformer
     
     cx = mv_center_x
     
     # 1. Bus Connection
     _draw_solid_node(dwg, cx, mv_bus_y, mv_bus_node_r, node_fill)
     
-    # 2. Circuit Breaker (X)
-    # Immediately below the bus connection as per Diagram 2
-    cb_y = mv_bus_y + 20
-    _draw_line_anchored(dwg, (cx, mv_bus_y), (cx, cb_y - 6), class_="thin")
-    _draw_breaker_x(dwg, cx, cb_y, 12.0)
-    
-    # 3. SPDT Switch (Iso + Earth)
-    # Top Contact (Fixed)
-    sw_top_y = cb_y + 20
-    _draw_line_anchored(dwg, (cx, cb_y + 6), (cx, sw_top_y), class_="thin")
-    dwg.add(dwg.line((cx - 3, sw_top_y), (cx + 3, sw_top_y), class_="thin"))
-    
-    # Pivot (Bottom)
-    sw_pivot_y = sw_top_y + 25
+    # 2. SPDT Switch (Iso + Earth) - Corrected: Above Breaker
+    # Top Contact (Fixed on Bus)
+    sw_top_y = mv_bus_y 
+    sw_pivot_y = mv_bus_y + 25
     
     # Main Blade (Open to Right)
+    # Pivot at bottom (sw_pivot_y), Blade moves up to connect to sw_top_y
+    # Draw open state
     dwg.add(dwg.line((cx, sw_pivot_y), (cx + 8, sw_top_y + 5), class_="thin"))
     
-    # Earth Contact (Left side)
-    earth_contact_x = cx - 12
-    earth_contact_y = sw_top_y + 5
-    dwg.add(dwg.line((earth_contact_x - 3, earth_contact_y), (earth_contact_x + 3, earth_contact_y), class_="thin"))
-    _draw_ground(dwg, earth_contact_x, earth_contact_y)
+    # Earth Contact (Left side) - Horizontal connection as requested
+    earth_contact_x = cx - 14
+    earth_contact_y = sw_pivot_y - 6 # Slightly above pivot to show swing
     
-    # 4. Continue Line Down to Branch Point
-    sv_node_y = sw_pivot_y + 20
-    _draw_line_anchored(dwg, (cx, sw_pivot_y), (cx, sv_node_y), class_="thin")
+    # Draw fixed earth contact bar (Vertical small bar)
+    dwg.add(dwg.line((earth_contact_x, earth_contact_y - 3), (earth_contact_x, earth_contact_y + 3), class_="thin"))
+    # Draw ground symbol
+    _draw_ground(dwg, earth_contact_x, earth_contact_y + 6) # Ground symbol below contact
+    # Connect ground symbol to contact
+    dwg.add(dwg.line((earth_contact_x, earth_contact_y), (earth_contact_x, earth_contact_y + 6), class_="thin"))
+    
+    # 3. Line Down to Breaker
+    cb_y = sw_pivot_y + 20
+    _draw_line_anchored(dwg, (cx, sw_pivot_y), (cx, cb_y - 6), class_="thin")
+    
+    # 4. Circuit Breaker (X)
+    _draw_breaker_x(dwg, cx, cb_y, 12.0)
+    
+    # 5. Continue Line Down to Branch Point
+    sv_node_y = cb_y + 25
+    _draw_line_anchored(dwg, (cx, cb_y + 6), (cx, sv_node_y), class_="thin")
     _draw_solid_node(dwg, cx, sv_node_y, 2.0, node_fill)
     
     # Surge Arrester (Left)
@@ -1234,13 +1227,13 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     # VPIS (Right)
     _draw_vpis_symbol(dwg, cx, sv_node_y, side='right')
     
-    # 5. CTs (3 horizontal circles)
+    # 6. CTs (3 horizontal circles)
     ct_y = sv_node_y + 20
     _draw_line_anchored(dwg, (cx, sv_node_y), (cx, ct_y + 8), class_="thin") # Main line through
     for offset in [-6, 0, 6]:
         dwg.add(dwg.circle(center=(cx + offset, ct_y), r=2.5, class_="outline"))
     
-    # 6. To Transformer
+    # 7. To Transformer
     _draw_line_anchored(dwg, (cx, ct_y + 8), (cx, tr_top_y - tr_radius), class_="thin")
     
     # -------------------------------------------------------------------------
