@@ -1193,85 +1193,108 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         dwg.add(dwg.text(feeder_labels[i], insert=(label_x, arrow_y - 10), class_="label", text_anchor=align))
 
     # -------------------------------------------------------------------------
-    # CENTER FEEDER (Transformer) - DOWNWARD - Ref: Image 4
+    # CENTER FEEDER (Transformer) - DOWNWARD - Ref: Image & Alignment
     # -------------------------------------------------------------------------
-    # Topology: Bus -> X(Breaker) -> Switch(Iso) -> SPDT_Earth -> Branch(VPIS/Surge) -> CT -> Cable -> Transformer
-    # NEW LOGIC: Bus -> Breaker(X) -> Disconnector -> SPDT Earth Switch
     
     cx = mv_center_x
     
     # 1. Bus Connection node
     _draw_solid_node(dwg, cx, mv_bus_y, mv_bus_node_r, node_fill)
     
-    # 2. Circuit Breaker (X) - Smaller size, Top position
-    cb_size = 7.0  # (Requested: X mark 要调小一点)
-    cb_y = mv_bus_y + 20.0
+    # 2. Circuit Breaker (X) - Moved Up, Center Connected
+    cb_size = 8.0 
+    cb_y = mv_bus_y + 18.0  # Slightly higher than original
     
-    # Line from Bus to CB top
+    # Line 1: Bus -> X Top
     _draw_line_anchored(dwg, (cx, mv_bus_y), (cx, cb_y - cb_size/2), class_="thin")
-    # Draw CB X
+    
+    # Draw CB X Mark
     _draw_breaker_x(dwg, cx, cb_y, cb_size)
+    
+    # Line 2: X Bottom -> Switch Contact
+    switch_top_y = cb_y + 16.0  # Location of the static contact
+    _draw_line_anchored(dwg, (cx, cb_y + cb_size/2), (cx, switch_top_y), class_="thin")
     
     # 3. SPDT Disconnector / Selector Switch
     # Structure:
-    # - Top: Fixed Contact (Horizontal) connecting to CB
-    # - Left: Earth Static Contact (Vertical)
+    # - Top: Fixed Contact (Horizontal)
+    # - Left: Earth Static Contact (Vertical + Ground)
     # - Bottom: Pivot (Circle)
-    # - Blade: Attached to Pivot, angled left, floating (not touching contacts)
+    # - Blade: Attached to Pivot, angled left (Floating)
     
-    # Coordinates
-    iso_contact_y = cb_y + 16.0       # Top static contact Y
-    iso_pivot_y = iso_contact_y + 24.0 # Bottom pivot Y
+    spdt_pivot_y = switch_top_y + 24.0 # Pivot is below
     
-    # 3.1 Link from CB bottom to Top Static Contact
-    _draw_line_anchored(dwg, (cx, cb_y + cb_size/2), (cx, iso_contact_y), class_="thin")
+    # 3.1 Top Static Contact (Horizontal Bar)
+    dwg.add(dwg.line((cx - 4, switch_top_y), (cx + 4, switch_top_y), class_="thin"))
     
-    # 3.2 Top Static Contact (Horizontal Bar) - "主线断横杠触点"
-    dwg.add(dwg.line((cx - 4, iso_contact_y), (cx + 4, iso_contact_y), class_="thin"))
-    
-    # 3.3 Earth Static Contact (Left Side)
-    # "接地符号一侧没有刀闸，是一个隔离开关的静态触点"
-    earth_gap_x = 16.0
+    # 3.2 Earth Static Contact (Left Side)
+    earth_gap_x = 18.0
     earth_contact_x = cx - earth_gap_x
-    # Ideally slightly lower than the top contact or aligned with blade swing path
-    earth_contact_y = iso_contact_y + 8.0 
+    earth_contact_y = switch_top_y + 8.0 # Slightly lower than main contact
     
-    # Vertical static contact bar
+    # Vertical static contact bar for Earth
     dwg.add(dwg.line((earth_contact_x, earth_contact_y - 4), (earth_contact_x, earth_contact_y + 4), class_="thin"))
     # Line to Ground symbol
     dwg.add(dwg.line((earth_contact_x, earth_contact_y), (earth_contact_x - 6, earth_contact_y), class_="thin"))
     _draw_ground(dwg, earth_contact_x - 6, earth_contact_y)
     
-    # 3.4 Pivot (Transformer Side) - "刀闸支点位置"
-    dwg.add(dwg.circle(center=(cx, iso_pivot_y), r=2.5, class_="outline"))
+    # 3.3 Pivot (Transformer Side / Bottom)
+    dwg.add(dwg.circle(center=(cx, spdt_pivot_y), r=2.5, class_="outline"))
     
-    # 3.5 Blade (Angled Left) - "向左开合一定角度，但不能碰到..."
-    # Start from pivot
-    blade_start = (cx, iso_pivot_y - 2.5)
-    # End point: Up and Left, but stopping short of contacts
-    blade_len = 18.0
-    # Approx 30 degrees tilt to left
-    blade_end_x = cx - blade_len * 0.4
-    blade_end_y = iso_pivot_y - blade_len * 0.9
-    
-    dwg.add(dwg.line(blade_start, (blade_end_x, blade_end_y), class_="thin"))
+    # 3.4 Blade (Angled Left)
+    # From Bottom Pivot -> Upwards and Left
+    blade_len = 20.0
+    # Calculate end point roughly (Angle approx 150 degrees from down, or 30 degrees left of up)
+    blade_end_x = cx - 8.0
+    blade_end_y = spdt_pivot_y - 18.0
+    # Draw blade
+    dwg.add(dwg.line((cx, spdt_pivot_y - 2.5), (blade_end_x, blade_end_y), class_="thin"))
 
-    # 4. Continue Downwards (Branch Node -> VPIS/Surge)
-    sv_node_y = iso_pivot_y + 30
-    _draw_line_anchored(dwg, (cx, iso_pivot_y + 2.5), (cx, sv_node_y), class_="thin")
+    # 4. Branch Node (Surge / VPIS) - Symmetrical Layout
+    sv_node_y = spdt_pivot_y + 30.0
+    # Connect Pivot to Branch Node
+    _draw_line_anchored(dwg, (cx, spdt_pivot_y + 2.5), (cx, sv_node_y), class_="thin")
     _draw_solid_node(dwg, cx, sv_node_y, 2.0, node_fill)
     
-    # Surge Arrester (Left)
-    surge_x = cx - 24
+    # Defined offset for symmetry
+    sym_offset = 24.0
+    
+    # --- Left Side: Surge Arrester ---
+    surge_x = cx - sym_offset
     dwg.add(dwg.line((cx, sv_node_y), (surge_x, sv_node_y), class_="thin"))
+    # Line down to box
     dwg.add(dwg.line((surge_x, sv_node_y), (surge_x, sv_node_y + 6), class_="thin"))
     _draw_surge_arrester_symbol(dwg, surge_x, sv_node_y + 6)
     
-    # VPIS (Right)
-    _draw_vpis_symbol(dwg, cx, sv_node_y, side='right')
+    # --- Right Side: VPIS (Manual Draw for Symmetry) ---
+    vpis_x = cx + sym_offset
+    # 1. Horizontal arm
+    dwg.add(dwg.line((cx, sv_node_y), (vpis_x, sv_node_y), class_="thin"))
+    
+    # 2. Vertical Down to Capacitor
+    cap_y = sv_node_y + 8.0
+    dwg.add(dwg.line((vpis_x, sv_node_y), (vpis_x, cap_y), class_="thin"))
+    
+    # 3. Capacitor Symbol
+    cap_w = 12.0
+    dwg.add(dwg.line((vpis_x - cap_w/2, cap_y), (vpis_x + cap_w/2, cap_y), class_="thin"))
+    dwg.add(dwg.line((vpis_x - cap_w/2, cap_y + 4), (vpis_x + cap_w/2, cap_y + 4), class_="thin"))
+    
+    # 4. Vertical Down to Indicator
+    ind_y = cap_y + 4 + 14.0
+    dwg.add(dwg.line((vpis_x, cap_y + 4), (vpis_x, ind_y - 6), class_="thin"))
+    
+    # 5. Indicator (Circle)
+    _draw_breaker_circle(dwg, vpis_x, ind_y, 6.0)
+    
+    # 6. Ground
+    _draw_ground(dwg, vpis_x, ind_y + 6)
+    dwg.add(dwg.line((vpis_x, ind_y + 6), (vpis_x, ind_y + 10), class_="thin"))
 
     # 5. CTs (3 Horizontal circles)
-    ct_y = sv_node_y + 20
+    # Ensure Y is below the Surge/VPIS elements
+    ct_y = max(sv_node_y + 35.0, ind_y + 15.0) 
+    
     _draw_line_anchored(dwg, (cx, sv_node_y), (cx, ct_y + 8), class_="thin") 
     for offset in [-6, 0, 6]:
         dwg.add(dwg.circle(center=(cx + offset, ct_y), r=2.5, class_="outline"))
