@@ -1193,7 +1193,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     _draw_breaker_x(dwg, cx, cb_y, 12.0)
     
     # 3. SPDT Switch (Iso + Earth)
-    # This replaces the separate disconnector and earth switch to avoid overlap
     # Top Contact (Fixed)
     sw_top_y = cb_y + 20
     _draw_line_anchored(dwg, (cx, cb_y + 6), (cx, sw_top_y), class_="thin")
@@ -1205,7 +1204,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     # Main Blade (Open to Right)
     dwg.add(dwg.line((cx, sw_pivot_y), (cx + 8, sw_top_y + 5), class_="thin"))
     
-    # Earth Contact (Left side) - NO separate blade drawn to overlap, just the contact
+    # Earth Contact (Left side)
     earth_contact_x = cx - 12
     earth_contact_y = sw_top_y + 5
     dwg.add(dwg.line((earth_contact_x - 3, earth_contact_y), (earth_contact_x + 3, earth_contact_y), class_="thin"))
