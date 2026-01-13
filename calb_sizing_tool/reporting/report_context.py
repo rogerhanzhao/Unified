@@ -347,13 +347,6 @@ def build_report_context(
                     layout_png_bytes = layout_results["raw_v05"].get("png")
                     layout_svg_bytes = layout_results["raw_v05"].get("svg") or layout_svg_bytes
 
-        if sld_preview_svg_bytes is None:
-            for key in ("sld_pro_jp_svg_bytes", "sld_raw_svg_bytes"):
-                value = state.get(key)
-                if value:
-                    sld_preview_svg_bytes = value
-                    break
-        sld_pro_png_bytes = sld_pro_png_bytes or state.get("sld_pro_png_bytes")
         layout_png_bytes = layout_png_bytes or state.get("layout_png_bytes")
         layout_svg_bytes = layout_svg_bytes or state.get("layout_svg_bytes")
 

@@ -42,13 +42,6 @@ def show():
                     break
     sld_png = artifacts.get("sld_png_bytes") or (sld_entry.get("png") if sld_entry else None)
     sld_svg = artifacts.get("sld_svg_bytes") or (sld_entry.get("svg") if sld_entry else None)
-    if sld_png is None:
-        sld_png = st.session_state.get("sld_pro_png_bytes")
-    if sld_svg is None:
-        sld_svg = (
-            st.session_state.get("sld_pro_jp_svg_bytes")
-            or st.session_state.get("sld_raw_svg_bytes")
-        )
     outputs_dir = Path("outputs")
     if sld_png is None:
         candidate = outputs_dir / "sld_latest.png"

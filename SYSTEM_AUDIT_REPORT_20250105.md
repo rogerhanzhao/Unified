@@ -281,7 +281,6 @@ Example: CALB_CNS_75MW300MWh_BESS_Proposal_20260105_V2.1.docx
 ## 9. Known Limitations & Future Work
 
 ### Current Limitations
-- Manual diagram editing (Diagram Studio) currently uses form-based input, not visual canvas
 - SVG-to-PNG conversion requires `cairosvg` or similar (install if needed)
 - Real-time preview of SLD/Layout requires full re-render
 
@@ -326,7 +325,6 @@ Example: CALB_CNS_75MW300MWh_BESS_Proposal_20260105_V2.1.docx
 2. **Before Go-Live:**
    - Backup current codebase to separate branch
    - Document any project-specific customizations
-   - Train operations team on new diagram studio (if enabled)
 
 3. **Post-Deployment:**
    - Monitor DOCX export for any missing fields
@@ -353,7 +351,6 @@ app.py
 │  │  └─ sld_pro_renderer.py
 │  ├─ site_layout_view.py
 │  │  └─ layout_block_renderer.py
-│  └─ diagram_studio_view.py (optional debug)
 └─ Stage 5: Export
    ├─ report_export_view.py
    └─ report_v2.py

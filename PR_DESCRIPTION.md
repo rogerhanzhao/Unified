@@ -109,7 +109,7 @@ pytest tests/test_sld_smoke.py -v
 
 ## Code Changes Summary
 
-### Single Line Diagram Page (sld_view.py)
+### Single Line Diagram Page (single_line_diagram_view.py)
 
 **Before**:
 ```python

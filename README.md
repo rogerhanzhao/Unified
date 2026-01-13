@@ -27,19 +27,12 @@ Ensure the Excel data files (for example, `ess_sizing_data_dictionary_v13_dc_aut
 2. In the AC Sizing downloads area, select `Report Template: V2.1 (Beta)`.
 3. Download the Combined report. V1 remains the default and unchanged.
 
-## SLD Generator usage (PowSyBl, single MV node chain)
+## Single Line Diagram usage
 
-1. Install dependencies: `pip install pypowsybl`.
-2. Run DC sizing and AC sizing.
-3. Open the `SLD Generator (PowSyBl)` page (beta).
-4. Click **Generate SLD Snapshot + SVG**, then download `snapshot.json`, `sld.svg`, `sld_metadata.json`, and `sld_final.svg`.
-
-## Single Line Diagram usage (Pro + Raw)
-
-1. Install dependencies: `pip install pypowsybl svgwrite cairosvg`.
+1. Install dependencies: `pip install svgwrite cairosvg` (PNG export uses `cairosvg`).
 2. Run DC sizing and AC sizing.
 3. Open the `Single Line Diagram` page and select the AC block group.
-4. Choose the style (Raw V0.5 or Pro English V1.0), then click **Generate SLD**.
+4. Click **Generate SLD**.
 5. Download the SVG (and PNG if available).
 
 ## Site Layout usage (template view)
@@ -48,18 +41,6 @@ Ensure the Excel data files (for example, `ess_sizing_data_dictionary_v13_dc_aut
 2. Open the `Site Layout` page and choose the AC block group.
 3. Click **Generate Layout** (Raw V0.5 Stable).
 4. Download `layout_block.svg` and `layout_block.png`.
-
-## Legacy pages
-
-Legacy Streamlit page wrappers are kept in `pages_legacy` for debug use.
-
-## SLD Generator Pro usage (engineering style)
-
-1. Install dependencies: `pip install pypowsybl`.
-2. Run DC sizing and AC sizing.
-3. Open the `SLD Generator Pro` page.
-4. Fill Electrical SLD Inputs (RMU/TR/Busbar/Cables), then click **Generate SLD Pro**.
-5. Download `sld_pro.svg` alongside the raw SVG, metadata, and snapshot.
 
 ## Run tests
 
