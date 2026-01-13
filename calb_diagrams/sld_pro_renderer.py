@@ -1179,57 +1179,60 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     # -------------------------------------------------------------------------
     # CENTER FEEDER (Transformer) - DOWNWARD
     # -------------------------------------------------------------------------
-    # Topology: Bus -> Disconnector -> Earth(Top) -> Breaker -> Earth(Bot) -> Junction(Surge/VPIS) -> CT -> Transformer
+    # Topology: Bus -> Breaker (X) -> Disconnector -> Earth -> Branch(Surge/VPIS) -> CT -> Transformer
+    # REVISED to match Diagram 2 exactly.
     
     cx = mv_center_x
     
     # 1. Bus Connection
     _draw_solid_node(dwg, cx, mv_bus_y, mv_bus_node_r, node_fill)
     
-    # 2. Disconnector (Isolation)
-    iso_top_y = mv_bus_y + 12
-    iso_pivot_y = iso_top_y + 12
-    
-    _draw_line_anchored(dwg, (cx, mv_bus_y), (cx, iso_top_y), class_="thin")
-    dwg.add(dwg.line((cx - 3, iso_top_y), (cx + 3, iso_top_y), class_="thin")) # Fixed contact
-    dwg.add(dwg.line((cx, iso_pivot_y), (cx + 6, iso_top_y + 2), class_="thin")) # Blade
-    
-    # 3. Earth Switch (Top)
-    earth1_y = iso_pivot_y + 10
-    _draw_line_anchored(dwg, (cx, iso_pivot_y), (cx, earth1_y), class_="thin")
-    _draw_earth_switch_lateral(dwg, cx, earth1_y, side='left')
-    
-    # 4. Circuit Breaker (X)
-    cb_y = earth1_y + 20
-    _draw_line_anchored(dwg, (cx, earth1_y), (cx, cb_y - 6), class_="thin")
+    # 2. Circuit Breaker (X)
+    # Immediately below the bus connection as per Diagram 2
+    cb_y = mv_bus_y + 20
+    _draw_line_anchored(dwg, (cx, mv_bus_y), (cx, cb_y - 6), class_="thin")
     _draw_breaker_x(dwg, cx, cb_y, 12.0)
     
-    # 5. Earth Switch (Bottom)
-    earth2_y = cb_y + 20
-    _draw_line_anchored(dwg, (cx, cb_y + 6), (cx, earth2_y), class_="thin")
-    _draw_earth_switch_lateral(dwg, cx, earth2_y, side='left')
+    # 3. Disconnector (Isolation)
+    # Located below breaker
+    iso_top_y = cb_y + 25 
+    iso_pivot_y = iso_top_y + 25
     
-    # 6. Surge / VPIS Node (BRANCH POINT) - MOVED ABOVE CTs
-    sv_node_y = earth2_y + 20
-    _draw_line_anchored(dwg, (cx, earth2_y), (cx, sv_node_y), class_="thin")
+    _draw_line_anchored(dwg, (cx, cb_y + 6), (cx, iso_top_y), class_="thin")
+    # Fixed contact (horizontal bar)
+    dwg.add(dwg.line((cx - 3, iso_top_y), (cx + 3, iso_top_y), class_="thin"))
+    # Blade (angled from pivot to top)
+    dwg.add(dwg.line((cx, iso_pivot_y), (cx - 6, iso_top_y + 6), class_="thin")) # Angled left-up
+    
+    # 4. Earth Switch (Left side, single)
+    # Pivot is connected to the main line
+    earth_y = iso_pivot_y + 10
+    _draw_line_anchored(dwg, (cx, iso_pivot_y), (cx, earth_y), class_="thin")
+    # Draw earth switch branching left
+    _draw_earth_switch_lateral(dwg, cx, earth_y, side='left')
+    
+    # 5. Branch Point (Surge / VPIS)
+    sv_node_y = earth_y + 30
+    _draw_line_anchored(dwg, (cx, earth_y), (cx, sv_node_y), class_="thin")
     _draw_solid_node(dwg, cx, sv_node_y, 2.0, node_fill)
     
     # Surge Arrester (Left)
-    surge_x = cx - 20
+    surge_x = cx - 24
     dwg.add(dwg.line((cx, sv_node_y), (surge_x, sv_node_y), class_="thin"))
     dwg.add(dwg.line((surge_x, sv_node_y), (surge_x, sv_node_y + 6), class_="thin"))
     _draw_surge_arrester_symbol(dwg, surge_x, sv_node_y + 6)
     
     # VPIS (Right)
+    # Note: Pic 1 shows VPIS on the right for the center feeder too
     _draw_vpis_symbol(dwg, cx, sv_node_y, side='right')
     
-    # 7. CTs (3 horizontal circles) - MOVED BELOW BRANCH
+    # 6. CTs (3 horizontal circles)
     ct_y = sv_node_y + 20
     _draw_line_anchored(dwg, (cx, sv_node_y), (cx, ct_y + 8), class_="thin") # Main line through
     for offset in [-6, 0, 6]:
         dwg.add(dwg.circle(center=(cx + offset, ct_y), r=2.5, class_="outline"))
     
-    # 8. To Transformer
+    # 7. To Transformer
     _draw_line_anchored(dwg, (cx, ct_y + 8), (cx, tr_top_y - tr_radius), class_="thin")
     
     # -------------------------------------------------------------------------
