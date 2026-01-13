@@ -297,38 +297,38 @@ def _draw_cable_termination_down(dwg, x: float, y: float, size: float = 8.0) -> 
 
 def _draw_earth_switch_lateral(dwg, x: float, y: float, side: str = 'left') -> None:
     """
-    画侧向接地开关（图3样式）。
+    画侧向接地开关（图2样式）。
     x, y: 连接点（T接点）
     side: 'left' or 'right'
     """
     arm_len = 16.0
-    switch_gap = 6.0
-    blade_len = 10.0
-    
     direction = -1.0 if side == 'left' else 1.0
     
-    # 1. Horizontal arm
+    # 1. Horizontal arm (from main line)
     end_x = x + direction * arm_len
     dwg.add(dwg.line((x, y), (end_x, y), class_="thin"))
     
     # 2. Fixed contact (small vertical bar)
     dwg.add(dwg.line((end_x, y - 3), (end_x, y + 3), class_="thin"))
     
-    # 3. Earth symbol position (below)
-    earth_y = y + switch_gap + blade_len
-    
-    # 4. Blade (Open)
+    # 3. Ground Symbol (Below)
+    ground_y = y + 16.0
     pivot_x = end_x
-    # Blade drawn open
-    dwg.add(dwg.line((pivot_x, earth_y), (pivot_x - direction * 6, earth_y - 8), class_="thin"))
+    _draw_ground(dwg, pivot_x, ground_y)
     
-    # 5. Connection to ground
-    dwg.add(dwg.line((pivot_x, earth_y), (pivot_x, earth_y + 4), class_="thin"))
-    _draw_ground(dwg, pivot_x, earth_y + 4)
+    # Line up from ground
+    dwg.add(dwg.line((pivot_x, ground_y), (pivot_x, ground_y - 4), class_="thin"))
+    
+    # 4. Blade (Open state)
+    # Pivot is at ground side, blade moves UP towards contact
+    # Angled away to show open
+    blade_pivot_y = ground_y - 4
+    dwg.add(dwg.line((pivot_x, blade_pivot_y), (pivot_x - direction * 6, blade_pivot_y - 10), class_="thin"))
+
 
 def _draw_vpis_symbol(dwg, x: float, y: float, side: str = 'right') -> None:
     """
-    带电显示器 (VPIS): 横向引出 -> 向下竖线 -> 电容 -> 节点 -> 圆圈X -> 接地
+    带电显示器 (VPIS): 横向引出 -> 向下竖线 -> 电容 -> 指示灯 -> 接地
     **修改**：实现 L 型连接，电容在竖线上。
     """
     arm_len = 24.0 
@@ -339,7 +339,7 @@ def _draw_vpis_symbol(dwg, x: float, y: float, side: str = 'right') -> None:
     dwg.add(dwg.line((x, y), (turn_x, y), class_="thin"))
     
     # 2. Vertical Line Down to Capacitor
-    cap_top_y = y + 8.0
+    cap_top_y = y + 6.0
     dwg.add(dwg.line((turn_x, y), (turn_x, cap_top_y), class_="thin"))
     
     # 3. Capacitor (Horizontal plates)
