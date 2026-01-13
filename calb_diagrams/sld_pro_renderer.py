@@ -1198,51 +1198,56 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     # Topology: Bus -> X(Breaker) -> Switch(Iso) -> SPDT_Earth -> Branch(VPIS/Surge) -> CT -> Cable -> Transformer
     # NEW LOGIC: Bus -> Breaker(X) -> Disconnector -> SPDT Earth Switch
     
+    # -------------------------------------------------------------------------
+    # CENTER FEEDER (Transformer) - DOWNWARD - Ref: Image 4
+    # -------------------------------------------------------------------------
+    # Topology: Bus -> Breaker(X) -> SPDT Switch (Selector) -> Branch(VPIS/Surge) -> CT -> Cable -> Transformer
+    
     cx = mv_center_x
     
     # 1. Bus Connection
     _draw_solid_node(dwg, cx, mv_bus_y, mv_bus_node_r, node_fill)
     
-    # 2. Circuit Breaker (X) - FIRST
-    cb_y = mv_bus_y + 20
+    # 2. Circuit Breaker (X) - Top (Bus Side)
+    # 断路器先连接母线，触点（逻辑连接点）在母线侧
+    cb_y = mv_bus_y + 24
     _draw_line_anchored(dwg, (cx, mv_bus_y), (cx, cb_y - 6), class_="thin")
     _draw_breaker_x(dwg, cx, cb_y, 12.0)
     
-    # 3. Disconnector (Switch) - SECOND
-    iso_top_y = cb_y + 20
-    iso_pivot_y = iso_top_y + 20
+    # 3. SPDT Disconnector / Selector Switch
+    # 结构：上方连接断路器(主线静触头)，侧方连接接地(接地静触头)，下方为刀闸支点(变压器侧)
     
-    _draw_line_anchored(dwg, (cx, cb_y + 6), (cx, iso_top_y), class_="thin")
-    # Fixed contact
-    dwg.add(dwg.line((cx - 3, iso_top_y), (cx + 3, iso_top_y), class_="thin"))
-    # Blade (Open to right-up)
-    dwg.add(dwg.line((cx, iso_pivot_y), (cx + 6, iso_top_y + 4), class_="thin"))
+    spdt_top_y = cb_y + 20       # 主线静触头高度
+    spdt_h = 24.0
+    spdt_pivot_y = spdt_top_y + spdt_h # 刀闸支点高度 (变压器侧)
     
-    # 4. SPDT Earth Switch (Lateral) - THIRD
-    # This acts as the earth switch point. Blade goes down, but can ground to left.
-    earth_y = iso_pivot_y + 15
-    _draw_line_anchored(dwg, (cx, iso_pivot_y), (cx, earth_y), class_="thin")
+    # 3.1 Link from Breaker to Main Static Contact
+    _draw_line_anchored(dwg, (cx, cb_y + 6), (cx, spdt_top_y), class_="thin")
     
-    # Horizontal arm left for Earth
-    earth_arm_len = 16.0
-    earth_x = cx - earth_arm_len
-    dwg.add(dwg.line((cx, earth_y), (earth_x, earth_y), class_="thin"))
+    # 3.2 Main Static Contact (Horizontal Bar)
+    dwg.add(dwg.line((cx - 4, spdt_top_y), (cx + 4, spdt_top_y), class_="thin"))
     
-    # Fixed contact (vertical bar) for Earth
-    dwg.add(dwg.line((earth_x, earth_y - 3), (earth_x, earth_y + 3), class_="thin"))
+    # 3.3 Earth Static Contact (Left Side) - "接地符号一侧没有刀闸，是一个隔离开关的静态触点"
+    earth_gap = 18.0
+    earth_x = cx - earth_gap
+    # 竖直短线作为静触头
+    dwg.add(dwg.line((earth_x, spdt_top_y - 4), (earth_x, spdt_top_y + 4), class_="thin"))
+    # 连接接地符号
+    dwg.add(dwg.line((earth_x, spdt_top_y), (earth_x - 6, spdt_top_y), class_="thin"))
+    _draw_ground(dwg, earth_x - 6, spdt_top_y)
     
-    # Earth Blade (From ground up)
-    earth_pivot_y = earth_y + 12.0
-    _draw_ground(dwg, earth_x, earth_pivot_y)
-    dwg.add(dwg.line((earth_x, earth_pivot_y), (earth_x, earth_pivot_y - 4), class_="thin"))
-    # Blade angled right (Open)
-    blade_pivot_y = earth_pivot_y - 4
-    dwg.add(dwg.line((earth_x, blade_pivot_y), (earth_x + 6, blade_pivot_y - 8), class_="thin"))
+    # 3.4 Blade & Pivot (Transformer Side)
+    # 支点在下方
+    dwg.add(dwg.circle(center=(cx, spdt_pivot_y), r=2.5, class_="outline"))
     
-    # 5. Branch Node (Surge / VPIS) - RECOVERED
-    # The main line continues down from the SPDT junction
-    sv_node_y = earth_y + 30 
-    _draw_line_anchored(dwg, (cx, earth_y), (cx, sv_node_y), class_="thin")
+    # 刀闸 (指向主线，显示为闭合或微开状态，这里画微开以示区别)
+    # 从下方支点 延伸至 上方静触头附近
+    blade_tip_y = spdt_top_y + 4
+    dwg.add(dwg.line((cx, spdt_pivot_y - 2.5), (cx, blade_tip_y), class_="thin"))
+
+    # 4. Continue Downwards (Branch Node -> VPIS/Surge)
+    sv_node_y = spdt_pivot_y + 30
+    _draw_line_anchored(dwg, (cx, spdt_pivot_y + 2.5), (cx, sv_node_y), class_="thin")
     _draw_solid_node(dwg, cx, sv_node_y, 2.0, node_fill)
     
     # Surge Arrester (Left)
@@ -1254,19 +1259,19 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     # VPIS (Right)
     _draw_vpis_symbol(dwg, cx, sv_node_y, side='right')
 
-    # 6. CTs (3 Horizontal circles)
+    # 5. CTs (3 Horizontal circles)
     ct_y = sv_node_y + 20
     _draw_line_anchored(dwg, (cx, sv_node_y), (cx, ct_y + 8), class_="thin") # Main line through
     for offset in [-6, 0, 6]:
         dwg.add(dwg.circle(center=(cx + offset, ct_y), r=2.5, class_="outline"))
     
-    # 7. Cable Termination (Double Triangle)
+    # 6. Cable Termination (Double Triangle)
     # Just below CTs
     term_y = ct_y + 20
     _draw_line_anchored(dwg, (cx, ct_y + 8), (cx, term_y), class_="thin")
     _draw_cable_termination_down(dwg, cx, term_y)
     
-    # 8. To Transformer
+    # 7. To Transformer
     term_end_y = term_y + 16.0 + 4.0 # size*2 + stub
     _draw_line_anchored(dwg, (cx, term_end_y), (cx, tr_top_y - tr_radius), class_="thin")
     
