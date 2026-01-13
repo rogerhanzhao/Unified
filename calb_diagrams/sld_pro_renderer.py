@@ -326,7 +326,6 @@ def _draw_lbs_symbol(dwg, x: float, y: float, open_right: bool = True) -> dict:
     
     return {"top": top_y, "bottom": y}
 
-
 def _draw_earth_switch_feeder(dwg, x: float, y: float, side: str = 'left') -> None:
     """
     画进出线柜的接地开关。
