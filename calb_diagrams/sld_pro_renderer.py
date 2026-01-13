@@ -297,38 +297,49 @@ def _draw_cable_termination_down(dwg, x: float, y: float, size: float = 8.0) -> 
 
 def _draw_earth_switch_lateral(dwg, x: float, y: float, side: str = 'left') -> None:
     """
-    画侧向接地开关（图1样式）。
+    画侧向接地开关（图3样式）。
     x, y: 连接点（T接点）
     side: 'left' or 'right'
     """
     arm_len = 16.0
-    switch_gap = 6.0
-    blade_len = 10.0
     
     direction = -1.0 if side == 'left' else 1.0
     
-    # 1. Horizontal arm
+    # 1. Horizontal arm outwards
     end_x = x + direction * arm_len
     dwg.add(dwg.line((x, y), (end_x, y), class_="thin"))
     
-    # 2. Fixed contact (small vertical bar)
+    # 2. Fixed contact (small vertical bar at end of horizontal arm)
     dwg.add(dwg.line((end_x, y - 3), (end_x, y + 3), class_="thin"))
     
-    # 3. Earth symbol position (below)
-    earth_y = y + switch_gap + blade_len
+    # 3. Blade (Open) - Angled
+    # Blade is connected to Ground. The symbol usually shows the blade
+    # originating from the ground side and moving towards the contact.
+    # We draw a blade angled away from the contact.
     
-    # 4. Blade (Open)
-    pivot_x = end_x
-    # Blade drawn open
-    dwg.add(dwg.line((pivot_x, earth_y), (pivot_x - direction * 6, earth_y - 8), class_="thin"))
+    blade_start_x = end_x - direction * 6.0 # Gap from contact
+    blade_start_y = y + 8.0 # Lower than contact
     
-    # 5. Connection to ground
-    dwg.add(dwg.line((pivot_x, earth_y), (pivot_x, earth_y + 4), class_="thin"))
-    _draw_ground(dwg, pivot_x, earth_y + 4)
+    # Draw blade
+    dwg.add(dwg.line((end_x, y), (blade_start_x, blade_start_y), class_="thin")) 
+    # Wait, usually earth switch blade is connected to earth.
+    # Let's draw: Fixed contact on line. Blade pivot connected to ground.
+    
+    pivot_x = end_x 
+    pivot_y = y + 14.0 # Below the horizontal arm
+    
+    # Draw Blade (Open)
+    dwg.add(dwg.line((pivot_x, pivot_y), (pivot_x - direction * 6, pivot_y - 10), class_="thin"))
+    
+    # Connection to Ground
+    dwg.add(dwg.line((pivot_x, pivot_y), (pivot_x, pivot_y + 4), class_="thin"))
+    _draw_ground(dwg, pivot_x, pivot_y + 4)
+
 
 def _draw_vpis_symbol(dwg, x: float, y: float, side: str = 'right') -> None:
     """
     带电显示器 (VPIS): 横向引出 -> 向下竖线 -> 电容 -> 节点 -> 圆圈X -> 接地
+    **修改**：严格参考图3，电容在上方，指示灯在下方。
     """
     arm_len = 24.0 
     direction = 1.0 if side == 'right' else -1.0
@@ -1420,10 +1431,8 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             auto_symbol_h = min(50.0, max(20.0, raw_h * 1.0))
             symbol_h = forced_symbol_h if forced_symbol_h > 0 else auto_symbol_h
 
-            # DC Switch + Fuse: 线条一直拉到 branch_bus_y，穿过 gap
             _draw_dc_switch(dwg, line_x, dc_top, symbol_h, lead_end_y=branch_bus_y)
 
-            # 在上框和下框的空隙中间画相对的三角形
             _draw_triangle_pair(dwg, line_x, gap_mid_y, dc_triangle_size, dc_triangle_gap)
 
             if block_count > 1:
