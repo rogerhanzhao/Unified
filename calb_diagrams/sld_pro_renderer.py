@@ -297,9 +297,8 @@ def _draw_cable_termination_down(dwg, x: float, y: float, size: float = 8.0) -> 
 
 def _draw_earth_switch_lateral(dwg, x: float, y: float, side: str = 'left') -> None:
     """
-    画侧向接地开关（图2样式）。
-    x, y: 连接点（T接点）
-    side: 'left' or 'right'
+    画侧向接地开关（图示样式）。
+    结构：横向引出线 -> 垂直静触头 -> 刀闸（下支点连接接地，向上闭合）-> 接地符号
     """
     arm_len = 16.0
     direction = -1.0 if side == 'left' else 1.0
@@ -328,8 +327,7 @@ def _draw_earth_switch_lateral(dwg, x: float, y: float, side: str = 'left') -> N
 
 def _draw_vpis_symbol(dwg, x: float, y: float, side: str = 'right') -> None:
     """
-    带电显示器 (VPIS): 横向引出 -> 向下竖线 -> 电容 -> 指示灯 -> 接地
-    **修改**：实现 L 型连接，电容在竖线上。
+    带电显示器 (VPIS): 横向引出 -> 向下转折 -> 电容(水平) -> 指示灯 -> 接地
     """
     arm_len = 24.0 
     direction = 1.0 if side == 'right' else -1.0
@@ -339,7 +337,7 @@ def _draw_vpis_symbol(dwg, x: float, y: float, side: str = 'right') -> None:
     dwg.add(dwg.line((x, y), (turn_x, y), class_="thin"))
     
     # 2. Vertical Line Down to Capacitor
-    cap_top_y = y + 6.0
+    cap_top_y = y + 8.0
     dwg.add(dwg.line((turn_x, y), (turn_x, cap_top_y), class_="thin"))
     
     # 3. Capacitor (Horizontal plates)
@@ -1122,7 +1120,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     mv_bus_node_r = _safe_float(layout_params.get("mv_bus_node_r"), 3.0)
     
     # -------------------------------------------------------------------------
-    # FEEDERS (Left / Right) - UPWARD - Ref: Image 4
+    # FEEDERS (Left / Right) - UPWARD
     # -------------------------------------------------------------------------
     # Topology: Bus -> Switch (LBS) -> Node -> (Left: Earth, Right: VPIS) -> Arrow
     
@@ -1216,7 +1214,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     # -------------------------------------------------------------------------
     # CENTER FEEDER (Transformer) - DOWNWARD - Ref: Image 4
     # -------------------------------------------------------------------------
-    # Topology: Bus -> X(Breaker) -> Switch(Iso) -> Earth -> CT -> Cable -> Transformer
+    # Topology: Bus -> X(Breaker) -> Switch(Iso) -> Earth -> Branch(VPIS/Surge) -> CT -> Cable -> Transformer
     
     cx = mv_center_x
     
@@ -1258,19 +1256,33 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     blade_pivot_y = earth_pivot_y - 4
     dwg.add(dwg.line((earth_x, blade_pivot_y), (earth_x + 6, blade_pivot_y - 8), class_="thin"))
     
-    # 5. CTs (3 Horizontal circles)
-    ct_y = earth_y + 25
-    _draw_line_anchored(dwg, (cx, earth_y), (cx, ct_y + 8), class_="thin") # Line through
+    # 5. Branch Node (Surge / VPIS)
+    sv_node_y = earth_y + 30 
+    _draw_line_anchored(dwg, (cx, earth_y), (cx, sv_node_y), class_="thin")
+    _draw_solid_node(dwg, cx, sv_node_y, 2.0, node_fill)
+    
+    # Surge Arrester (Left)
+    surge_x = cx - 24
+    dwg.add(dwg.line((cx, sv_node_y), (surge_x, sv_node_y), class_="thin"))
+    dwg.add(dwg.line((surge_x, sv_node_y), (surge_x, sv_node_y + 6), class_="thin"))
+    _draw_surge_arrester_symbol(dwg, surge_x, sv_node_y + 6)
+    
+    # VPIS (Right)
+    _draw_vpis_symbol(dwg, cx, sv_node_y, side='right')
+
+    # 6. CTs (3 Horizontal circles)
+    ct_y = sv_node_y + 20
+    _draw_line_anchored(dwg, (cx, sv_node_y), (cx, ct_y + 8), class_="thin") # Line through
     for offset in [-6, 0, 6]:
         dwg.add(dwg.circle(center=(cx + offset, ct_y), r=2.5, class_="outline"))
     
-    # 6. Cable Termination (Double Triangle)
+    # 7. Cable Termination (Double Triangle)
     # Just below CTs
     term_y = ct_y + 20
     _draw_line_anchored(dwg, (cx, ct_y + 8), (cx, term_y), class_="thin")
     _draw_cable_termination_down(dwg, cx, term_y)
     
-    # 7. To Transformer
+    # 8. To Transformer
     term_end_y = term_y + 16.0 + 4.0 # size*2 + stub
     _draw_line_anchored(dwg, (cx, term_end_y), (cx, tr_top_y - tr_radius), class_="thin")
     
