@@ -276,29 +276,28 @@ def _draw_arrow_up(dwg, x: float, y: float, size: float = 10.0) -> None:
 
 def _draw_cable_termination_down(dwg, x: float, y: float, size: float = 8.0) -> None:
     """
-    画尖端相对的两个三角形 (Cable Sealing End / Plug-in / Direction Arrows)
-    用于变压器柜底部，符合图2的样式。
+    画尖端相对的两个三角形 (沙漏形)
     """
     half = size * 0.6
     height = size
     
-    # Top Triangle: Points DOWN (倒三角)
-    # Base at y, Tip at y+height
+    # Top Triangle: Points DOWN
     points_top = [(x - half, y), (x + half, y), (x, y + height)]
     dwg.add(dwg.polygon(points=points_top, class_="thin", fill="none"))
     
-    # Bottom Triangle: Points UP (正三角)
-    # Tip at y+height, Base at y+2*height
+    # Bottom Triangle: Points UP
     points_bot = [(x, y + height), (x - half, y + 2 * height), (x + half, y + 2 * height)]
     dwg.add(dwg.polygon(points=points_bot, class_="thin", fill="none"))
     
-    # Line continuing down from the base of the bottom triangle
+    # Line continuing down
     dwg.add(dwg.line((x, y + 2 * height), (x, y + 2 * height + 4), class_="thin"))
 
 def _draw_earth_switch_lateral(dwg, x: float, y: float, side: str = 'left') -> None:
     """
     画侧向接地开关（图示样式）。
-    结构：横向引出线 -> 垂直静触头 -> 刀闸（下支点连接接地，向上闭合）-> 接地符号
+    x, y: 连接点（T接点）
+    结构：横向线 -> 静触头(竖线) -> 刀闸(下支点，上闭合) -> 接地
+    **修改**：刀闸向左/右倾斜以示断开。
     """
     arm_len = 16.0
     direction = -1.0 if side == 'left' else 1.0
@@ -315,21 +314,24 @@ def _draw_earth_switch_lateral(dwg, x: float, y: float, side: str = 'left') -> N
     pivot_x = end_x
     _draw_ground(dwg, pivot_x, ground_y)
     
-    # Line up from ground
+    # Line up from ground to pivot
     dwg.add(dwg.line((pivot_x, ground_y), (pivot_x, ground_y - 4), class_="thin"))
     
     # 4. Blade (Open state)
-    # Pivot is at ground side, blade moves UP towards contact
-    # Angled away to show open
+    # Pivot at bottom, moves towards contact.
+    # To show open: blade leans away from contact.
     blade_pivot_y = ground_y - 4
-    dwg.add(dwg.line((pivot_x, blade_pivot_y), (pivot_x - direction * 6, blade_pivot_y - 10), class_="thin"))
+    # If side=left (dir=-1), blade leans further left to be open.
+    # If side=right (dir=1), blade leans further right to be open.
+    dwg.add(dwg.line((pivot_x, blade_pivot_y), (pivot_x + direction * 6, blade_pivot_y - 10), class_="thin"))
 
 
 def _draw_vpis_symbol(dwg, x: float, y: float, side: str = 'right') -> None:
     """
-    带电显示器 (VPIS): 横向引出 -> 向下转折 -> 电容(水平) -> 指示灯 -> 接地
+    带电显示器 (VPIS): 横向引出 -> 向下竖线 -> 电容(横杠) -> 指示灯(圆圈X) -> 接地
+    **修改**：电容改为水平平行线。
     """
-    arm_len = 24.0 
+    arm_len = 20.0 
     direction = 1.0 if side == 'right' else -1.0
     
     # 1. Horizontal arm (Main Bus to Side)
@@ -337,7 +339,7 @@ def _draw_vpis_symbol(dwg, x: float, y: float, side: str = 'right') -> None:
     dwg.add(dwg.line((x, y), (turn_x, y), class_="thin"))
     
     # 2. Vertical Line Down to Capacitor
-    cap_top_y = y + 8.0
+    cap_top_y = y + 6.0
     dwg.add(dwg.line((turn_x, y), (turn_x, cap_top_y), class_="thin"))
     
     # 3. Capacitor (Horizontal plates)
@@ -388,6 +390,35 @@ def _draw_surge_arrester_symbol(dwg, x: float, y: float) -> None:
     # Ground
     dwg.add(dwg.line((x, box_y + h), (x, box_y + h + 4), class_="thin"))
     _draw_ground(dwg, x, box_y + h + 4)
+
+def _draw_lbs_symbol(dwg, x: float, y: float, open_right: bool = True) -> dict:
+    """
+    绘制 RMU 负荷开关 (LBS)：
+    - 底部：小圆圈（支点） + 短横线（底座）
+    - 顶部：短横线（静触头）
+    - 中间：刀闸（Open 状态）
+    """
+    h = 24.0
+    top_y = y - h
+    
+    # Bottom Pivot Circle
+    r = 2.5
+    dwg.add(dwg.circle(center=(x, y), r=r, class_="outline"))
+    
+    # Bottom Base Line (horizontal through circle)
+    dwg.add(dwg.line((x - 6, y), (x + 6, y), class_="thin"))
+    
+    # Top Contact Line
+    dwg.add(dwg.line((x - 4, top_y), (x + 4, top_y), class_="thin"))
+    
+    # Blade (Open)
+    # Starts from pivot circle top
+    blade_start_y = y - r
+    # Ends near top contact but open
+    dx = 8.0 if open_right else -8.0
+    dwg.add(dwg.line((x, blade_start_y), (x + dx, top_y + 6), class_="thin"))
+    
+    return {"top": top_y, "bottom": y}
 
 # =============================================================================
 # AC Switch Helper
@@ -1120,7 +1151,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     mv_bus_node_r = _safe_float(layout_params.get("mv_bus_node_r"), 3.0)
     
     # -------------------------------------------------------------------------
-    # FEEDERS (Left / Right) - UPWARD
+    # FEEDERS (Left / Right) - UPWARD - Ref: Image 4
     # -------------------------------------------------------------------------
     # Topology: Bus -> Switch (LBS) -> Node -> (Left: Earth, Right: VPIS) -> Arrow
     
@@ -1212,9 +1243,9 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         dwg.add(dwg.text(feeder_labels[i], insert=(label_x, arrow_y - 10), class_="label", text_anchor=align))
 
     # -------------------------------------------------------------------------
-    # CENTER FEEDER (Transformer) - DOWNWARD - Ref: Image 4
+    # CENTER FEEDER (Transformer) - DOWNWARD - Ref: Image 4 (RECOVERED & CORRECTED)
     # -------------------------------------------------------------------------
-    # Topology: Bus -> X(Breaker) -> Switch(Iso) -> Earth -> Branch(VPIS/Surge) -> CT -> Cable -> Transformer
+    # Topology: Bus -> X(Breaker) -> Switch(Iso) -> Earth -> Branch(Surge/VPIS) -> CT -> Cable -> Transformer
     
     cx = mv_center_x
     
@@ -1256,7 +1287,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     blade_pivot_y = earth_pivot_y - 4
     dwg.add(dwg.line((earth_x, blade_pivot_y), (earth_x + 6, blade_pivot_y - 8), class_="thin"))
     
-    # 5. Branch Node (Surge / VPIS)
+    # 5. Branch Node (Surge / VPIS) - RECOVERED
     sv_node_y = earth_y + 30 
     _draw_line_anchored(dwg, (cx, earth_y), (cx, sv_node_y), class_="thin")
     _draw_solid_node(dwg, cx, sv_node_y, 2.0, node_fill)
@@ -1272,7 +1303,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
 
     # 6. CTs (3 Horizontal circles)
     ct_y = sv_node_y + 20
-    _draw_line_anchored(dwg, (cx, sv_node_y), (cx, ct_y + 8), class_="thin") # Line through
+    _draw_line_anchored(dwg, (cx, sv_node_y), (cx, ct_y + 8), class_="thin") # Main line through
     for offset in [-6, 0, 6]:
         dwg.add(dwg.circle(center=(cx + offset, ct_y), r=2.5, class_="outline"))
     
@@ -1308,7 +1339,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     _draw_line_anchored(dwg, tx_lv_left_start, tx_lv_left, class_="thick", start_anchor=tx_lv_left_start, end_anchor=tx_lv_left)
     _draw_line_anchored(dwg, tx_lv_right_start, tx_lv_right, class_="thick", start_anchor=tx_lv_right_start, end_anchor=tx_lv_right)
 
-    # Transformer Text
+    # Transformer Text (Positioned to the right of transformer)
     tr_text_x = cx + tr_radius * 2 + 60
     tr_text_y = tr_top_y - 20
     tr_lines = [
