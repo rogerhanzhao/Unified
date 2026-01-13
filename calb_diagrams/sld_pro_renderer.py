@@ -1179,8 +1179,7 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     # -------------------------------------------------------------------------
     # CENTER FEEDER (Transformer) - DOWNWARD
     # -------------------------------------------------------------------------
-    # Topology: Bus -> Breaker (X) -> Disconnector -> Earth -> Branch(Surge/VPIS) -> CT -> Transformer
-    # REVISED to match Diagram 2 exactly.
+    # Topology: Bus -> Breaker (X) -> SPDT(Iso + Earth) -> Branch(Surge/VPIS) -> CT -> Transformer
     
     cx = mv_center_x
     
@@ -1193,27 +1192,27 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     _draw_line_anchored(dwg, (cx, mv_bus_y), (cx, cb_y - 6), class_="thin")
     _draw_breaker_x(dwg, cx, cb_y, 12.0)
     
-    # 3. Disconnector (Isolation)
-    # Located below breaker
-    iso_top_y = cb_y + 25 
-    iso_pivot_y = iso_top_y + 25
+    # 3. SPDT Switch (Iso + Earth)
+    # Top Contact (Fixed)
+    sw_top_y = cb_y + 20
+    _draw_line_anchored(dwg, (cx, cb_y + 6), (cx, sw_top_y), class_="thin")
+    dwg.add(dwg.line((cx - 3, sw_top_y), (cx + 3, sw_top_y), class_="thin"))
     
-    _draw_line_anchored(dwg, (cx, cb_y + 6), (cx, iso_top_y), class_="thin")
-    # Fixed contact (horizontal bar)
-    dwg.add(dwg.line((cx - 3, iso_top_y), (cx + 3, iso_top_y), class_="thin"))
-    # Blade (angled from pivot to top)
-    dwg.add(dwg.line((cx, iso_pivot_y), (cx - 6, iso_top_y + 6), class_="thin")) # Angled left-up
+    # Pivot (Bottom)
+    sw_pivot_y = sw_top_y + 25
     
-    # 4. Earth Switch (Left side, single)
-    # Pivot is connected to the main line
-    earth_y = iso_pivot_y + 10
-    _draw_line_anchored(dwg, (cx, iso_pivot_y), (cx, earth_y), class_="thin")
-    # Draw earth switch branching left
-    _draw_earth_switch_lateral(dwg, cx, earth_y, side='left')
+    # Main Blade (Open to Right)
+    dwg.add(dwg.line((cx, sw_pivot_y), (cx + 8, sw_top_y + 5), class_="thin"))
     
-    # 5. Branch Point (Surge / VPIS)
-    sv_node_y = earth_y + 30
-    _draw_line_anchored(dwg, (cx, earth_y), (cx, sv_node_y), class_="thin")
+    # Earth Contact (Left side)
+    earth_contact_x = cx - 12
+    earth_contact_y = sw_top_y + 5
+    dwg.add(dwg.line((earth_contact_x - 3, earth_contact_y), (earth_contact_x + 3, earth_contact_y), class_="thin"))
+    _draw_ground(dwg, earth_contact_x, earth_contact_y)
+    
+    # 4. Continue Line Down to Branch Point
+    sv_node_y = sw_pivot_y + 20
+    _draw_line_anchored(dwg, (cx, sw_pivot_y), (cx, sv_node_y), class_="thin")
     _draw_solid_node(dwg, cx, sv_node_y, 2.0, node_fill)
     
     # Surge Arrester (Left)
@@ -1223,23 +1222,22 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     _draw_surge_arrester_symbol(dwg, surge_x, sv_node_y + 6)
     
     # VPIS (Right)
-    # Note: Pic 1 shows VPIS on the right for the center feeder too
     _draw_vpis_symbol(dwg, cx, sv_node_y, side='right')
     
-    # 6. CTs (3 horizontal circles)
+    # 5. CTs (3 horizontal circles)
     ct_y = sv_node_y + 20
     _draw_line_anchored(dwg, (cx, sv_node_y), (cx, ct_y + 8), class_="thin") # Main line through
     for offset in [-6, 0, 6]:
         dwg.add(dwg.circle(center=(cx + offset, ct_y), r=2.5, class_="outline"))
     
-    # 7. To Transformer
+    # 6. To Transformer
     _draw_line_anchored(dwg, (cx, ct_y + 8), (cx, tr_top_y - tr_radius), class_="thin")
     
     # -------------------------------------------------------------------------
     # Transformer & Below (UNCHANGED LOGIC, just pos adjustment)
     # -------------------------------------------------------------------------
-    # Cable Termination Symbol (New per request)
-    term_y = tr_top_y - tr_radius - 30.0 # Moved UP by setting subtraction to 30.0
+    # Cable Termination Symbol
+    term_y = tr_top_y - tr_radius - 30.0 
     _draw_cable_termination_down(dwg, cx, term_y)
     
     # Transformer Symbol
