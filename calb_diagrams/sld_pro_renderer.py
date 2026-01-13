@@ -276,20 +276,24 @@ def _draw_arrow_up(dwg, x: float, y: float, size: float = 10.0) -> None:
 
 def _draw_cable_termination_down(dwg, x: float, y: float, size: float = 8.0) -> None:
     """
-    画两个向下的连续三角形 (Cable Sealing End / Plug-in)
-    用于变压器柜底部
+    画尖端相对的两个三角形 (Cable Sealing End / Plug-in / Direction Arrows)
+    用于变压器柜底部，符合图2的样式。
     """
-    # Triangle 1
-    points1 = [(x - size*0.5, y), (x + size*0.5, y), (x, y + size)]
-    dwg.add(dwg.polygon(points=points1, class_="thin", fill="none"))
+    half = size * 0.6
+    height = size
     
-    # Triangle 2 (below)
-    y2 = y + size
-    points2 = [(x - size*0.5, y2), (x + size*0.5, y2), (x, y2 + size)]
-    dwg.add(dwg.polygon(points=points2, class_="thin", fill="none"))
+    # Top Triangle: Points DOWN
+    # Base at y, Tip at y+height
+    points_top = [(x - half, y), (x + half, y), (x, y + height)]
+    dwg.add(dwg.polygon(points=points_top, class_="thin", fill="none"))
     
-    # Line continuing down from tip
-    dwg.add(dwg.line((x, y2 + size), (x, y2 + size + 4), class_="thin"))
+    # Bottom Triangle: Points UP
+    # Tip at y+height, Base at y+2*height
+    points_bot = [(x, y + height), (x - half, y + 2 * height), (x + half, y + 2 * height)]
+    dwg.add(dwg.polygon(points=points_bot, class_="thin", fill="none"))
+    
+    # Line continuing down from the base of the bottom triangle
+    dwg.add(dwg.line((x, y + 2 * height), (x, y + 2 * height + 4), class_="thin"))
 
 def _draw_earth_switch_lateral(dwg, x: float, y: float, side: str = 'left') -> None:
     """
