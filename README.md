@@ -1,15 +1,3 @@
-# -----------------------------------------------------------------------------
-# Personal Source-Available Notice (Non-Commercial)
-#
-# Copyright (c) 2026 Alex Zhao. All rights reserved.
-#
-# You may use, copy, and modify this code for personal learning, evaluation,
-# and internal engineering reference only. Commercial use, resale, hosting as a
-# paid service, or integration into commercial products is NOT permitted without
-# prior written permission from the author.
-#
-# DISCLAIMER: This software is provided "AS IS", without warranty of any kind.
-# -----------------------------------------------------------------------------
 
 # ESS Sizing Tool
 
