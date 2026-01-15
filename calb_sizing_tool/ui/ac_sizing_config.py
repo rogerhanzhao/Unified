@@ -1,10 +1,29 @@
+# -----------------------------------------------------------------------------
+# Personal Open-Source Notice
+#
+# Copyright (c) 2026 Alex.Zhao. All rights reserved.
+#
+# This repository is released under the MIT License (see LICENSE file).
+# Intended use: learning, evaluation, and engineering reference for Utility-scale
+# BESS/ESS sizing and Reporting workflows.
+#
+# DISCLAIMER: This software is provided "AS IS", without warranty of any kind,
+# express or implied. In no event shall the author(s) be liable for any claim,
+# damages, or other liability arising from, out of, or in connection with the
+# software or the use or other dealings in the software.
+#
+# NOTE: This is a personal project. It is not an official product or statement
+# of any company or organization.
+# -----------------------------------------------------------------------------
+
 """
 AC Sizing配置和推荐引擎
 基于DC Block数量生成三种标准搭配方案 (1:1, 1:2, 1:4)
 """
 import math
-from typing import Dict, List, Tuple
 from dataclasses import dataclass
+from enum import Enum
+from typing import Dict, List, Tuple
 
 
 @dataclass
@@ -236,4 +255,66 @@ def suggest_pcs_count_and_rating(
                 best_pcs_kw = pcs_kw
     
     return best_pcs_count, best_pcs_kw
+
+
+class DCACRatio(str, Enum):
+    ONE_TO_ONE = "1:1"
+    ONE_TO_TWO = "1:2"
+    ONE_TO_FOUR = "1:4"
+
+
+class ACBlockConfig:
+    """Compatibility wrapper for legacy AC sizing config APIs."""
+
+    def __init__(self) -> None:
+        self._pcs_configs_by_count = {
+            2: [
+                PCSRecommendation(pcs_count=2, pcs_kw=1250, total_kw=2500),
+                PCSRecommendation(pcs_count=2, pcs_kw=1500, total_kw=3000),
+                PCSRecommendation(pcs_count=2, pcs_kw=1725, total_kw=3450),
+                PCSRecommendation(pcs_count=2, pcs_kw=2000, total_kw=4000),
+                PCSRecommendation(pcs_count=2, pcs_kw=2500, total_kw=5000),
+            ],
+            4: [
+                PCSRecommendation(pcs_count=4, pcs_kw=1250, total_kw=5000),
+                PCSRecommendation(pcs_count=4, pcs_kw=1500, total_kw=6000),
+                PCSRecommendation(pcs_count=4, pcs_kw=1725, total_kw=6900),
+                PCSRecommendation(pcs_count=4, pcs_kw=2000, total_kw=8000),
+                PCSRecommendation(pcs_count=4, pcs_kw=2500, total_kw=10000),
+            ],
+        }
+
+    def get_pcs_recommendations_for_pcs_count(self, pcs_count: int) -> List[PCSRecommendation]:
+        return list(self._pcs_configs_by_count.get(int(pcs_count), []))
+
+    def calculate_ac_blocks(self, dc_blocks_total: int, ratio: DCACRatio) -> Dict[str, int]:
+        dc_blocks_total = int(dc_blocks_total or 0)
+        if ratio == DCACRatio.ONE_TO_ONE:
+            ac_blocks = dc_blocks_total
+        elif ratio == DCACRatio.ONE_TO_TWO:
+            ac_blocks = math.ceil(dc_blocks_total / 2) if dc_blocks_total > 0 else 0
+        elif ratio == DCACRatio.ONE_TO_FOUR:
+            ac_blocks = math.ceil(dc_blocks_total / 4) if dc_blocks_total > 0 else 0
+        else:
+            ac_blocks = dc_blocks_total
+        return {"ac_blocks": ac_blocks}
+
+    def get_pcs_recommendations_for_dc_ac_ratio(
+        self, dc_blocks_total: int, ratio: DCACRatio
+    ) -> List[PCSRecommendation]:
+        options = generate_ac_sizing_options(
+            int(dc_blocks_total or 0),
+            target_mw=0.0,
+            target_mwh=0.0,
+        )
+        ratio_value = ratio.value if isinstance(ratio, DCACRatio) else str(ratio)
+        for option in options:
+            if option.ratio == ratio_value:
+                return list(option.pcs_recommendations)
+        return list(self._pcs_configs_by_count.get(2, [])) + list(self._pcs_configs_by_count.get(4, []))
+
+
+def allocate_dc_blocks_to_pcs(dc_blocks_total: int, pcs_count: int) -> Dict[int, int]:
+    counts = evenly_distribute(int(dc_blocks_total or 0), int(pcs_count or 0))
+    return {idx + 1: count for idx, count in enumerate(counts)}
 

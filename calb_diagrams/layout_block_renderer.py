@@ -1,3 +1,21 @@
+# -----------------------------------------------------------------------------
+# Personal Open-Source Notice
+#
+# Copyright (c) 2026 Alex.Zhao. All rights reserved.
+#
+# This repository is released under the MIT License (see LICENSE file).
+# Intended use: learning, evaluation, and engineering reference for Utility-scale
+# BESS/ESS sizing and Reporting workflows.
+#
+# DISCLAIMER: This software is provided "AS IS", without warranty of any kind,
+# express or implied. In no event shall the author(s) be liable for any claim,
+# damages, or other liability arising from, out of, or in connection with the
+# software or the use or other dealings in the software.
+#
+# NOTE: This is a personal project. It is not an official product or statement
+# of any company or organization.
+# -----------------------------------------------------------------------------
+
 import base64
 import html
 import math
@@ -722,7 +740,7 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
                     cooling_align=cooling_align,
                     dark_mode=dark_mode,
                 )
-                # _svg_text(lines, "DC Block", cell_x + 6, cell_y + 18)
+                _svg_text(lines, "DC Block", cell_x + 6, cell_y + 18, class_name="dim-text")
 
         bess_text = bess_text_template.format(start=start, end=end)
         _svg_text(lines, bess_text, dc_array_x, dc_array_y + dc_h + 18)
@@ -979,6 +997,13 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
                         cooling_align=cooling_align,
                         dark_mode=dark_mode,
                     )
+                dwg.add(
+                    dwg.text(
+                        "DC Block",
+                        insert=(cell_x + 6, cell_y + 18),
+                        class_="dim-text",
+                    )
+                )
 
         bess_text = bess_text_template.format(start=start, end=end)
         dwg.add(dwg.text(bess_text, insert=(dc_array_x, dc_array_y + dc_h + 18), class_="label"))

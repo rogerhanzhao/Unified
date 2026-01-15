@@ -1,4 +1,23 @@
+# -----------------------------------------------------------------------------
+# Personal Open-Source Notice
+#
+# Copyright (c) 2026 Alex.Zhao. All rights reserved.
+#
+# This repository is released under the MIT License (see LICENSE file).
+# Intended use: learning, evaluation, and engineering reference for Utility-scale
+# BESS/ESS sizing and Reporting workflows.
+#
+# DISCLAIMER: This software is provided "AS IS", without warranty of any kind,
+# express or implied. In no event shall the author(s) be liable for any claim,
+# damages, or other liability arising from, out of, or in connection with the
+# software or the use or other dealings in the software.
+#
+# NOTE: This is a personal project. It is not an official product or statement
+# of any company or organization.
+# -----------------------------------------------------------------------------
+
 import hashlib
+import importlib
 import json
 import re
 from dataclasses import dataclass, field
@@ -7,7 +26,6 @@ from typing import Any, Dict, List, Optional
 
 from calb_sizing_tool.common.ac_block import derive_ac_template_fields
 from calb_sizing_tool.config import AC_DATA_PATH, DC_DATA_PATH
-from calb_sizing_tool.ui import dc_view
 
 
 @dataclass
@@ -42,20 +60,30 @@ class ReportContext:
     qc_checks: List[str]
     dictionary_version_dc: str
     dictionary_version_ac: str
-    sld_snapshot_id: Optional[str]
-    sld_snapshot_hash: Optional[str]
-    sld_generated_at: Optional[str]
-    sld_group_index: Optional[int]
-    sld_preview_svg_bytes: Optional[bytes]
-    sld_pro_png_bytes: Optional[bytes]
-    layout_png_bytes: Optional[bytes]
-    layout_svg_bytes: Optional[bytes]
+    sld_snapshot_id: Optional[str] = None
+    sld_snapshot_hash: Optional[str] = None
+    sld_generated_at: Optional[str] = None
+    sld_group_index: Optional[int] = None
+    sld_preview_svg_bytes: Optional[bytes] = None
+    sld_pro_png_bytes: Optional[bytes] = None
+    layout_png_bytes: Optional[bytes] = None
+    layout_svg_bytes: Optional[bytes] = None
     stage1: Dict[str, Any] = field(default_factory=dict)
     stage2: Dict[str, Any] = field(default_factory=dict)
     stage3_df: Any = None
     stage3_meta: Dict[str, Any] = field(default_factory=dict)
     ac_output: Dict[str, Any] = field(default_factory=dict)
     project_inputs: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_session_state(
+        cls,
+        session_state: Optional[dict],
+        stage_outputs: Optional[dict] = None,
+        project_inputs: Optional[dict] = None,
+        scenario_ids=None,
+    ) -> "ReportContext":
+        return build_report_context(session_state, stage_outputs, project_inputs, scenario_ids)
 
 
 def _snapshot_hash(snapshot: dict) -> str:
@@ -123,6 +151,7 @@ def _pick_scenario_id(stage13_output: dict, scenario_ids):
 
 def _get_stage3_df(stage1: dict, stage2: dict):
     try:
+        dc_view = importlib.import_module("calb_sizing_tool.ui.dc_view")
         _, _, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve = dc_view.load_data(DC_DATA_PATH)
         return dc_view.run_stage3(stage1, stage2, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve)
     except Exception as exc:
@@ -135,9 +164,9 @@ def _get_stage3_df(stage1: dict, stage2: dict):
 
 
 def build_report_context(
-    session_state: Optional[dict],
-    stage_outputs: Optional[dict],
-    project_inputs: Optional[dict],
+    session_state: Optional[dict] = None,
+    stage_outputs: Optional[dict] = None,
+    project_inputs: Optional[dict] = None,
     scenario_ids=None,
 ) -> ReportContext:
     state = session_state or {}

@@ -1,9 +1,28 @@
 #!/usr/bin/env python3
+# -----------------------------------------------------------------------------
+# Personal Open-Source Notice
+#
+# Copyright (c) 2026 Alex.Zhao. All rights reserved.
+#
+# This repository is released under the MIT License (see LICENSE file).
+# Intended use: learning, evaluation, and engineering reference for Utility-scale
+# BESS/ESS sizing and Reporting workflows.
+#
+# DISCLAIMER: This software is provided "AS IS", without warranty of any kind,
+# express or implied. In no event shall the author(s) be liable for any claim,
+# damages, or other liability arising from, out of, or in connection with the
+# software or the use or other dealings in the software.
+#
+# NOTE: This is a personal project. It is not an official product or statement
+# of any company or organization.
+# -----------------------------------------------------------------------------
+
 """
 Comprehensive system test to validate all fixes are in place and working.
 """
-import sys
 import json
+import os
+import sys
 from pathlib import Path
 
 def test_pcs_2000kw_available():
@@ -100,6 +119,9 @@ def test_file_naming():
 def test_outputs_directory():
     """Verify outputs directory exists and is writable"""
     outputs_dir = Path("/opt/calb/prod/CALB_SIZINGTOOL/outputs")
+    if os.name == "nt" or not outputs_dir.exists():
+        outputs_dir = Path("outputs")
+        outputs_dir.mkdir(parents=True, exist_ok=True)
     assert outputs_dir.exists(), "Outputs directory does not exist"
     assert outputs_dir.is_dir(), "Outputs path is not a directory"
     

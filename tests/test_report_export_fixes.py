@@ -1,3 +1,21 @@
+# -----------------------------------------------------------------------------
+# Personal Open-Source Notice
+#
+# Copyright (c) 2026 Alex.Zhao. All rights reserved.
+#
+# This repository is released under the MIT License (see LICENSE file).
+# Intended use: learning, evaluation, and engineering reference for Utility-scale
+# BESS/ESS sizing and Reporting workflows.
+#
+# DISCLAIMER: This software is provided "AS IS", without warranty of any kind,
+# express or implied. In no event shall the author(s) be liable for any claim,
+# damages, or other liability arising from, out of, or in connection with the
+# software or the use or other dealings in the software.
+#
+# NOTE: This is a personal project. It is not an official product or statement
+# of any company or organization.
+# -----------------------------------------------------------------------------
+
 """
 Comprehensive tests for report export fixes:
 A. Efficiency chain uses DC SIZING values as source of truth
@@ -81,7 +99,7 @@ class TestEfficiencyChainSourceOfTruth:
                     "cabinet_count": 0,
                     "dc_nameplate_bol_mwh": 450.0,
                     "oversize_mwh": 1.35,
-                    "block_config_table": __create_minimal_dc_table(),
+                    "block_config_table": _create_minimal_dc_table(),
                 },
                 "stage3_df": None,
                 "stage3_meta": {},
@@ -140,7 +158,7 @@ class TestEfficiencyChainSourceOfTruth:
                     "container_count": 90,
                     "cabinet_count": 0,
                     "dc_nameplate_bol_mwh": 450.0,
-                    "block_config_table": __create_minimal_dc_table(),
+                    "block_config_table": _create_minimal_dc_table(),
                 },
                 "ac_output": {
                     "num_blocks": 23,
@@ -191,7 +209,7 @@ class TestEfficiencyChainSourceOfTruth:
                     "container_count": 90,
                     "cabinet_count": 0,
                     "dc_nameplate_bol_mwh": 450.0,
-                    "block_config_table": __create_minimal_dc_table(),
+                    "block_config_table": _create_minimal_dc_table(),
                 },
                 "ac_output": {
                     "num_blocks": 23,
@@ -244,7 +262,7 @@ class TestACBlockAggregation:
                     "container_count": 90,
                     "cabinet_count": 0,
                     "dc_nameplate_bol_mwh": 450.0,
-                    "block_config_table": __create_minimal_dc_table(),
+                    "block_config_table": _create_minimal_dc_table(),
                 },
                 "ac_output": {
                     "num_blocks": 23,
@@ -301,7 +319,7 @@ class TestACBlockAggregation:
                     "container_count": 90,
                     "cabinet_count": 0,
                     "dc_nameplate_bol_mwh": 450.0,
-                    "block_config_table": __create_minimal_dc_table(),
+                    "block_config_table": _create_minimal_dc_table(),
                 },
                 "ac_output": {
                     "num_blocks": 23,
@@ -362,7 +380,7 @@ class TestReportConsistency:
                     "container_count": 90,
                     "cabinet_count": 0,
                     "dc_nameplate_bol_mwh": 450.0,
-                    "block_config_table": __create_minimal_dc_table(),
+                    "block_config_table": _create_minimal_dc_table(),
                 },
                 "ac_output": {
                     "num_blocks": 23,
@@ -415,7 +433,7 @@ class TestNoAuxiliaryAssumptions:
                     "container_count": 90,
                     "cabinet_count": 0,
                     "dc_nameplate_bol_mwh": 450.0,
-                    "block_config_table": __create_minimal_dc_table(),
+                    "block_config_table": _create_minimal_dc_table(),
                 },
                 "ac_output": {
                     "num_blocks": 23,
@@ -443,7 +461,7 @@ class TestNoAuxiliaryAssumptions:
 
 # Helper functions
 
-def __create_minimal_dc_table():
+def _create_minimal_dc_table():
     """Create a minimal DC config table for testing."""
     import pandas as pd
     return pd.DataFrame({

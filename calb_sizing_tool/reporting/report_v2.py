@@ -1,3 +1,21 @@
+# -----------------------------------------------------------------------------
+# Personal Open-Source Notice
+#
+# Copyright (c) 2026 Alex.Zhao. All rights reserved.
+#
+# This repository is released under the MIT License (see LICENSE file).
+# Intended use: learning, evaluation, and engineering reference for Utility-scale
+# BESS/ESS sizing and Reporting workflows.
+#
+# DISCLAIMER: This software is provided "AS IS", without warranty of any kind,
+# express or implied. In no event shall the author(s) be liable for any claim,
+# damages, or other liability arising from, out of, or in connection with the
+# software or the use or other dealings in the software.
+#
+# NOTE: This is a personal project. It is not an official product or statement
+# of any company or organization.
+# -----------------------------------------------------------------------------
+
 import datetime
 import io
 import re
@@ -188,10 +206,11 @@ def _validate_efficiency_chain(ctx: ReportContext) -> list[str]:
     warnings = []
     
     # Verify efficiency values came from stage1 (DC SIZING output)
-    if not ctx.stage1 or not isinstance(ctx.stage1, dict):
-        warnings.append("Cannot validate efficiency: stage1 (DC SIZING output) is missing or invalid. "
-                       "Ensure DC SIZING was completed before exporting.")
-        return warnings
+    if not isinstance(ctx.stage1, dict) or not ctx.stage1:
+        warnings.append(
+            "Cannot validate efficiency: stage1 (DC SIZING output) is missing or invalid. "
+            "Ensure DC SIZING was completed before exporting."
+        )
     
     # Check all components are present (not None/zero)
     components = [
@@ -436,7 +455,8 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
     doc.add_paragraph("")
     doc.add_heading("Efficiency Chain (one-way)", level=3)
     doc.add_paragraph(
-        "Note: Efficiency chain values (below) represent the one-way conversion path from DC side to AC/POI. "
+        "Note: Efficiency chain values (below) represent the one-way conversion path from DC side to AC/POI and "
+        "do not include Auxiliary losses or station service loads. "
         "All efficiency and loss values are exclusive of Auxiliary loads. "
         "The product of all component efficiencies yields the total one-way chain efficiency."
     )
