@@ -1,4 +1,5 @@
-# CALB ESS Sizing Tool
+
+# ESS Sizing Tool
 
 This repository contains a Streamlit application for sizing energy storage systems across Stage 1–4 and lightweight unit tests for the Stage 4 interface helpers.
 
