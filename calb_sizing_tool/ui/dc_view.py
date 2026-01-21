@@ -1119,7 +1119,7 @@ def show():
             )
             dc_inputs["dod_pct"] = dod_pct
             dc_rte_pct = c8.number_input(
-                "DC RTE (%)",
+                "DC RTE (%) System level Base on 0.25C",
                 key=_init_input(
                     "dc_round_trip_efficiency_pct",
                     get_default_percent_val("dc_round_trip_efficiency_pct", 94.0),
