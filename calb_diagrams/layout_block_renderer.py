@@ -250,6 +250,7 @@ def _draw_dc_interior(
 
 def _draw_ac_interior(
     dwg,
+    spec: LayoutBlockSpec,
     x,
     y,
     w,
@@ -275,16 +276,24 @@ def _draw_ac_interior(
     dwg.add(dwg.line((split_2, y), (split_2, y + h), class_="thin"))
 
     pcs_pad = max(4.0, pcs_w * 0.06)
-    pcs_cols = 2
+    
+    # --- DYNAMIC PCS LAYOUT ---
+    pcs_count = getattr(spec, "pcs_count", 4)
     pcs_rows = 2
-    cabinet_w = (pcs_w - pcs_pad * (pcs_cols + 1)) / pcs_cols
-    cabinet_h = (h - pcs_pad * 2) / pcs_rows
+    pcs_cols = math.ceil(pcs_count / pcs_rows) if pcs_rows > 0 else pcs_count
+    if pcs_cols == 0: pcs_cols = 1
+    
+    cabinet_w = (pcs_w - pcs_pad * (pcs_cols + 1)) / pcs_cols if pcs_cols > 0 else 0
+    cabinet_h = (h - pcs_pad * (pcs_rows + 1)) / pcs_rows if pcs_rows > 0 else 0
 
-    current_pcs = pcs_start_index
+    current_pcs_drawn = 0
     for row in range(pcs_rows):
         for col in range(pcs_cols):
+            if current_pcs_drawn >= pcs_count:
+                break
+            
             cx = x + pcs_pad + col * (cabinet_w + pcs_pad)
-            cy = y + pcs_pad + row * (cabinet_h + pcs_pad * 0.5)
+            cy = y + pcs_pad + row * (cabinet_h + pcs_pad) # Adjusted for consistent padding
             dwg.add(dwg.rect(insert=(cx, cy), size=(cabinet_w, cabinet_h), class_="thin"))
             if dark_mode:
                 dwg.add(dwg.line((cx, cy), (cx + cabinet_w, cy + cabinet_h), class_="thin"))
@@ -292,13 +301,15 @@ def _draw_ac_interior(
             else:
                 dwg.add(
                     dwg.text(
-                        f"PCS-{current_pcs}",
+                        f"PCS-{pcs_start_index + current_pcs_drawn}",
                         insert=(cx + cabinet_w / 2, cy + cabinet_h / 2 + 4),
                         class_="dim-text",
                         text_anchor="middle",
                     )
                 )
-            current_pcs += 1
+            current_pcs_drawn += 1
+        if current_pcs_drawn >= pcs_count:
+            break
 
     tr_pad = max(5.0, tr_w * 0.08)
     tr_x = split_1 + tr_pad
@@ -512,6 +523,7 @@ def _draw_dc_interior_raw(
 
 def _draw_ac_interior_raw(
     lines,
+    spec: LayoutBlockSpec,
     x,
     y,
     w,
@@ -537,23 +549,32 @@ def _draw_ac_interior_raw(
     _svg_line(lines, split_2, y, split_2, y + h, class_name="thin")
 
     pcs_pad = max(4.0, pcs_w * 0.06)
-    pcs_cols = 2
+
+    # --- DYNAMIC PCS LAYOUT ---
+    pcs_count = getattr(spec, "pcs_count", 4)
     pcs_rows = 2
-    cabinet_w = (pcs_w - pcs_pad * (pcs_cols + 1)) / pcs_cols
-    cabinet_h = (h - pcs_pad * 2) / pcs_rows
+    pcs_cols = math.ceil(pcs_count / pcs_rows) if pcs_rows > 0 else pcs_count
+    if pcs_cols == 0: pcs_cols = 1
     
-    current_pcs = pcs_start_index
+    cabinet_w = (pcs_w - pcs_pad * (pcs_cols + 1)) / pcs_cols if pcs_cols > 0 else 0
+    cabinet_h = (h - pcs_pad * (pcs_rows + 1)) / pcs_rows if pcs_rows > 0 else 0
+    
+    current_pcs_drawn = 0
     for row in range(pcs_rows):
         for col in range(pcs_cols):
+            if current_pcs_drawn >= pcs_count:
+                break
             cx = x + pcs_pad + col * (cabinet_w + pcs_pad)
-            cy = y + pcs_pad + row * (cabinet_h + pcs_pad * 0.5)
+            cy = y + pcs_pad + row * (cabinet_h + pcs_pad) # Adjusted for consistent padding
             _svg_rect(lines, cx, cy, cabinet_w, cabinet_h, class_name="thin")
             if dark_mode:
                 _svg_line(lines, cx, cy, cx + cabinet_w, cy + cabinet_h)
                 _svg_line(lines, cx + cabinet_w, cy, cx, cy + cabinet_h)
             else:
-                _svg_text(lines, f"PCS-{current_pcs}", cx + cabinet_w/2, cy + cabinet_h/2 + 4, class_name="dim-text", anchor="middle")
-            current_pcs += 1
+                _svg_text(lines, f"PCS-{pcs_start_index + current_pcs_drawn}", cx + cabinet_w/2, cy + cabinet_h/2 + 4, class_name="dim-text", anchor="middle")
+            current_pcs_drawn += 1
+        if current_pcs_drawn >= pcs_count:
+            break
 
     tr_pad = max(5.0, tr_w * 0.08)
     tr_x = split_1 + tr_pad
@@ -740,10 +761,10 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
                     cooling_align=cooling_align,
                     dark_mode=dark_mode,
                 )
-                _svg_text(lines, "DC Block", cell_x + 6, cell_y + 18, class_name="dim-text")
+                _svg_text(lines, "DC Block", cell_x + container_len / 2, cell_y - 8, class_name="dim-text", anchor="middle")
 
         bess_text = bess_text_template.format(start=start, end=end)
-        _svg_text(lines, bess_text, dc_array_x, dc_array_y + dc_h + 18)
+        _svg_text(lines, bess_text, dc_array_x + dc_w / 2, dc_array_y + dc_h + 18, anchor="middle")
 
         if spec.show_skid:
             skid_x = dc_array_x + dc_w + ac_gap
@@ -751,6 +772,7 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
             _svg_rect(lines, skid_x, skid_y, container_len, container_w)
             _draw_ac_interior_raw(
                 lines,
+                spec,
                 skid_x,
                 skid_y,
                 container_len,
@@ -759,7 +781,7 @@ def _render_layout_block_svg_fallback(spec: LayoutBlockSpec) -> str:
                 pcs_start_index=pcs_global_counter,
                 dark_mode=dark_mode,
             )
-            pcs_global_counter += 4
+            pcs_global_counter += getattr(spec, "pcs_count", 4)
             if skid_subtext:
                 _svg_text(lines, skid_subtext, skid_x + 6, skid_y + container_w + 30, class_name="dim-text")
 
@@ -1000,13 +1022,14 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
                 dwg.add(
                     dwg.text(
                         "DC Block",
-                        insert=(cell_x + 6, cell_y + 18),
+                        insert=(cell_x + container_len / 2, cell_y - 8),
                         class_="dim-text",
+                        text_anchor="middle",
                     )
                 )
 
         bess_text = bess_text_template.format(start=start, end=end)
-        dwg.add(dwg.text(bess_text, insert=(dc_array_x, dc_array_y + dc_h + 18), class_="label"))
+        dwg.add(dwg.text(bess_text, insert=(dc_array_x + dc_w / 2, dc_array_y + dc_h + 18), class_="label", text_anchor="middle"))
 
         if spec.show_skid:
             skid_x = dc_array_x + dc_w + ac_gap
@@ -1023,6 +1046,7 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
                 dwg.add(dwg.rect(insert=(skid_x, skid_y), size=(container_len, container_w), class_="outline"))
             _draw_ac_interior(
                 dwg,
+                spec,
                 skid_x,
                 skid_y,
                 container_len,
@@ -1031,7 +1055,7 @@ svg {{ font-family: {LAYOUT_FONT_FAMILY}; font-size: {LAYOUT_FONT_SIZE}px; }}
                 pcs_start_index=pcs_global_counter,
                 dark_mode=dark_mode,
             )
-            pcs_global_counter += 4  # Assuming 4 units per block (2x2)
+            pcs_global_counter += getattr(spec, "pcs_count", 4)
             if skid_subtext:
                 dwg.add(dwg.text(skid_subtext, insert=(skid_x + 6, skid_y + container_w + 30), class_="dim-text"))
 

@@ -172,75 +172,28 @@ def _resolve_dc_blocks_per_feeder(
     group_index: int,
     override_total_blocks: int = 0,
 ) -> list[int]:
-    direct = ac_output.get("dc_block_allocation_by_feeder")
-    if isinstance(direct, dict) and direct:
-        keys = sorted(
-            direct.keys(),
-            key=lambda k: _safe_int(str(k).lstrip("Ff"), 0),
+    """
+    Resolves DC block allocation per feeder based on the detailed 'dc_allocation_plan'
+    from the AC sizing output. This replaces complex fallback logic with a direct
+    lookup, enforcing a clear data contract between the AC Sizing and SLD views.
+    """
+    allocation_plan = ac_output.get("dc_allocation_plan")
+
+    if isinstance(allocation_plan, list):
+        # Find the allocation for the selected AC block group
+        group_plan = next(
+            (plan for plan in allocation_plan if plan.get("ac_block_index") == group_index),
+            None,
         )
-        return [_safe_int(direct.get(key), 0) for key in keys]
+        if group_plan and isinstance(group_plan.get("feeder_allocations"), list):
+            return [_safe_int(v) for v in group_plan["feeder_allocations"]]
 
-    allocation = ac_output.get("dc_block_allocation")
-    if isinstance(allocation, dict):
-        per_ac_block = allocation.get("per_ac_block")
-        if isinstance(per_ac_block, list) and per_ac_block:
-            idx = max(0, min(group_index - 1, len(per_ac_block) - 1))
-            per_feeder = per_ac_block[idx].get("per_feeder")
-            if isinstance(per_feeder, dict) and per_feeder:
-                keys = sorted(
-                    per_feeder.keys(),
-                    key=lambda k: _safe_int(str(k).lstrip("Ff"), 0),
-                )
-                return [_safe_int(per_feeder.get(key), 0) for key in keys]
-        per_feeder = allocation.get("per_feeder")
-        if isinstance(per_feeder, dict) and per_feeder:
-            keys = sorted(
-                per_feeder.keys(),
-                key=lambda k: _safe_int(str(k).lstrip("Ff"), 0),
-            )
-            return [_safe_int(per_feeder.get(key), 0) for key in keys]
-        per_pcs_group = allocation.get("per_pcs_group")
-        if isinstance(per_pcs_group, list) and per_pcs_group:
-            return [_safe_int(item.get("dc_block_count"), 0) for item in per_pcs_group]
-
-    dc_blocks_per_feeder_by_block = ac_output.get("dc_blocks_per_feeder_by_block")
-    if isinstance(dc_blocks_per_feeder_by_block, list) and dc_blocks_per_feeder_by_block:
-        idx = max(0, min(group_index - 1, len(dc_blocks_per_feeder_by_block) - 1))
-        candidate = dc_blocks_per_feeder_by_block[idx]
-        if isinstance(candidate, list) and candidate:
-            return [_safe_int(v, 0) for v in candidate]
-
-    dc_blocks_total_by_block = ac_output.get("dc_blocks_total_by_block")
-    if isinstance(dc_blocks_total_by_block, list) and dc_blocks_total_by_block:
-        idx = max(0, min(group_index - 1, len(dc_blocks_total_by_block) - 1))
-        return evenly_distribute(_safe_int(dc_blocks_total_by_block[idx], 0), pcs_count)
-
-    total_dc_blocks = _safe_int(stage13_output.get("dc_block_total_qty"), 0)
-    if total_dc_blocks <= 0:
-        total_dc_blocks = _safe_int(stage13_output.get("container_count"), 0) + _safe_int(
-            stage13_output.get("cabinet_count"), 0
-        )
-    if total_dc_blocks <= 0 and isinstance(dc_summary, dict):
-        dc_block = dc_summary.get("dc_block")
-        if dc_block is not None:
-            total_dc_blocks = _safe_int(getattr(dc_block, "count", 0))
-
-    ac_blocks_total = override_total_blocks
-    if ac_blocks_total <= 0:
-        ac_blocks_total = _safe_int(ac_output.get("num_blocks"), 0)
-    if ac_blocks_total <= 0:
-        ac_blocks_total = _safe_int(ac_output.get("ac_blocks_total"), 0)
-    if ac_blocks_total <= 0:
-        total_pcs = _safe_int(ac_output.get("total_pcs"), 0)
-        pcs_per_block = _safe_int(ac_output.get("pcs_per_block"), 0)
-        if total_pcs > 0 and pcs_per_block > 0:
-            ac_blocks_total = total_pcs // pcs_per_block
-    if ac_blocks_total <= 0:
-        ac_blocks_total = 1
-
-    per_block_total = evenly_distribute(total_dc_blocks, ac_blocks_total)
-    idx = max(0, min(group_index - 1, len(per_block_total) - 1))
-    return allocate_dc_blocks(per_block_total[idx], pcs_count)
+    # Fallback to a sensible default if the plan is missing or malformed.
+    # This prevents crashes but indicates a data flow issue.
+    st.warning("DC allocation plan not found in AC results. Using default of 0.")
+    if pcs_count > 0:
+        return [0] * pcs_count
+    return [0, 0, 0, 0]
 
 
 def show():

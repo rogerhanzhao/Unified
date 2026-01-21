@@ -154,6 +154,7 @@ class SldGroupSpec:
 @dataclass
 class LayoutBlockSpec:
     block_indices_to_render: List[int]
+    pcs_count: int = 4
     dc_blocks_per_block: int = 4
     dc_block_counts_by_block: Dict[int, int] = field(default_factory=dict)
     arrangement: str = "2x2"
@@ -381,6 +382,7 @@ def build_layout_block_spec(
     ac_output: dict,
     block_indices_to_render: List[int],
     labels: Optional[Dict[str, str]] = None,
+    pcs_count: int = 4,
     dc_blocks_per_block: int = 4,
     dc_block_counts_by_block: Optional[Dict[int, int]] = None,
     arrangement: str = "2x2",
@@ -421,6 +423,7 @@ def build_layout_block_spec(
 
     return LayoutBlockSpec(
         block_indices_to_render=normalized,
+        pcs_count=int(pcs_count),
         dc_blocks_per_block=int(dc_blocks_per_block),
         dc_block_counts_by_block=normalized_counts,
         arrangement=arrangement,

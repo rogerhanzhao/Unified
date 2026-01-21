@@ -281,57 +281,41 @@ def show():
         "skid_subtext": skid_subtext,
     }
 
-    def _parse_block_index(value) -> int:
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str):
-            digits = "".join(ch for ch in value if ch.isdigit())
-            return _safe_int(digits, 0)
-        return 0
-
+    # --- NEW: Simplified and reliable DC block count resolution ---
     dc_block_counts_by_block = {}
-    allocation = ac_output.get("dc_block_allocation") if isinstance(ac_output, dict) else None
-    if isinstance(allocation, dict):
-        per_ac_block = allocation.get("per_ac_block")
-        if isinstance(per_ac_block, list):
-            for entry in per_ac_block:
-                idx = _parse_block_index(
-                    entry.get("block_id") or entry.get("block_index") or entry.get("block")
-                )
-                if idx <= 0:
-                    continue
-                count = entry.get("dc_blocks_total")
-                if count is None:
-                    per_feeder = entry.get("per_feeder")
-                    if isinstance(per_feeder, dict):
-                        count = sum(_safe_int(v, 0) for v in per_feeder.values())
-                dc_block_counts_by_block[idx] = _safe_int(count, 0)
+    allocation_plan = ac_output.get("dc_allocation_plan")
+    if isinstance(allocation_plan, list):
+        for plan_item in allocation_plan:
+            idx = plan_item.get("ac_block_index")
+            count = plan_item.get("dc_blocks_total")
+            if isinstance(idx, int) and idx > 0 and isinstance(count, int):
+                dc_block_counts_by_block[idx] = count
 
-        if not dc_block_counts_by_block:
-            totals = ac_output.get("dc_blocks_total_by_block")
-            if isinstance(totals, list) and totals:
-                for idx, count in enumerate(totals, start=1):
-                    dc_block_counts_by_block[idx] = _safe_int(count, 0)
+    # Determine the DC block count for the currently selected AC Block group
+    # Fallback to 0 if the plan is missing or doesn't contain the selected index.
+    block_dc_count = dc_block_counts_by_block.get(block_index, 0)
+    if block_dc_count == 0 and dc_block_counts_by_block:
+        # If lookup fails, try to use the first available value as a guess.
+        block_dc_count = next(iter(dc_block_counts_by_block.values()))
 
-    fallback_count = 0
-    if isinstance(allocation, dict):
-        fallback_count = _safe_int(allocation.get("total_dc_blocks"), 0)
-    if fallback_count <= 0:
-        fallback_count = _safe_int(ac_output.get("dc_blocks_per_ac"), 0)
-    if fallback_count <= 0:
-        fallback_count = _safe_int(ac_output.get("dc_blocks_total"), 0)
-    if fallback_count <= 0:
-        fallback_count = 4
-
-    selected_blocks = [block_index]
-    if dc_block_counts_by_block.get(block_index) is None:
-        dc_block_counts_by_block[block_index] = fallback_count
-
-    block_dc_count = dc_block_counts_by_block.get(block_index) or fallback_count
+    # Auto-determine arrangement based on the now-correct count
     if arrangement == "Auto":
-        layout_arrangement = "1x4" if block_dc_count <= 2 else "2x2"
+        # A simple heuristic for arrangement
+        if block_dc_count <= 1:
+            layout_arrangement = "1x4"
+        elif block_dc_count == 2:
+            layout_arrangement = "1x4"
+        elif block_dc_count <= 4:
+            layout_arrangement = "2x2"
+        elif block_dc_count <= 8:
+            layout_arrangement = "4x2" # A more sensible default for larger counts
+        else:
+            layout_arrangement = "4x4"
     else:
         layout_arrangement = arrangement
+
+    # Define selected_blocks for use in the generator
+    selected_blocks = [block_index]
 
     style_id = "raw_v05"
     if style_id not in layout_results:
@@ -343,11 +327,15 @@ def show():
 
     if generate and style_id == "raw_v05":
         try:
+            # --- Get PCS count for the selected block ---
+            pcs_count = _safe_int(ac_output.get("pcs_per_block"), 4)
+
             spec = build_layout_block_spec(
                 ac_output=ac_output,
                 block_indices_to_render=selected_blocks,
                 labels=labels,
-                dc_blocks_per_block=fallback_count,
+                pcs_count=pcs_count,
+                dc_blocks_per_block=block_dc_count,
                 dc_block_counts_by_block=dc_block_counts_by_block,
                 arrangement=layout_arrangement,
                 show_skid=show_skid,

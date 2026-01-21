@@ -281,6 +281,21 @@ def show():
             
             
             # Store results in session state
+            
+            # --- DETAILED DC ALLOCATION ---
+            # Create the detailed DC allocation plan the SLD view needs.
+            dc_blocks_per_ac_block_list = evenly_distribute(dc_blocks_total, num_blocks)
+            dc_allocation_plan = []
+            for i, num_dc in enumerate(dc_blocks_per_ac_block_list):
+                feeder_allocations = allocate_dc_blocks(num_dc, pcs_per_block)
+                dc_allocation_plan.append(
+                    {
+                        "ac_block_index": i + 1,
+                        "dc_blocks_total": num_dc,
+                        "feeder_allocations": feeder_allocations,
+                    }
+                )
+
             ac_output = {
                 "project_name": project_name,
                 "selected_ratio": selected_option.ratio,
@@ -291,6 +306,7 @@ def show():
                 "total_ac_mw": total_ac_mw,
                 "overhead_mw": overhead,
                 "dc_blocks_per_ac": selected_option.dc_blocks_per_ac,
+                "dc_allocation_plan": dc_allocation_plan,  # ⭐ NEW DETAILED PLAN
                 "poi_power_mw": target_mw,
                 "poi_energy_mwh": target_mwh,
                 "mv_kv": float(st.session_state.get("grid_kv", 33.0)),
