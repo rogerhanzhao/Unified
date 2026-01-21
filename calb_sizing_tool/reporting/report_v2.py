@@ -445,6 +445,9 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
         f"DoD = {_format_percent_with_fraction(ctx.stage1.get('dod_frac') or 0.0, input_is_fraction=True)}; "
         f"DC RTE = {_format_percent_with_fraction(ctx.stage1.get('dc_round_trip_efficiency_frac') or 0.0, input_is_fraction=True)}"
     )
+    doc.add_paragraph(
+        f"RTE Curve Adjustment (Δpp): {float(ctx.stage1.get('rte_curve_adjust_pp') or 0.0):.1f}"
+    )
     s1_rows = [
         ("DC Energy Capacity Required (MWh)", format_value(ctx.stage1.get("dc_energy_capacity_required_mwh") or 0.0, "MWh")),
         ("DC Power Required (MW)", format_value(ctx.stage1.get("dc_power_required_mw") or 0.0, "MW")),

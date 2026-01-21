@@ -1,6 +1,8 @@
 
 # ESS Sizing Tool
 
+V1.01: 314Ah RTE curve 0.5C fix (dictionary), added RTE curve adjustment (Δpp) input, added RTE monotonicity validation.
+
 This repository contains a Streamlit application for sizing energy storage systems across Stage 1–4 and lightweight unit tests for the Stage 4 interface helpers.
 
 ## Setup
@@ -20,7 +22,7 @@ Launch the Streamlit application from the repository root:
 streamlit run app.py
 ```
 
-Ensure the Excel data files (for example, `ess_sizing_data_dictionary_v13_dc_autofit.xlsx`) are present in the same directory before running.
+Ensure the Excel data files (for example, `ess_sizing_data_dictionary_v13_dc_autofit_rte314_fix05_v1.xlsx`) are present in the same directory before running.
 
 ## Report V2.1 (Beta) usage
 

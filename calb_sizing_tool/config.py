@@ -36,4 +36,17 @@ def get_excel_path(pattern: str, default: str) -> Path:
     return exact
 
 AC_DATA_PATH = get_excel_path("AC_Block_Data*.xlsx", "AC_Block_Data_Dictionary_v1_1.xlsx")
-DC_DATA_PATH = get_excel_path("ess_sizing_data*.xlsx", "ess_sizing_data_dictionary_v13_dc_automation.xlsx")
+DC_DATA_FILE_NEW = "ess_sizing_data_dictionary_v13_dc_autofit_rte314_fix05_v1.xlsx"
+DC_DATA_FILE_LEGACY = "ess_sizing_data_dictionary_v13_dc_autofit.xlsx"
+
+def resolve_dc_data_path() -> tuple[Path, bool]:
+    new_path = DATA_DIR / DC_DATA_FILE_NEW
+    if new_path.exists():
+        return new_path, False
+    legacy_path = DATA_DIR / DC_DATA_FILE_LEGACY
+    if legacy_path.exists():
+        return legacy_path, True
+    fallback = get_excel_path("ess_sizing_data*.xlsx", DC_DATA_FILE_LEGACY)
+    return fallback, fallback.name != DC_DATA_FILE_NEW
+
+DC_DATA_PATH, DC_DATA_IS_LEGACY = resolve_dc_data_path()

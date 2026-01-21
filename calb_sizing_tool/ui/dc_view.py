@@ -26,7 +26,7 @@ import io
 from pathlib import Path
 
 # --- 适配新架构的引用 ---
-from calb_sizing_tool.config import DC_DATA_PATH, PROJECT_ROOT
+from calb_sizing_tool.config import DC_DATA_PATH, DC_DATA_IS_LEGACY, PROJECT_ROOT
 from calb_sizing_tool.ui.stage4_interface import pack_stage13_output
 # 引入数据模型用于传递给 AC/SLD
 from calb_sizing_tool.models import DCBlockResult
@@ -167,6 +167,12 @@ def to_frac(x, default=1.0):
         return v / 100.0
     return v
 
+def clamp01(value: float) -> float:
+    try:
+        return min(1.0, max(0.0, float(value)))
+    except Exception:
+        return 0.0
+
 def safe_div(a: float, b: float, default: float = 0.0) -> float:
     try:
         if b is None or abs(float(b)) < 1e-12:
@@ -229,6 +235,58 @@ def load_data(path: Path):
 
     return defaults, df_blocks, df_soh_profile, df_soh_curve, df_rte_profile, df_rte_curve
 
+def validate_rte_monotonicity_314(
+    df_rte_profile: pd.DataFrame,
+    df_rte_curve: pd.DataFrame,
+    tol: float = 0.0005,
+) -> pd.DataFrame:
+    required_profile = {"Profile_Id", "C_Rate"}
+    required_curve = {"Profile_Id", "Soh_Band_Min_Pct", "Rte_Dc_Pct"}
+    if not required_profile.issubset(df_rte_profile.columns):
+        return pd.DataFrame(columns=["Soh_Band_Min_Pct", "C_Rate", "Profile_Id", "Rte_Dc_Pct", "Expected_Max_Rte"])
+    if not required_curve.issubset(df_rte_curve.columns):
+        return pd.DataFrame(columns=["Soh_Band_Min_Pct", "C_Rate", "Profile_Id", "Rte_Dc_Pct", "Expected_Max_Rte"])
+
+    prof = df_rte_profile[list(required_profile)].copy()
+    prof["C_Rate"] = prof["C_Rate"].apply(lambda x: to_float(x, np.nan))
+
+    curve = df_rte_curve[list(required_curve)].copy()
+    curve["Soh_Band_Min_Pct"] = curve["Soh_Band_Min_Pct"].apply(lambda x: to_frac(x))
+    curve["Rte_Dc_Pct"] = curve["Rte_Dc_Pct"].apply(lambda x: to_frac(x))
+
+    merged = curve.merge(prof, on="Profile_Id", how="left")
+    merged = merged.dropna(subset=["C_Rate", "Soh_Band_Min_Pct", "Rte_Dc_Pct"])
+    if merged.empty:
+        return pd.DataFrame(columns=["Soh_Band_Min_Pct", "C_Rate", "Profile_Id", "Rte_Dc_Pct", "Expected_Max_Rte"])
+
+    issues = []
+    for soh_band, group in merged.groupby("Soh_Band_Min_Pct", dropna=True):
+        group_sorted = group.sort_values("C_Rate")
+        max_prev = None
+        for _, row in group_sorted.iterrows():
+            rte = float(row["Rte_Dc_Pct"])
+            if max_prev is None:
+                max_prev = rte
+                continue
+            expected_max = max_prev
+            if rte > expected_max + tol:
+                issues.append(
+                    {
+                        "Soh_Band_Min_Pct": float(soh_band) * 100.0,
+                        "C_Rate": float(row["C_Rate"]),
+                        "Profile_Id": int(row["Profile_Id"]),
+                        "Rte_Dc_Pct": rte * 100.0,
+                        "Expected_Max_Rte": expected_max * 100.0,
+                    }
+                )
+            if rte > max_prev:
+                max_prev = rte
+
+    return pd.DataFrame(
+        issues,
+        columns=["Soh_Band_Min_Pct", "C_Rate", "Profile_Id", "Rte_Dc_Pct", "Expected_Max_Rte"],
+    )
+
 # ==========================================
 # 4. CORE CALC LOGIC
 # ==========================================
@@ -263,8 +321,11 @@ def run_stage1(inputs: dict, defaults: dict) -> dict:
     sc_loss_frac = sc_loss_pct / 100.0
 
     dod_frac    = to_frac(get("dod_pct", 95.0))
-    dc_rte_frac = to_frac(get("dc_round_trip_efficiency_pct", 94.0))
-    dc_one_way_eff = math.sqrt(dc_rte_frac) if dc_rte_frac >= 0 else 0.0
+    dc_rte_base_frac = to_frac(get("dc_round_trip_efficiency_pct", 94.0))
+    rte_adjust_pp = to_float(get("rte_curve_adjust_pp", 0.0), 0.0)
+    rte_adjust_frac = rte_adjust_pp / 100.0
+    dc_rte_effective_frac = clamp01(dc_rte_base_frac + rte_adjust_frac)
+    dc_one_way_eff = math.sqrt(dc_rte_effective_frac) if dc_rte_effective_frac >= 0 else 0.0
     dc_usable_bol_frac = dod_frac * dc_one_way_eff
 
     denom = (1.0 - sc_loss_frac) * dc_usable_bol_frac * eff_chain
@@ -289,7 +350,11 @@ def run_stage1(inputs: dict, defaults: dict) -> dict:
         "sc_loss_pct": sc_loss_pct,
         "sc_loss_frac": sc_loss_frac,
         "dod_frac": dod_frac,
-        "dc_round_trip_efficiency_frac": dc_rte_frac,
+        "dc_round_trip_efficiency_frac": dc_rte_effective_frac,
+        "dc_rte_base_frac": dc_rte_base_frac,
+        "dc_rte_effective_frac": dc_rte_effective_frac,
+        "rte_curve_adjust_pp": rte_adjust_pp,
+        "rte_adjust_frac": rte_adjust_frac,
         "dc_one_way_efficiency_frac": dc_one_way_eff,
         "dc_usable_bol_frac": dc_usable_bol_frac,
         "dc_energy_capacity_required_mwh": dc_energy_required,
@@ -453,6 +518,7 @@ def run_stage3(stage1: dict,
     dod_frac = stage1["dod_frac"]
     eff_chain = stage1["eff_dc_to_poi_frac"]
     guarantee_year = int(stage1.get("poi_guarantee_year", 0))
+    rte_adjust_frac = to_float(stage1.get("rte_adjust_frac", 0.0), 0.0)
 
     dc_power_mw = safe_div(poi_mw, eff_chain, default=0.0) if eff_chain > 0 else 0.0
     effective_c_rate = safe_div(dc_power_mw, dc_nameplate_bol_mwh, default=0.0)
@@ -490,7 +556,7 @@ def run_stage3(stage1: dict,
             rte_row = rte_curve_sel.tail(1)
 
         raw_rte = float(rte_row["Rte_Dc_Pct"].iloc[0])
-        dc_rte_frac_year = min(1.0, max(0.0, raw_rte))
+        dc_rte_frac_year = clamp01(raw_rte + rte_adjust_frac)
         dc_one_way_eff_year = math.sqrt(dc_rte_frac_year)
 
         dc_gross_capacity_mwh_year = dc_nameplate_bol_mwh * soh_abs
@@ -531,6 +597,7 @@ def run_stage3(stage1: dict,
         "chosen_soh_c_rate": chosen_soh_c_rate,
         "chosen_soh_cycles_per_year": chosen_cycles_per_year,
         "chosen_rte_c_rate": chosen_rte_c_rate,
+        "rte_adjust_pp": stage1.get("rte_curve_adjust_pp", 0.0),
     }
     return df_years, meta
 
@@ -826,8 +893,8 @@ def _docx_add_lifetime_table(doc: Document, s3_df: pd.DataFrame):
         rc[2].text = f"{r['SOH_Absolute_Pct']:.1f}" if not pd.isna(r["SOH_Absolute_Pct"]) else ""
         rc[3].text = f"{r['DC_Usable_MWh']:.2f}" if not pd.isna(r["DC_Usable_MWh"]) else ""
         rc[4].text = f"{r['POI_Usable_Energy_MWh']:.2f}" if not pd.isna(r["POI_Usable_Energy_MWh"]) else ""
-        rc[5].text = f"{r['DC_RTE_Pct']:.1f}%" if not pd.isna(r["DC_RTE_Pct"]) else ""
-        rc[6].text = f"{r['System_RTE_Pct']:.1f}%" if not pd.isna(r["System_RTE_Pct"]) else ""
+        rc[5].text = f"{r['DC_RTE_Pct']:.2f}%" if not pd.isna(r["DC_RTE_Pct"]) else ""
+        rc[6].text = f"{r['System_RTE_Pct']:.2f}%" if not pd.isna(r["System_RTE_Pct"]) else ""
 
 def build_report_bytes(stage1: dict, results_dict: dict, report_order: list):
     if not DOCX_AVAILABLE:
@@ -878,6 +945,7 @@ def build_report_bytes(stage1: dict, results_dict: dict, report_order: list):
     p.add_run(f"POI guarantee year: {int(stage1.get('poi_guarantee_year', 0))}\n")
     p.add_run(f"Cycles per year (assumed): {int(stage1['cycles_per_year'])}\n")
     p.add_run(f"S&C time from FAT to COD: {int(round(stage1.get('sc_time_months', 0)))} months\n")
+    p.add_run(f"RTE Curve Adjustment (Δpp): {float(stage1.get('rte_curve_adjust_pp', 0.0)):.1f}\n")
     p.add_run(f"DC→POI efficiency chain (one-way): {stage1.get('eff_dc_to_poi_frac', 0.0)*100:.2f}%\n")
     p.add_run(f"POI→DC equivalent power: {stage1.get('dc_power_required_mw', 0.0):.2f} MW")
 
@@ -980,6 +1048,15 @@ def show():
     except Exception as exc:
         st.error(f"❌ Failed to load data file: {exc}")
         return
+
+    if DC_DATA_IS_LEGACY:
+        st.warning("using legacy dictionary")
+
+    rte_issues = validate_rte_monotonicity_314(df_rte_profile, df_rte_curve)
+    if not rte_issues.empty:
+        st.warning(f"RTE curve monotonicity check found {len(rte_issues)} issues.")
+        with st.expander("Show RTE monotonicity issues", expanded=False):
+            st.dataframe(rte_issues, use_container_width=True)
 
     def get_default_numeric(key, fallback):
         return to_float(defaults.get(key, fallback), fallback)
@@ -1112,7 +1189,7 @@ def show():
             st.markdown("---")
             st.subheader("2 · DC Parameters")
             
-            c7, c8 = st.columns(2)
+            c7, c8, c9 = st.columns(3)
             dod_pct = c7.number_input(
                 "DOD (%)",
                 key=_init_input("dod_pct", get_default_percent_val("dod_pct", 95.0)),
@@ -1126,6 +1203,15 @@ def show():
                 ),
             )
             dc_inputs["dc_round_trip_efficiency_pct"] = dc_rte_pct
+            rte_adjust_pp = c9.number_input(
+                "RTE Curve Adjustment (Δpp)",
+                key=_init_input("rte_curve_adjust_pp", get_default_numeric("rte_curve_adjust_pp", 0.0)),
+                min_value=-5.0,
+                max_value=2.0,
+                step=0.1,
+                help="Higher C-rate usually yields lower efficiency; use negative delta to conservatively derate.",
+            )
+            dc_inputs["rte_curve_adjust_pp"] = rte_adjust_pp
             
             st.info(f"Design Rule: Max 418kWh Cabinets per DC Busbar (K) = {K_MAX_FIXED} (fixed)")
 
@@ -1213,6 +1299,7 @@ def show():
             "sc_loss_frac": sc_loss_pct / 100.0,
             "dod_pct": dod_pct,
             "dc_round_trip_efficiency_pct": dc_rte_pct,
+            "rte_curve_adjust_pp": rte_adjust_pp,
             "project_life_years": project_life,
             "cycles_per_year": cycles_year,
             "poi_guarantee_year": guarantee_year
@@ -1228,6 +1315,13 @@ def show():
         m2.metric("Efficiency Chain", f"{s1['eff_dc_to_poi_frac']*100:.2f} %")
         m3.metric("DC Usable @BOL", f"{s1['dc_usable_bol_frac']*100:.2f} %")
         m4.metric("DC Power Req", f"{s1['dc_power_required_mw']:.2f} MW")
+        rte_base_pct = float(s1.get("dc_rte_base_frac", s1.get("dc_round_trip_efficiency_frac", 0.0))) * 100.0
+        rte_adjust_pp_used = float(s1.get("rte_curve_adjust_pp", 0.0))
+        rte_effective_pct = float(s1.get("dc_rte_effective_frac", s1.get("dc_round_trip_efficiency_frac", 0.0))) * 100.0
+        r1, r2, r3 = st.columns(3)
+        r1.metric("DC RTE base (%)", f"{rte_base_pct:.2f} %")
+        r2.metric("RTE adjustment (Δpp)", f"{rte_adjust_pp_used:+.2f} pp")
+        r3.metric("DC RTE effective (%)", f"{rte_effective_pct:.2f} %")
         st.markdown("</div>", unsafe_allow_html=True)
 
         # Run Options
