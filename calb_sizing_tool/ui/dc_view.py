@@ -1028,6 +1028,68 @@ def show():
     dc_inputs = state.dc_inputs
     dc_results = state.dc_results
 
+    # One-time default migration for UI fields (no impact on sizing logic)
+    def _migrate_dc_defaults() -> None:
+        version_key = "dc_defaults_version"
+        current_version = int(st.session_state.get(version_key, 0) or 0)
+        target_version = 4
+        if current_version >= target_version:
+            return
+
+        # Only migrate if the field is unset or still at legacy default
+        field = "hybrid_disable_threshold_mwh"
+        legacy_default = 9999.0
+        new_default = 20.0
+        state_key = f"dc_inputs.{field}"
+        current_val = st.session_state.get(state_key, dc_inputs.get(field))
+        try:
+            current_num = float(current_val)
+        except Exception:
+            current_num = None
+        if current_val is None:
+            is_legacy = True
+        elif current_num is None or not np.isfinite(current_num):
+            is_legacy = True
+        else:
+            is_legacy = abs(current_num - legacy_default) < 1e-6
+
+        if is_legacy:
+            st.session_state[state_key] = new_default
+            dc_inputs[field] = new_default
+
+        poi_raw = st.session_state.get("dc_inputs.poi_energy_req_mwh", dc_inputs.get("poi_energy_req_mwh"))
+        if poi_raw is None:
+            st.session_state[version_key] = target_version
+            return
+
+        # Align auto-default toggles with threshold intent (UI-only)
+        try:
+            poi_val = float(poi_raw)
+        except Exception:
+            poi_val = 0.0
+        try:
+            threshold_val = float(st.session_state.get(state_key, dc_inputs.get(field, new_default)))
+        except Exception:
+            threshold_val = new_default
+        auto_hybrid = not (threshold_val > 0 and poi_val >= threshold_val)
+        auto_cabinet_only = auto_hybrid
+
+        def _set_toggle(name: str, value: bool) -> None:
+            key = f"dc_inputs.{name}"
+            st.session_state[key] = bool(value)
+            dc_inputs[name] = bool(value)
+
+        for name, auto_val in (("enable_hybrid", auto_hybrid), ("enable_cabinet_only", auto_cabinet_only)):
+            current_toggle = st.session_state.get(f"dc_inputs.{name}", dc_inputs.get(name))
+            if current_toggle is None:
+                _set_toggle(name, auto_val)
+            elif not auto_val and bool(current_toggle):
+                # Flip legacy-true defaults to the new auto-off behavior
+                _set_toggle(name, False)
+
+        st.session_state[version_key] = target_version
+    _migrate_dc_defaults()
+
     # Inject CSS
     inject_css()
     
@@ -1216,20 +1278,24 @@ def show():
             st.info(f"Design Rule: Max 418kWh Cabinets per DC Busbar (K) = {K_MAX_FIXED} (fixed)")
 
             st.markdown("**3 · Configuration Options**")
+            threshold_key = _init_input("hybrid_disable_threshold_mwh", 20.0)
+            threshold_val = to_float(st.session_state.get(threshold_key, 20.0), 20.0)
+            auto_enable_hybrid = not (threshold_val > 0 and poi_energy >= threshold_val)
+            auto_enable_cabinet_only = auto_enable_hybrid
             copt1, copt2, copt3 = st.columns([2, 2, 3])
             enable_hybrid = copt1.checkbox(
                 "Enable Hybrid Mode",
-                key=_init_input("enable_hybrid", True),
+                key=_init_input("enable_hybrid", auto_enable_hybrid),
             )
             dc_inputs["enable_hybrid"] = enable_hybrid
             enable_cabinet_only = copt2.checkbox(
                 "Enable Cabinet-Only Mode",
-                key=_init_input("enable_cabinet_only", True),
+                key=_init_input("enable_cabinet_only", auto_enable_cabinet_only),
             )
             dc_inputs["enable_cabinet_only"] = enable_cabinet_only
             hybrid_disable_threshold = copt3.number_input(
                 "Disable Hybrid Threshold (MWh)",
-                key=_init_input("hybrid_disable_threshold_mwh", 20),
+                key=threshold_key,
             )
             dc_inputs["hybrid_disable_threshold_mwh"] = hybrid_disable_threshold
 
@@ -1326,10 +1392,10 @@ def show():
 
         # Run Options
         modes_to_run = ["container_only"]
-        if enable_cabinet_only: modes_to_run.insert(0, "cabinet_only")
+        if enable_cabinet_only:
+            modes_to_run.insert(0, "cabinet_only")
         if enable_hybrid:
-            if hybrid_disable_threshold > 0 and poi_energy >= hybrid_disable_threshold: pass
-            else: modes_to_run.insert(0, "hybrid")
+            modes_to_run.insert(0, "hybrid")
 
         results = {}
         for mode in modes_to_run:
