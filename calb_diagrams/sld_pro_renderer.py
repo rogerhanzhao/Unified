@@ -209,6 +209,9 @@ def _draw_triangle_pair(dwg, x: float, y_center: float, size: float, gap: float)
     bottom_apex = y_center + gap / 2
     _draw_triangle_down(dwg, x, top_apex - size, size)
     _draw_triangle_up(dwg, x, bottom_apex + size, size)
+    # Connect the two flow triangles with a center line segment
+    if gap > 0:
+        _draw_line_anchored(dwg, (x, top_apex), (x, bottom_apex), class_="thin")
 
 
 def _draw_breaker_circle(dwg, x: float, y: float, r: float) -> None:
@@ -299,19 +302,23 @@ def _draw_cable_termination_down(dwg, x: float, y: float, size: float = 8.0) -> 
     """
     half = size * 0.6
     height = size
+    gap = size  # separate triangles by ~one triangle height
     
-    # Top Triangle: Points DOWN (倒三角)
+    # Top Triangle: Points DOWN (???)
     # Base at y, Tip at y+height
     points_top = [(x - half, y), (x + half, y), (x, y + height)]
     dwg.add(dwg.polygon(points=points_top, class_="thin", fill="none"))
     
-    # Bottom Triangle: Points UP (正三角)
-    # Tip at y+height, Base at y+2*height
-    points_bot = [(x, y + height), (x - half, y + 2 * height), (x + half, y + 2 * height)]
+    # Bottom Triangle: Points UP (???)
+    # Tip at y+height+gap, Base at y+2*height+gap
+    points_bot = [(x, y + height + gap), (x - half, y + 2 * height + gap), (x + half, y + 2 * height + gap)]
     dwg.add(dwg.polygon(points=points_bot, class_="thin", fill="none"))
+
+    # Connect the two flow triangles with a line
+    dwg.add(dwg.line((x, y + height), (x, y + height + gap), class_="thin"))
     
     # Line continuing down from the base of the bottom triangle
-    dwg.add(dwg.line((x, y + 2 * height), (x, y + 2 * height + 4), class_="thin"))
+    dwg.add(dwg.line((x, y + 2 * height + gap), (x, y + 2 * height + gap + 4), class_="thin"))
 
 def _draw_lbs_symbol(dwg, x: float, y: float, open_right: bool = True) -> dict:
     """
@@ -913,6 +920,7 @@ def render_sld_pro_svg(
 
     skid_x = diagram_left
     skid_y = table_y
+    dash_offset_y = _safe_float(layout_params.get("dash_offset_y"), 12.0)
     skid_pad = _safe_float(layout_params.get("skid_pad"), 60.0)
     battery_pad = _safe_float(layout_params.get("battery_pad"), 40.0)
 
@@ -1142,11 +1150,13 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             current_y += row_h * row["lines"]
             dwg.add(dwg.line((table_x, current_y), (table_x + table_w, current_y), class_="thin"))
 
-    dwg.add(dwg.rect(insert=(skid_x, skid_y), size=(diagram_width, skid_h), class_="dash"))
+    ac_dash_y = skid_y - dash_offset_y
+    ac_dash_h = skid_h + dash_offset_y
+    dwg.add(dwg.rect(insert=(skid_x, ac_dash_y), size=(diagram_width, ac_dash_h), class_="dash"))
     if dark_mode:
-        dwg.add(dwg.text("AC Block (PCS&MV SKID)", insert=(skid_x + diagram_width - 8, skid_y + 18), class_="label title", text_anchor="end"))
+        dwg.add(dwg.text("AC Block (PCS&MV SKID)", insert=(skid_x + diagram_width - 8, ac_dash_y + 18), class_="label title", text_anchor="end"))
     else:
-        dwg.add(dwg.text("PCS&MVT SKID (AC Block)", insert=(skid_x + 8, skid_y + 18), class_="label title"))
+        dwg.add(dwg.text("PCS&MVT SKID (AC Block)", insert=(skid_x + 8, ac_dash_y + 18), class_="label title"))
 
     mv_labels = spec.equipment_list.get("mv_labels") if isinstance(spec.equipment_list, dict) else {}
     to_switchgear = mv_labels.get("to_switchgear") if isinstance(mv_labels, dict) else None
@@ -1479,11 +1489,13 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
     # 下方：Battery Storage Bank（compact_mode vs full）
     # =============================================================================
     if compact_mode:
-        dwg.add(dwg.rect(insert=(battery_x, battery_y), size=(battery_w, battery_h), class_="dash"))
+        battery_dash_y = battery_y - dash_offset_y
+        battery_dash_h = battery_h + dash_offset_y
+        dwg.add(dwg.rect(insert=(battery_x, battery_dash_y), size=(battery_w, battery_dash_h), class_="dash"))
         if dark_mode:
-            dwg.add(dwg.text("DC Block (BESS)", insert=(battery_x + battery_w - 8, battery_y + 16), class_="label title", text_anchor="end"))
+            dwg.add(dwg.text("DC Block (BESS)", insert=(battery_x + battery_w - 8, battery_dash_y + 16), class_="label title", text_anchor="end"))
         else:
-            dwg.add(dwg.text("Battery Storage Bank", insert=(battery_x + 8, battery_y + 16), class_="label title"))
+            dwg.add(dwg.text("Battery Storage Bank", insert=(battery_x + 8, battery_dash_y + 16), class_="label title"))
 
         dc_node_r = 2.5
         dc_triangle_size = _safe_float(layout_params.get("dc_triangle_size"), 8.0)
@@ -1492,7 +1504,6 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         forced_symbol_h = _safe_float(layout_params.get("dc_switch_symbol_h"), 0.0)
         
         skid_bottom_y = skid_y + skid_h
-        gap_mid_y = (skid_bottom_y + battery_y) / 2
 
         for idx in range(pcs_count):
             line_x = pcs_centers[idx]
@@ -1501,35 +1512,62 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             per_feeder = per_feeder_counts[idx] if idx < len(per_feeder_counts) else 1
             block_count = max(1, min(per_feeder, max_blocks))
 
-            stack_h = dc_block_h * block_count + dc_block_gap_y * (block_count - 1)
+            block_w = pcs_box_w * 0.8
+            if block_count > 1:
+                stack_h = dc_block_h
+            else:
+                stack_h = dc_block_h * block_count + dc_block_gap_y * (block_count - 1)
             stack_top_y = dc_box_y + (dc_stack_h - stack_h) / 2
 
-            branch_bus_y = stack_top_y - 10
+            min_busbar_y = dc_top + 26.0 - dc_triangle_size
+            branch_bus_y = max(min_busbar_y, stack_top_y - 30.0)
+            branch_bus_y = min(branch_bus_y, stack_top_y - 6.0)
+            gap_to_block = max(6.0, stack_top_y - branch_bus_y)
+            branch_bus_y = stack_top_y - gap_to_block * 3.0
+            branch_bus_y = max(min_busbar_y, branch_bus_y)
+            branch_bus_y = min(branch_bus_y, stack_top_y - 6.0)
+            if block_count > 1:
+                branch_bus_y = min(branch_bus_y, skid_bottom_y - 6.0)
 
-            raw_h = branch_bus_y - dc_top
-            auto_symbol_h = min(50.0, max(20.0, raw_h * 1.0))
-            symbol_h = forced_symbol_h if forced_symbol_h > 0 else auto_symbol_h
 
-            _draw_dc_switch(dwg, line_x, dc_top, symbol_h, lead_end_y=branch_bus_y)
+            _draw_line_anchored(dwg, (line_x, dc_top), (line_x, branch_bus_y), class_="thin", start_anchor=(line_x, dc_top), end_anchor=(line_x, branch_bus_y))
 
-            _draw_triangle_pair(dwg, line_x, gap_mid_y, dc_triangle_size, dc_triangle_gap)
+            flow_gap = dc_triangle_gap + dc_triangle_size * 0.6
+            min_clearance = dc_triangle_size + flow_gap * 0.5 + 2.0
+            flow_center_y = branch_bus_y - min_clearance - dc_triangle_size * 2.0
+            _draw_triangle_pair(dwg, line_x, flow_center_y, dc_triangle_size, flow_gap)
+
+            # Local DC busbar per PCS (independent)
+            block_gap_x = max(14.0, block_w * 0.15) if block_count > 1 else 0.0
+            total_w = block_count * block_w + max(0.0, (block_count - 1) * block_gap_x)
+            if total_w <= 0:
+                total_w = block_w
+            bus_half = min(slot_w * 0.35, total_w / 2 + 8.0)
+            dwg.add(dwg.line((line_x - bus_half, branch_bus_y), (line_x + bus_half, branch_bus_y), class_="thin"))
+            _draw_node(dwg, line_x, branch_bus_y, dc_node_r, node_fill)
 
             if block_count > 1:
-                bus_half = min(16.0, slot_w * 0.18)
-                dwg.add(dwg.line((line_x - bus_half, branch_bus_y), (line_x + bus_half, branch_bus_y), class_="thin"))
+                start_x = line_x - total_w / 2 + block_w / 2
+                block_centers = [start_x + i * (block_w + block_gap_x) for i in range(block_count)]
+            else:
+                block_centers = [line_x]
 
-            for b in range(block_count):
-                block_y = stack_top_y + b * (dc_block_h + dc_block_gap_y)
-                dc_in = (line_x, block_y)
+            for center_x in block_centers:
+                block_y = stack_top_y
 
-                _draw_line_anchored(dwg, (line_x, branch_bus_y), dc_in, class_="thin", start_anchor=(line_x, branch_bus_y), end_anchor=dc_in)
+                switch_top_y = max(battery_dash_y + 6.0, block_y - 60.0)
+                switch_gap = max(0.0, block_y - switch_top_y)
+                block_switch_h = min(60.0, max(28.0, switch_gap * 0.9))
+                block_switch_h = min(block_switch_h, switch_gap)
+                switch_top_y = max(battery_dash_y + 6.0, switch_top_y - block_switch_h)
+                _draw_line_anchored(dwg, (center_x, branch_bus_y), (center_x, switch_top_y), class_="thin", start_anchor=(center_x, branch_bus_y), end_anchor=(center_x, switch_top_y))
+                _draw_dc_switch(dwg, center_x, switch_top_y, block_switch_h, lead_end_y=block_y)
 
-                dwg.add(dwg.rect(insert=(line_x - pcs_box_w * 0.4, block_y), size=(pcs_box_w * 0.8, dc_block_h), class_="outline"))
+                dwg.add(dwg.rect(insert=(center_x - block_w * 0.5, block_y), size=(block_w, dc_block_h), class_="outline"))
 
                 inner_pad = max(10.0, dc_block_h * 0.12)
                 usable_h = max(1.0, dc_block_h - inner_pad * 2)
-                _draw_battery_column(dwg, line_x, block_y + inner_pad, usable_h, 6)
-
+                _draw_battery_column(dwg, center_x, block_y + inner_pad, usable_h, 6)
     else:
         busbar_class = "busbar" if dark_mode else "thick"
 
@@ -1566,11 +1604,13 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
             _draw_node(dwg, cx, dc_bus_a_y, dc_node_r, node_fill)
             _draw_node(dwg, cx, dc_bus_b_y, dc_node_r, node_fill)
 
-        dwg.add(dwg.rect(insert=(battery_x, battery_y), size=(battery_w, battery_h), class_="dash"))
+        battery_dash_y = battery_y - dash_offset_y
+        battery_dash_h = battery_h + dash_offset_y
+        dwg.add(dwg.rect(insert=(battery_x, battery_dash_y), size=(battery_w, battery_dash_h), class_="dash"))
         if dark_mode:
-            dwg.add(dwg.text("DC Block (BESS)", insert=(battery_x + battery_w - 8, battery_y + 16), class_="label title", text_anchor="end"))
+            dwg.add(dwg.text("DC Block (BESS)", insert=(battery_x + battery_w - 8, battery_dash_y + 16), class_="label title", text_anchor="end"))
         else:
-            dwg.add(dwg.text("Battery Storage Bank", insert=(battery_x + 8, battery_y + 16), class_="label title"))
+            dwg.add(dwg.text("Battery Storage Bank", insert=(battery_x + 8, battery_dash_y + 16), class_="label title"))
 
         dc_circuit_a_y = battery_y + battery_title_h + 18
         dc_circuit_b_y = dc_circuit_a_y + 18
