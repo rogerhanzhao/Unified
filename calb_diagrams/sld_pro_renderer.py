@@ -1535,19 +1535,36 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
 
         dc_bus_a_y = pcs_y + pcs_box_h + 28
         dc_bus_b_y = dc_bus_a_y + 22
-        dwg.add(dwg.line((bus_x1, dc_bus_a_y), (bus_x2, dc_bus_a_y), class_=busbar_class))
-        dwg.add(dwg.text("DC BUSBAR A", insert=(bus_x1, dc_bus_a_y - 8), class_="label"))
-        dwg.add(dwg.line((bus_x1, dc_bus_b_y), (bus_x2, dc_bus_b_y), class_=busbar_class))
-        dwg.add(dwg.text("DC BUSBAR B", insert=(bus_x1, dc_bus_b_y - 8), class_="label"))
 
         dc_node_r = 2.5
+        
+        # Build map of block_index -> pcs_index for connection routing
+        block_to_pcs = {}
+        current_block = 0
+        for p_i, count in enumerate(spec.dc_blocks_per_feeder):
+            if p_i >= pcs_count: break
+            for _ in range(count):
+                block_to_pcs[current_block] = p_i
+                current_block += 1
+
+        # Draw Per-PCS Independent Busbars
+        local_bus_w = min(120.0, slot_w * 0.8)
+
         for idx in range(pcs_count):
-            line_x = pcs_centers[idx]
-            target_bus_y = dc_bus_a_y if idx < group_split else dc_bus_b_y
-            pcs_out = (line_x, pcs_y + pcs_box_h)
-            target = (line_x, target_bus_y)
-            _draw_line_anchored(dwg, pcs_out, target, class_="thin", start_anchor=pcs_out, end_anchor=target)
-            _draw_node(dwg, target[0], target[1], dc_node_r, node_fill)
+            cx = pcs_centers[idx]
+            bx1 = cx - local_bus_w / 2
+            bx2 = cx + local_bus_w / 2
+
+            # Busbar A & B (Local)
+            dwg.add(dwg.line((bx1, dc_bus_a_y), (bx2, dc_bus_a_y), class_=busbar_class))
+            dwg.add(dwg.text(f"BUSBAR A (Ckt A)", insert=(bx1, dc_bus_a_y - 8), class_="small"))
+            dwg.add(dwg.line((bx1, dc_bus_b_y), (bx2, dc_bus_b_y), class_=busbar_class))
+            dwg.add(dwg.text(f"BUSBAR B (Ckt B)", insert=(bx1, dc_bus_b_y - 8), class_="small"))
+
+            # Connect PCS to both Busbars (Internal DC link)
+            _draw_line_anchored(dwg, (cx, pcs_y + pcs_box_h), (cx, dc_bus_b_y), class_="thin")
+            _draw_node(dwg, cx, dc_bus_a_y, dc_node_r, node_fill)
+            _draw_node(dwg, cx, dc_bus_b_y, dc_node_r, node_fill)
 
         dwg.add(dwg.rect(insert=(battery_x, battery_y), size=(battery_w, battery_h), class_="dash"))
         if dark_mode:
@@ -1555,19 +1572,8 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
         else:
             dwg.add(dwg.text("Battery Storage Bank", insert=(battery_x + 8, battery_y + 16), class_="label title"))
 
-        circuit_x1 = battery_x + 60
-        circuit_x2 = battery_x + battery_w - 60
         dc_circuit_a_y = battery_y + battery_title_h + 18
         dc_circuit_b_y = dc_circuit_a_y + 18
-
-        dwg.add(dwg.line((circuit_x1, dc_circuit_a_y), (circuit_x2, dc_circuit_a_y), class_="thin"))
-        dwg.add(dwg.text("Circuit A", insert=(circuit_x1, dc_circuit_a_y - 6), class_="small"))
-        dwg.add(dwg.line((circuit_x1, dc_circuit_b_y), (circuit_x2, dc_circuit_b_y), class_="thin"))
-        dwg.add(dwg.text("Circuit B", insert=(circuit_x1, dc_circuit_b_y - 6), class_="small"))
-
-        link_x = bus_x2 - 40
-        dwg.add(dwg.line((link_x, dc_bus_a_y), (link_x, dc_circuit_a_y), class_="thin"))
-        dwg.add(dwg.line((link_x, dc_bus_b_y), (link_x, dc_circuit_b_y), class_="thin"))
 
         show_individual_blocks = 0 < dc_blocks_total <= 6
         blocks_to_draw = dc_blocks_total if show_individual_blocks else 1
@@ -1601,8 +1607,40 @@ svg {{ font-family: {SLD_FONT_FAMILY}; font-size: {SLD_FONT_SIZE}px; }}
 
                 line_x_a = cell_x + dc_box_w * 0.4
                 line_x_b = cell_x + dc_box_w * 0.6
-                dwg.add(dwg.line((line_x_a, cell_y), (line_x_a, dc_circuit_a_y), class_="thin"))
-                dwg.add(dwg.line((line_x_b, cell_y), (line_x_b, dc_circuit_b_y), class_="thin"))
+
+                # Connect Block to assigned PCS (Parallel Logic)
+                if block_index in block_to_pcs:
+                    p_idx = block_to_pcs[block_index]
+                    pcs_cx = pcs_centers[p_idx]
+
+                    # Calculate offset to ensure parallel visual (separate lines hitting busbar)
+                    siblings = [b for b, p in block_to_pcs.items() if p == p_idx]
+                    try:
+                        sib_idx = siblings.index(block_index)
+                        sib_count = len(siblings)
+                    except ValueError:
+                        sib_idx = 0
+                        sib_count = 1
+                    
+                    safe_w = local_bus_w * 0.8
+                    if sib_count > 1:
+                        step = safe_w / (sib_count - 1)
+                        offset = -safe_w/2 + step * sib_idx
+                    else:
+                        offset = 0
+                    target_x = pcs_cx + offset
+
+                    # Route Circuit A
+                    dwg.add(dwg.line((line_x_a, cell_y), (line_x_a, dc_circuit_a_y), class_="thin"))
+                    dwg.add(dwg.line((line_x_a, dc_circuit_a_y), (target_x, dc_circuit_a_y), class_="thin"))
+                    dwg.add(dwg.line((target_x, dc_circuit_a_y), (target_x, dc_bus_a_y), class_="thin"))
+                    _draw_node(dwg, target_x, dc_bus_a_y, 2.0, node_fill)
+
+                    # Route Circuit B
+                    dwg.add(dwg.line((line_x_b, cell_y), (line_x_b, dc_circuit_b_y), class_="thin"))
+                    dwg.add(dwg.line((line_x_b, dc_circuit_b_y), (target_x, dc_circuit_b_y), class_="thin"))
+                    dwg.add(dwg.line((target_x, dc_circuit_b_y), (target_x, dc_bus_b_y), class_="thin"))
+                    _draw_node(dwg, target_x, dc_bus_b_y, 2.0, node_fill)
 
                 block_index += 1
             if show_individual_blocks and block_index >= dc_blocks_total:
