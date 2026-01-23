@@ -1229,7 +1229,7 @@ def show():
             dc_inputs["enable_cabinet_only"] = enable_cabinet_only
             hybrid_disable_threshold = copt3.number_input(
                 "Disable Hybrid Threshold (MWh)",
-                key=_init_input("hybrid_disable_threshold_mwh", 9999.0),
+                key=_init_input("hybrid_disable_threshold_mwh", 20),
             )
             dc_inputs["hybrid_disable_threshold_mwh"] = hybrid_disable_threshold
 
@@ -1372,7 +1372,7 @@ def show():
                     st.dataframe(s2.get("block_config_table"), use_container_width=True)
                     
                     # Chart
-                    s3_df_sorted = s3_df.sort_values("Year_Index")
+                    s3_df_sorted = s3_df.sort_values("Year_Index").reset_index(drop=True)
                     bars = alt.Chart(s3_df_sorted).mark_bar(color=CALB_SKY_BLUE).encode(
                         x=alt.X("Year_Index:O", title="Year"),
                         y=alt.Y("POI_Usable_Energy_MWh:Q", title="POI Usable (MWh)"),
@@ -1383,35 +1383,57 @@ def show():
 
                     # --- RESTORED YEARLY DATA TABLE ---
                     with st.expander("Show yearly data table", expanded=False):
-                        display_cols = [
-                            "Year_Index",
-                            "DC_Usable_MWh",
-                            "POI_Usable_Energy_MWh",
-                            "DC_RTE_Pct",
-                            "System_RTE_Pct",
-                            "Meets_POI_Req",
-                            "Is_Guarantee_Year",
-                        ]
-                        # Ensure cols exist
-                        for c in display_cols:
-                            if c not in s3_df_sorted.columns:
-                                s3_df_sorted[c] = np.nan
+                        st.markdown(
+                            """
+<style>
+/* Yearly table: left-align headers/cells and hide index column */
+div[data-testid="stDataFrame"] div[role="columnheader"],
+div[data-testid="stDataFrame"] div[role="gridcell"],
+div[data-testid="stDataFrame"] div[role="columnheader"] div,
+div[data-testid="stDataFrame"] div[role="gridcell"] div {
+  justify-content: flex-start !important;
+  text-align: left !important;
+}
+div[data-testid="stDataFrame"] div[role="rowheader"] {
+  display: none !important;
+}
+</style>
+""",
+                            unsafe_allow_html=True,
+                        )
 
-                        disp = s3_df_sorted[display_cols].copy()
-                        # Formatting for display
-                        disp = disp.rename(columns={
-                            "Year_Index": "Year",
-                            "DC_Usable_MWh": "DC Usable (MWh)",
-                            "POI_Usable_Energy_MWh": "POI Usable (MWh)",
-                            "DC_RTE_Pct": "DC RTE (%)",
-                            "System_RTE_Pct": "System RTE (%)",
-                            "Meets_POI_Req": "Meets Req?",
-                            "Is_Guarantee_Year": "Guarantee Year"
-                        })
+                        def _col_or_nan(df: pd.DataFrame, col: str):
+                            if col in df.columns:
+                                return df[col]
+                            return pd.Series([np.nan] * len(df), index=df.index)
+
+                        year_series = _col_or_nan(s3_df_sorted, "Year_Index")
+                        year_numeric = pd.to_numeric(year_series, errors="coerce")
+                        if year_numeric.isna().all():
+                            year_numeric = pd.Series(range(len(s3_df_sorted)), index=s3_df_sorted.index)
+
+                        def _fmt_bool_text(val):
+                            if pd.isna(val):
+                                return ""
+                            return "Yes" if bool(val) else "No"
+
+                        disp_show = pd.DataFrame({
+                            "Year": year_numeric.astype("Int64"),
+                            "DC Usable (MWh)": pd.to_numeric(_col_or_nan(s3_df_sorted, "DC_Usable_MWh"), errors="coerce").round(3),
+                            "POI Usable (MWh)": pd.to_numeric(_col_or_nan(s3_df_sorted, "POI_Usable_Energy_MWh"), errors="coerce").round(3),
+                            "DC RTE (%)": pd.to_numeric(_col_or_nan(s3_df_sorted, "DC_RTE_Pct"), errors="coerce").round(3),
+                            "System RTE (%)": pd.to_numeric(_col_or_nan(s3_df_sorted, "System_RTE_Pct"), errors="coerce").round(3),
+                            "Meets Req?": _col_or_nan(s3_df_sorted, "Meets_POI_Req").apply(_fmt_bool_text),
+                            "Guarantee Year": _col_or_nan(s3_df_sorted, "Is_Guarantee_Year").apply(_fmt_bool_text),
+                        }).reset_index(drop=True)
+
+                        # Display table with CSS-driven left alignment (sorting stays numeric where possible)
                         try:
-                            st.dataframe(disp, use_container_width=True)
+                            st.dataframe(disp_show, use_container_width=True, hide_index=True)
                         except TypeError:
-                            st.dataframe(disp)
+                            # Fallback for older Streamlit versions without hide_index
+                            disp_show.index = [""] * len(disp_show)
+                            st.dataframe(disp_show, use_container_width=True)
                     # ----------------------------------
 
                     # Pack data for Session State (For AC/SLD)

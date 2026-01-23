@@ -2,7 +2,7 @@
   "fixture_id": "v1_case02_hybrid",
   "inputs": {
     "dictionary_version_ac": "AC_Block_Data_Dictionary_v1_1.xlsx",
-    "dictionary_version_dc": "ess_sizing_data_dictionary_v13_dc_autofit_rte314_fix05_v1.xlsx",
+    "dictionary_version_dc": "ess_sizing_data_dictionary_v13_dc_autofit_rte314_fix05_025C94_v2.xlsx",
     "poi_energy_requirement_mwh": 200.0,
     "poi_frequency_hz": 50.0,
     "poi_nominal_voltage_kv": 34.5,

@@ -22,7 +22,7 @@ Launch the Streamlit application from the repository root:
 streamlit run app.py
 ```
 
-Ensure the Excel data files (for example, `ess_sizing_data_dictionary_v13_dc_autofit_rte314_fix05_v1.xlsx`) are present in the same directory before running.
+Ensure the Excel data files (for example, `ess_sizing_data_dictionary_v13_dc_autofit_rte314_fix05_025C94_v2.xlsx`) are present in the same directory before running.
 
 ## Report V2.1 (Beta) usage
 
