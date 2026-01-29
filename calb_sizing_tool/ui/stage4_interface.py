@@ -87,6 +87,7 @@ def pack_stage13_output(
     output["dc_rte_effective_frac"] = _f(stage1.get("dc_rte_effective_frac"), output["dc_round_trip_efficiency_frac"])
     output["rte_curve_adjust_pp"] = _f(stage1.get("rte_curve_adjust_pp"), 0.0)
     output["rte_adjust_frac"] = _f(stage1.get("rte_adjust_frac"), 0.0)
+    output["rte_monotonic_enforce"] = bool(stage1.get("rte_monotonic_enforce", False))
     output["dc_energy_capacity_required_mwh"] = _f(stage1.get("dc_energy_capacity_required_mwh"), 0.0)
     output["sc_time_months"] = _i(stage1.get("sc_time_months"), 0)
     output["sc_loss_pct"] = _f(stage1.get("sc_loss_pct"), 0.0)

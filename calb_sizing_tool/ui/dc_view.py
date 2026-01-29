@@ -324,6 +324,7 @@ def run_stage1(inputs: dict, defaults: dict) -> dict:
     dc_rte_base_frac = to_frac(get("dc_round_trip_efficiency_pct", 94.0))
     rte_adjust_pp = to_float(get("rte_curve_adjust_pp", 0.0), 0.0)
     rte_adjust_frac = rte_adjust_pp / 100.0
+    rte_monotonic_enforce = bool(get("rte_monotonic_enforce", True))
     dc_rte_effective_frac = clamp01(dc_rte_base_frac + rte_adjust_frac)
     dc_one_way_eff = math.sqrt(dc_rte_effective_frac) if dc_rte_effective_frac >= 0 else 0.0
     dc_usable_bol_frac = dod_frac * dc_one_way_eff
@@ -355,6 +356,7 @@ def run_stage1(inputs: dict, defaults: dict) -> dict:
         "dc_rte_effective_frac": dc_rte_effective_frac,
         "rte_curve_adjust_pp": rte_adjust_pp,
         "rte_adjust_frac": rte_adjust_frac,
+        "rte_monotonic_enforce": rte_monotonic_enforce,
         "dc_one_way_efficiency_frac": dc_one_way_eff,
         "dc_usable_bol_frac": dc_usable_bol_frac,
         "dc_energy_capacity_required_mwh": dc_energy_required,
@@ -519,6 +521,7 @@ def run_stage3(stage1: dict,
     eff_chain = stage1["eff_dc_to_poi_frac"]
     guarantee_year = int(stage1.get("poi_guarantee_year", 0))
     rte_adjust_frac = to_float(stage1.get("rte_adjust_frac", 0.0), 0.0)
+    rte_monotonic_enforce = bool(stage1.get("rte_monotonic_enforce", True))
 
     dc_power_mw = safe_div(poi_mw, eff_chain, default=0.0) if eff_chain > 0 else 0.0
     effective_c_rate = safe_div(dc_power_mw, dc_nameplate_bol_mwh, default=0.0)
@@ -539,6 +542,10 @@ def run_stage3(stage1: dict,
     if "Rte_Dc_Pct" in rte_curve_sel.columns:
         rte_curve_sel["Rte_Dc_Pct"] = rte_curve_sel["Rte_Dc_Pct"].apply(lambda x: to_frac(x))
     rte_curve_sel = rte_curve_sel.sort_values("Soh_Band_Min_Pct", ascending=False)
+    if rte_monotonic_enforce:
+        rte_curve_sel["Rte_Dc_Pct"] = pd.to_numeric(rte_curve_sel["Rte_Dc_Pct"], errors="coerce")
+        rte_curve_sel["Rte_Dc_Pct"] = rte_curve_sel["Rte_Dc_Pct"].ffill().bfill()
+        rte_curve_sel["Rte_Dc_Pct"] = rte_curve_sel["Rte_Dc_Pct"].cummin()
 
     records = []
 
@@ -598,6 +605,7 @@ def run_stage3(stage1: dict,
         "chosen_soh_cycles_per_year": chosen_cycles_per_year,
         "chosen_rte_c_rate": chosen_rte_c_rate,
         "rte_adjust_pp": stage1.get("rte_curve_adjust_pp", 0.0),
+        "rte_monotonic_enforce": rte_monotonic_enforce,
     }
     return df_years, meta
 
@@ -945,7 +953,6 @@ def build_report_bytes(stage1: dict, results_dict: dict, report_order: list):
     p.add_run(f"POI guarantee year: {int(stage1.get('poi_guarantee_year', 0))}\n")
     p.add_run(f"Cycles per year (assumed): {int(stage1['cycles_per_year'])}\n")
     p.add_run(f"S&C time from FAT to COD: {int(round(stage1.get('sc_time_months', 0)))} months\n")
-    p.add_run(f"RTE Curve Adjustment (Δpp): {float(stage1.get('rte_curve_adjust_pp', 0.0)):.1f}\n")
     p.add_run(f"DC→POI efficiency chain (one-way): {stage1.get('eff_dc_to_poi_frac', 0.0)*100:.2f}%\n")
     p.add_run(f"POI→DC equivalent power: {stage1.get('dc_power_required_mw', 0.0):.2f} MW")
 
@@ -1250,9 +1257,9 @@ def show():
             dc_inputs["sc_time_months"] = sc_time_months
 
             st.markdown("---")
-            st.subheader("2 · DC Parameters")
+            st.subheader("2. DC Parameters")
             
-            c7, c8, c9 = st.columns(3)
+            c7, c8, c9, c10 = st.columns([1, 1, 1, 1.15])
             dod_pct = c7.number_input(
                 "DOD (%)",
                 key=_init_input("dod_pct", get_default_percent_val("dod_pct", 95.0)),
@@ -1272,9 +1279,15 @@ def show():
                 min_value=-5.0,
                 max_value=2.0,
                 step=0.1,
-                help="Higher C-rate usually yields lower efficiency; use negative delta to conservatively derate.",
             )
             dc_inputs["rte_curve_adjust_pp"] = rte_adjust_pp
+            c10.markdown("<div style=\"margin-top: 1.5rem;\"></div>", unsafe_allow_html=True)
+            rte_monotonic_enforce = c10.checkbox(
+                "RTE Monotonic (No Rise vs SOH)",
+                key=_init_input("rte_monotonic_enforce", True),
+                help="Default: On. Enforces a monotonic RTE envelope so RTE does not increase as SOH declines.",
+            )
+            dc_inputs["rte_monotonic_enforce"] = rte_monotonic_enforce
             
             st.info(f"Design Rule: Max 418kWh Cabinets per DC Busbar (K) = {K_MAX_FIXED} (fixed)")
 
@@ -1371,6 +1384,7 @@ def show():
             "dod_pct": dod_pct,
             "dc_round_trip_efficiency_pct": dc_rte_pct,
             "rte_curve_adjust_pp": rte_adjust_pp,
+            "rte_monotonic_enforce": rte_monotonic_enforce,
             "project_life_years": project_life,
             "cycles_per_year": cycles_year,
             "poi_guarantee_year": guarantee_year
