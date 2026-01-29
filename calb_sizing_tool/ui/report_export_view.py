@@ -125,12 +125,22 @@ def show():
     )
     st.session_state["project_name"] = project_name
 
+    grid_kv = (
+        ac_output.get("grid_kv")
+        or ac_output.get("mv_kv")
+        or stage13_output.get("poi_nominal_voltage_kv")
+    )
+    pcs_lv_v = (
+        ac_output.get("inverter_lv_v")
+        or ac_output.get("lv_voltage_v")
+        or ac_output.get("lv_v")
+    )
     inputs = {
         "Project Name": project_name,
         "POI Power Requirement (MW)": ac_output.get("poi_power_mw"),
         "POI Energy Requirement (MWh)": ac_output.get("poi_energy_mwh"),
-        "Grid Voltage (kV)": ac_output.get("grid_kv"),
-        "PCS AC Output Voltage (V_LL,rms)": ac_output.get("inverter_lv_v"),
+        "Grid Voltage (kV)": grid_kv,
+        "PCS AC Output Voltage (V_LL,rms)": pcs_lv_v,
         "Standard AC Block Size (MW)": ac_output.get("block_size_mw"),
     }
 

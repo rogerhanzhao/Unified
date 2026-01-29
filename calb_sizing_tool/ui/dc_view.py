@@ -1027,6 +1027,7 @@ def show():
     init_project_state()
     dc_inputs = state.dc_inputs
     dc_results = state.dc_results
+    ac_inputs = state.ac_inputs
 
     # One-time default migration for UI fields (no impact on sizing logic)
     def _migrate_dc_defaults() -> None:
@@ -1339,11 +1340,15 @@ def show():
     # --- Logic Execution ---
     if run_btn:
         bump_run_id_dc()
-        st.session_state["poi_nominal_voltage_kv"] = float(poi_nominal_voltage_kv)
+        poi_mv_kv = float(poi_nominal_voltage_kv)
+        st.session_state["poi_nominal_voltage_kv"] = poi_mv_kv
+        st.session_state["grid_kv"] = poi_mv_kv
+        ac_inputs["grid_kv"] = poi_mv_kv
+        ac_inputs["mv_kv"] = poi_mv_kv
         poi_frequency_hz = None if poi_frequency == "TBD" else float(poi_frequency)
         st.session_state["poi_frequency_hz"] = poi_frequency_hz
         dc_inputs["poi_frequency_hz"] = poi_frequency_hz
-        dc_inputs["poi_nominal_voltage_kv"] = float(poi_nominal_voltage_kv)
+        dc_inputs["poi_nominal_voltage_kv"] = poi_mv_kv
         dc_inputs["project_name"] = project_name
         dc_inputs["poi_power_req_mw"] = poi_power
         dc_inputs["poi_energy_req_mwh"] = poi_energy

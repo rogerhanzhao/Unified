@@ -49,6 +49,26 @@ def _format_float(val, decimals=2) -> str:
         return str(val)
 
 
+def _resolve_mv_kv(stage13_output: dict, ac_inputs: dict) -> float:
+    candidates = (
+        stage13_output.get("poi_nominal_voltage_kv") if isinstance(stage13_output, dict) else None,
+        st.session_state.get("poi_nominal_voltage_kv"),
+        ac_inputs.get("grid_kv") if isinstance(ac_inputs, dict) else None,
+        ac_inputs.get("mv_kv") if isinstance(ac_inputs, dict) else None,
+        st.session_state.get("grid_kv"),
+    )
+    for value in candidates:
+        if value is None:
+            continue
+        try:
+            parsed = float(value)
+        except Exception:
+            continue
+        if parsed > 0:
+            return parsed
+    return 33.0
+
+
 def show():
     """AC SIZING V2 主函数"""
     state = init_shared_state()
@@ -67,6 +87,12 @@ def show():
         st.warning("❌ DC sizing results not found.")
         st.info("Please run DC sizing first to determine DC Block count and capacity.")
         return
+
+    mv_kv_value = _resolve_mv_kv(stage13_output, ac_inputs)
+    st.session_state["grid_kv"] = mv_kv_value
+    st.session_state["poi_nominal_voltage_kv"] = mv_kv_value
+    ac_inputs["grid_kv"] = mv_kv_value
+    ac_inputs["mv_kv"] = mv_kv_value
 
     try:
         dc_model = dc_data.get("dc_block")
@@ -296,6 +322,8 @@ def show():
                     }
                 )
 
+            mv_kv = float(mv_kv_value or 33.0)
+            lv_v = float(st.session_state.get("pcs_lv_v", 690.0))
             ac_output = {
                 "project_name": project_name,
                 "selected_ratio": selected_option.ratio,
@@ -309,8 +337,12 @@ def show():
                 "dc_allocation_plan": dc_allocation_plan,  # ⭐ NEW DETAILED PLAN
                 "poi_power_mw": target_mw,
                 "poi_energy_mwh": target_mwh,
-                "mv_kv": float(st.session_state.get("grid_kv", 33.0)),
-                "lv_v": float(st.session_state.get("pcs_lv_v", 690.0)),
+                "grid_kv": mv_kv,
+                "mv_kv": mv_kv,
+                "mv_voltage_kv": mv_kv,
+                "lv_v": lv_v,
+                "lv_voltage_v": lv_v,
+                "inverter_lv_v": lv_v,
                 "transformer_count": num_blocks,
                 "pcs_count_total": num_blocks * pcs_per_block,
             }
