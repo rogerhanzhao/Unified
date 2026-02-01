@@ -477,6 +477,12 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
 
     doc.add_heading("Stage 2: DC Configuration", level=2)
     dc_table = ctx.stage2.get("block_config_table") if isinstance(ctx.stage2, dict) else None
+    def _format_mwh_3(value):
+        try:
+            return f"{float(value):.3f}"
+        except Exception:
+            return "" if value is None else str(value)
+
     if dc_table is not None and not dc_table.empty:
         drop_cols = {"Config Adjustment (%)", "Oversize (MWh)", "Busbars Needed (K=10)", "Busbars Needed"}
         dc_columns = [c for c in dc_table.columns if c not in drop_cols]
@@ -484,15 +490,15 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
         formatters = {}
         for col in dc_columns:
             if col in ("Unit Capacity (MWh)", "Subtotal (MWh)", "Total DC Nameplate @BOL (MWh)"):
-                formatters[col] = lambda v: format_value(v, "MWh")
+                formatters[col] = _format_mwh_3
             else:
                 formatters[col] = lambda v: "" if v is None else str(v)
         _add_dataframe_table(doc, dc_table, dc_columns, headers_map, formatters)
     else:
         doc.add_paragraph("DC block configuration table unavailable.")
     doc.add_paragraph(
-        f"DC total nameplate @BOL (MWh): {format_value(ctx.dc_total_energy_mwh, 'MWh')}; "
-        f"Oversize margin (MWh): {format_value(ctx.stage2.get('oversize_mwh'), 'MWh')}."
+        f"DC total nameplate @BOL (MWh): {_format_mwh_3(ctx.dc_total_energy_mwh)}; "
+        f"Oversize margin (MWh): {_format_mwh_3(ctx.stage2.get('oversize_mwh'))}."
     )
     doc.add_paragraph("")
 

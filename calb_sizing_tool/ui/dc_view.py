@@ -27,6 +27,7 @@ from pathlib import Path
 
 # --- 适配新架构的引用 ---
 from calb_sizing_tool.config import DC_DATA_PATH, DC_DATA_IS_LEGACY, PROJECT_ROOT
+from calb_sizing_tool.common.nameplate import apply_block_nameplate_recalc, get_standard_container_mwh
 from calb_sizing_tool.ui.stage4_interface import pack_stage13_output
 # 引入数据模型用于传递给 AC/SLD
 from calb_sizing_tool.models import DCBlockResult
@@ -228,6 +229,14 @@ def load_data(path: Path):
             defaults[field_name.strip()] = row.get("Default Value")
 
     df_blocks = pd.read_excel(xls, "dc_block_template_314_data")
+    try:
+        df_cell = pd.read_excel(xls, "battery_cell_type_314_data")
+        df_pack = pd.read_excel(xls, "pack_type_314_data")
+        df_rack = pd.read_excel(xls, "rack_type_314_data")
+        df_blocks = apply_block_nameplate_recalc(df_blocks, df_rack, df_pack, df_cell)
+    except Exception:
+        # If auxiliary tables are missing, fall back to the template values.
+        pass
     df_soh_profile = pd.read_excel(xls, "soh_profile_314_data")
     df_soh_curve = pd.read_excel(xls, "soh_curve_314_template")
     df_rte_profile = pd.read_excel(xls, "rte_profile_314_data")
@@ -383,8 +392,10 @@ def _make_config_table(rows: list):
     if df.empty:
         return df
 
-    df["Subtotal (MWh)"] = df["Unit Capacity (MWh)"] * df["Count"]
-    total = float(df["Subtotal (MWh)"].sum())
+    # Keep DC block nameplate values at 3-decimal precision (MWh).
+    df["Unit Capacity (MWh)"] = pd.to_numeric(df["Unit Capacity (MWh)"], errors="coerce").round(3)
+    df["Subtotal (MWh)"] = (df["Unit Capacity (MWh)"] * df["Count"]).round(3)
+    total = round(float(df["Subtotal (MWh)"].sum()), 3)
     df["Total DC Nameplate @BOL (MWh)"] = total
     return df
 
@@ -548,6 +559,8 @@ def run_stage3(stage1: dict,
         rte_curve_sel["Rte_Dc_Pct"] = rte_curve_sel["Rte_Dc_Pct"].cummin()
 
     records = []
+    dc_usable_bol_mwh = None
+    dc_usable_cod_mwh = None
 
     for y in range(0, project_life_years + 1):
         row = soh_curve_sel[soh_curve_sel["Life_Year_Index"] == y]
@@ -556,18 +569,27 @@ def run_stage3(stage1: dict,
         else:
             soh_rel = float(soh_curve_sel["Soh_Dc_Pct"].iloc[-1])
 
+        # SOH vs FAT is for display only; post-COD degradation uses SOH@COD baseline
+        soh_rel_calc = round(soh_rel * 100.0, 1) / 100.0
         soh_abs = soh_rel * (1.0 - sc_loss_frac)
 
-        rte_row = rte_curve_sel[rte_curve_sel["Soh_Band_Min_Pct"] <= soh_abs].head(1)
+        rte_row = rte_curve_sel[rte_curve_sel["Soh_Band_Min_Pct"] <= soh_rel].head(1)
         if rte_row.empty:
             rte_row = rte_curve_sel.tail(1)
 
         raw_rte = float(rte_row["Rte_Dc_Pct"].iloc[0])
         dc_rte_frac_year = clamp01(raw_rte + rte_adjust_frac)
-        dc_one_way_eff_year = math.sqrt(dc_rte_frac_year)
 
-        dc_gross_capacity_mwh_year = dc_nameplate_bol_mwh * soh_abs
-        dc_usable_mwh_year = dc_gross_capacity_mwh_year * dod_frac * dc_one_way_eff_year
+        if y == 0:
+            dc_usable_bol_mwh = dc_nameplate_bol_mwh * dod_frac * math.sqrt(dc_rte_frac_year)
+            dc_usable_cod_mwh = dc_usable_bol_mwh * (1.0 - sc_loss_frac)
+        if dc_usable_bol_mwh is None:
+            dc_usable_bol_mwh = dc_nameplate_bol_mwh * dod_frac
+        if dc_usable_cod_mwh is None:
+            dc_usable_cod_mwh = dc_usable_bol_mwh * (1.0 - sc_loss_frac)
+
+        dc_gross_capacity_mwh_year = dc_nameplate_bol_mwh * (1.0 - sc_loss_frac) * soh_rel_calc
+        dc_usable_mwh_year = dc_usable_cod_mwh * soh_rel_calc
         poi_usable_mwh_year = max(dc_usable_mwh_year * eff_chain, 0.0)
 
         system_rte_frac_year = min(1.0, max(0.0, dc_rte_frac_year * (eff_chain ** 2)))
@@ -576,7 +598,7 @@ def run_stage3(stage1: dict,
         records.append(
             {
                 "Year_Index": int(y),
-                "SOH_Relative": soh_rel,
+                "SOH_Relative": soh_rel_calc,
                 "SOH_Absolute": soh_abs,
                 "DC_Nameplate_BOL_MWh": dc_nameplate_bol_mwh,
                 "DC_Gross_Capacity_MWh": dc_gross_capacity_mwh_year,
@@ -1525,7 +1547,7 @@ div[data-testid="stDataFrame"] div[role="rowheader"] {
                     # We only pack the FIRST valid result as the 'active' one for now, or the user preferred one
                     if mode == "container_only": 
                         # Construct DCBlockResult Pydantic Object
-                        container_unit = 5.015 # Default if unavailable
+                        container_unit = get_standard_container_mwh()  # Standard 314Ah (3.2V) container default
                         if not s2['block_config_table'].empty:
                             # Try to extract actual unit capacity from the first row
                             try:

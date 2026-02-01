@@ -27,6 +27,7 @@ import pandas as pd
 import streamlit as st
 
 from calb_sizing_tool.common.allocation import allocate_dc_blocks, evenly_distribute
+from calb_sizing_tool.common.nameplate import get_standard_container_mwh
 from calb_sizing_tool.models import DCBlockResult
 from calb_sizing_tool.reporting.export_docx import (
     make_report_filename,
@@ -99,14 +100,14 @@ def show():
         if not dc_model:
             dc_model = DCBlockResult(
                 block_id="DC-Fallback",
-                capacity_mwh=5.015,
+                capacity_mwh=get_standard_container_mwh(),
                 count=int(dc_data.get("container_count", 0)),
                 voltage_v=1200,
             )
 
         # 关键数据来自DC Sizing
         dc_blocks_total = int(getattr(dc_model, "count", 0) or 0)  # ⭐ DC Block数量
-        dc_block_mwh = float(getattr(dc_model, "capacity_mwh", 5.0) or 5.0)
+        dc_block_mwh = float(getattr(dc_model, "capacity_mwh", get_standard_container_mwh()) or get_standard_container_mwh())
         target_mw = float(dc_data.get("target_mw", stage13_output.get("poi_power_req_mw", 10.0)))
         target_mwh = float(dc_data.get("mwh", stage13_output.get("poi_energy_req_mwh", 0.0)))
         

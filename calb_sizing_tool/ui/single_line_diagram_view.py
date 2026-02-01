@@ -28,6 +28,7 @@ import streamlit as st
 from calb_diagrams.specs import build_sld_group_spec
 from calb_diagrams.sld_pro_renderer import render_sld_pro_svg
 from calb_sizing_tool.common.allocation import allocate_dc_blocks, evenly_distribute
+from calb_sizing_tool.common.nameplate import get_standard_container_mwh
 from calb_sizing_tool.common.dependencies import check_dependencies
 from calb_sizing_tool.common.preferences import load_preferences
 from calb_sizing_tool.sld.snapshot_single_unit import (
@@ -388,7 +389,7 @@ def show():
     dc_block_energy_mwh = d2.number_input(
         "DC block energy (MWh)",
         min_value=0.0,
-        value=float(dc_block_default or 5.106),
+        value=float(dc_block_default or get_standard_container_mwh()),
         key="diagram_inputs.dc_block_energy_mwh",
         step=0.001,
         disabled=not has_prereq,

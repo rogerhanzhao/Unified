@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Sequence
 
 from calb_sizing_tool.common.allocation import allocate_dc_blocks, evenly_distribute
+from calb_sizing_tool.common.nameplate import get_standard_container_mwh
 
 
 def _safe_int(value, default=0) -> int:
@@ -190,7 +191,7 @@ def build_ac_block_group_spec(
         if dc_block is not None:
             dc_block_energy_mwh = _safe_float(getattr(dc_block, "capacity_mwh", 0.0))
     if dc_block_energy_mwh <= 0:
-        dc_block_energy_mwh = 5.106
+        dc_block_energy_mwh = get_standard_container_mwh()
 
     dc_blocks_per_feeder = None
     dc_blocks_per_feeder_by_block = ac_output.get("dc_blocks_per_feeder_by_block")
