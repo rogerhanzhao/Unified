@@ -104,20 +104,49 @@ def apply_header_logo(document: Document, logo_path=None, width=Inches(1.2)) -> 
     return add_header_logo(document, logo_path, width=width)
 
 
-def _setup_header(doc: Document, title: str = "Confidential Sizing Report"):
-    header_tables = apply_header_logo(doc)
+def _apply_footer(doc: Document, footer_lines: list[str] | None) -> None:
+    if not footer_lines:
+        return
+    for section in doc.sections:
+        footer = section.footer
+        footer.is_linked_to_previous = False
+        for para in list(footer.paragraphs):
+            para._element.getparent().remove(para._element)
+        p_footer = footer.add_paragraph("\n".join(str(line) for line in footer_lines))
+        p_footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run_footer = p_footer.runs[0] if p_footer.runs else p_footer.add_run()
+        run_footer.font.size = Pt(8)
+
+
+def _setup_header(
+    doc: Document,
+    title: str = "Confidential Sizing Report",
+    *,
+    logo_path=None,
+    header_lines: list[str] | None = None,
+    footer_lines: list[str] | None = None,
+) -> None:
+    header_tables = apply_header_logo(doc, logo_path=logo_path)
+
+    if header_lines is None:
+        header_lines = [
+            "CALB Group Co., Ltd.",
+            "Utility-Scale Energy Storage Systems",
+            f"{title}",
+        ]
+    else:
+        if title and title not in header_lines:
+            header_lines = list(header_lines) + [title]
 
     for header_table in header_tables:
         hdr_cells = header_table.rows[0].cells
         p_info = hdr_cells[1].paragraphs[0]
         p_info.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        run_info = p_info.add_run(
-            "CALB Group Co., Ltd.\n"
-            "Utility-Scale Energy Storage Systems\n"
-            f"{title}"
-        )
+        run_info = p_info.add_run("\n".join(str(line) for line in header_lines))
         run_info.font.size = Pt(9)
         run_info.font.bold = True
+
+    _apply_footer(doc, footer_lines)
 
 
 def _format_float(value, decimals):
@@ -673,13 +702,14 @@ def sanitize_filename(text: str, max_length: int = 80) -> str:
     return cleaned
 
 
-def make_proposal_filename(project_name: str | None, version: str = "V2.1") -> str:
+def make_proposal_filename(project_name: str | None, version: str = "V2.1", prefix: str = "CALB") -> str:
     stamp = datetime.date.today().strftime("%Y%m%d")
     safe_project = sanitize_filename(project_name or "")
     safe_version = sanitize_filename(version or "", max_length=12) or "V2.1"
+    safe_prefix = sanitize_filename(prefix or "", max_length=16) or "CALB"
     if safe_project:
-        return f"CALB_{safe_project}_BESS_Proposal_{stamp}_{safe_version}.docx"
-    return f"CALB_BESS_Proposal_{stamp}_{safe_version}.docx"
+        return f"{safe_prefix}_{safe_project}_BESS_Proposal_{stamp}_{safe_version}.docx"
+    return f"{safe_prefix}_BESS_Proposal_{stamp}_{safe_version}.docx"
 
 
 def create_dc_report(dc_output: dict, ctx: dict) -> bytes:

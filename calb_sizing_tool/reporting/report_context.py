@@ -19,6 +19,7 @@
 import hashlib
 import importlib
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -216,14 +217,48 @@ def build_report_context(
     if dc_blocks_total == 0:
         dc_blocks_total = int(stage13_output.get("dc_block_total_qty", 0))
 
-    ac_blocks_total = int(ac_output.get("num_blocks", 0) or 0)
-    pcs_modules_total = int(ac_output.get("pcs_count_total") or ac_output.get("total_pcs", 0) or 0)
+    ac_blocks_total = _safe_int(ac_output.get("num_blocks") or ac_output.get("ac_blocks_total"), 0)
+    if ac_blocks_total <= 0:
+        allocation_plan = ac_output.get("dc_allocation_plan")
+        if isinstance(allocation_plan, list) and allocation_plan:
+            ac_blocks_total = len(allocation_plan)
+        else:
+            pcs_count_by_block = ac_output.get("pcs_count_by_block")
+            if isinstance(pcs_count_by_block, list) and pcs_count_by_block:
+                ac_blocks_total = len(pcs_count_by_block)
+
+    pcs_modules_total = _safe_int(ac_output.get("pcs_count_total") or ac_output.get("total_pcs"), 0)
+    if pcs_modules_total <= 0:
+        pcs_count_by_block = ac_output.get("pcs_count_by_block")
+        if isinstance(pcs_count_by_block, list) and pcs_count_by_block:
+            pcs_modules_total = sum(_safe_int(v, 0) for v in pcs_count_by_block)
 
     template_fields = derive_ac_template_fields(ac_output)
     ac_block_template_id = template_fields["ac_block_template_id"]
     pcs_per_block = int(template_fields["pcs_per_block"])
     feeders_per_block = int(template_fields["feeders_per_block"])
     grid_power_factor = template_fields["grid_power_factor"]
+
+    if pcs_modules_total <= 0 and ac_blocks_total > 0 and pcs_per_block > 0:
+        pcs_modules_total = ac_blocks_total * pcs_per_block
+
+    transformer_rating_kva = ac_output.get("transformer_kva")
+    if transformer_rating_kva is None:
+        transformer_rating_kva = ac_output.get("transformer_rating_kva")
+    if transformer_rating_kva is None:
+        transformer_mva = ac_output.get("transformer_mva")
+        try:
+            if transformer_mva is not None:
+                transformer_rating_kva = float(transformer_mva) * 1000.0
+        except Exception:
+            transformer_rating_kva = None
+    if transformer_rating_kva is None:
+        try:
+            block_size_mw = float(ac_output.get("block_size_mw") or 0.0)
+        except Exception:
+            block_size_mw = 0.0
+        if block_size_mw > 0 and grid_power_factor and grid_power_factor > 0:
+            transformer_rating_kva = block_size_mw * 1000.0 / grid_power_factor
 
     poi_power_requirement_mw = float(stage1.get("poi_power_req_mw", 0.0) or 0.0)
     poi_energy_requirement_mwh = float(stage1.get("poi_energy_req_mwh", 0.0) or 0.0)
@@ -292,6 +327,24 @@ def build_report_context(
             qc_checks.append(
                 f"PCS module mismatch: expected {expected_pcs}, got {pcs_modules_total}."
             )
+    allocation_plan = ac_output.get("dc_allocation_plan")
+    if isinstance(allocation_plan, list) and allocation_plan:
+        if ac_blocks_total and len(allocation_plan) != ac_blocks_total:
+            qc_checks.append(
+                f"AC block count mismatch: allocation plan has {len(allocation_plan)} blocks, "
+                f"but report uses {ac_blocks_total}."
+            )
+    selected_ratio = ac_output.get("selected_ratio")
+    if selected_ratio in ("1:1", "1:2", "1:4") and dc_blocks_total > 0:
+        ratio_map = {"1:1": 1, "1:2": 2, "1:4": 4}
+        denom = ratio_map.get(selected_ratio)
+        if denom:
+            expected_blocks = int(math.ceil(dc_blocks_total / denom))
+            if ac_blocks_total and expected_blocks != ac_blocks_total:
+                qc_checks.append(
+                    f"AC block count mismatch: ratio {selected_ratio} implies {expected_blocks} blocks "
+                    f"for {dc_blocks_total} DC blocks, but report uses {ac_blocks_total}."
+                )
     if ac_blocks_total > 0 and feeders_per_block > 0:
         feeders_total = ac_blocks_total * feeders_per_block
         if ac_output.get("feeders_total") and int(ac_output.get("feeders_total")) != feeders_total:
@@ -421,7 +474,7 @@ def build_report_context(
         dc_blocks_total=dc_blocks_total,
         ac_blocks_total=ac_blocks_total,
         pcs_modules_total=pcs_modules_total,
-        transformer_rating_kva=ac_output.get("transformer_kva"),
+        transformer_rating_kva=transformer_rating_kva,
         ac_block_size_mw=ac_output.get("block_size_mw"),
         dc_block_unit_mwh=_extract_dc_unit_mwh(stage2),
         dc_total_energy_mwh=_extract_dc_total_energy_mwh(stage2),

@@ -369,16 +369,31 @@ def _validate_report_consistency(ctx: ReportContext) -> list[str]:
     return warnings
 
 
-def export_report_v2_1(ctx: ReportContext) -> bytes:
+def export_report_v2_1(ctx: ReportContext, brand: dict | None = None) -> bytes:
     doc = Document()
     _setup_margins(doc)
-    _setup_header(doc, title="Confidential Sizing Report (V2.1 Beta)")
+    if brand:
+        _setup_header(
+            doc,
+            title=brand.get("header_title", "Confidential Sizing Report (V2.1 Beta)"),
+            logo_path=brand.get("logo_path"),
+            header_lines=brand.get("header_lines"),
+            footer_lines=brand.get("footer_lines"),
+        )
+        cover_title = brand.get(
+            "cover_title", "CALB Utility-Scale ESS Sizing Report (V2.1 Beta)"
+        )
+        tool_version = brand.get("tool_version", "V2.1 Beta")
+    else:
+        _setup_header(doc, title="Confidential Sizing Report (V2.1 Beta)")
+        cover_title = "CALB Utility-Scale ESS Sizing Report (V2.1 Beta)"
+        tool_version = "V2.1 Beta"
 
     _add_cover_page(
         doc,
-        "CALB Utility-Scale ESS Sizing Report (V2.1 Beta)",
+        cover_title,
         ctx.project_name,
-        {"tool_version": "V2.1 Beta"},
+        {"tool_version": tool_version},
     )
 
     doc.add_heading("Conventions & Units", level=2)
@@ -503,6 +518,40 @@ def export_report_v2_1(ctx: ReportContext) -> bytes:
     doc.add_paragraph("")
 
     doc.add_heading("Stage 3: Degradation & Deliverable at POI", level=2)
+    s3_meta = ctx.stage3_meta if isinstance(ctx.stage3_meta, dict) else {}
+    if s3_meta:
+        def _fmt_float(value, decimals=2, default=""):
+            try:
+                return f"{float(value):.{decimals}f}"
+            except Exception:
+                return default
+
+        poi_power = s3_meta.get("poi_power_mw", ctx.poi_power_requirement_mw)
+        dc_power = s3_meta.get("dc_power_mw")
+        if dc_power is None and isinstance(ctx.stage1, dict):
+            dc_power = ctx.stage1.get("dc_power_required_mw")
+        eff_c_rate = s3_meta.get("effective_c_rate")
+        soh_profile_id = s3_meta.get("soh_profile_id")
+        chosen_soh_c_rate = s3_meta.get("chosen_soh_c_rate")
+        chosen_cycles_per_year = s3_meta.get("chosen_soh_cycles_per_year")
+        rte_profile_id = s3_meta.get("rte_profile_id")
+        chosen_rte_c_rate = s3_meta.get("chosen_rte_c_rate")
+
+        doc.add_paragraph(
+            f"POI Power = {_fmt_float(poi_power, 2)} MW | "
+            f"DC-equivalent Power = {_fmt_float(dc_power, 2)} MW | "
+            f"Effective C-rate (DC-side) = {_fmt_float(eff_c_rate, 3)} C"
+        )
+        doc.add_paragraph(
+            f"SOH profile ID = {soh_profile_id} "
+            f"(C-rate \u2248 {chosen_soh_c_rate}, cycles/year = {chosen_cycles_per_year}); "
+            f"RTE profile ID = {rte_profile_id} (C-rate \u2248 {chosen_rte_c_rate})."
+        )
+        doc.add_paragraph(
+            f"Guarantee Year (from COD) = {ctx.poi_guarantee_year} | "
+            f"POI Energy Target = {format_value(ctx.poi_energy_guarantee_mwh, 'MWh')} MWh"
+        )
+        doc.add_paragraph("")
     s3_df = ctx.stage3_df
     if s3_df is not None and not s3_df.empty:
         doc.add_paragraph("System RTE = DC RTE * (One-way Efficiency)^2. Note: One-way Efficiency refers to DC-to-POI efficiency.")

@@ -89,6 +89,11 @@ def show():
         st.info("Please run DC sizing first to determine DC Block count and capacity.")
         return
 
+    dc_container_count = int(dc_data.get("container_count", 0) or 0)
+    dc_cabinet_count = int(dc_data.get("cabinet_count", 0) or 0)
+    dc_total_blocks_hint = int(dc_data.get("total_blocks", 0) or 0)
+    dc_total_mwh_hint = float(dc_data.get("mwh", 0.0) or 0.0)
+
     mv_kv_value = _resolve_mv_kv(stage13_output, ac_inputs)
     st.session_state["grid_kv"] = mv_kv_value
     st.session_state["poi_nominal_voltage_kv"] = mv_kv_value
@@ -107,7 +112,13 @@ def show():
 
         # 关键数据来自DC Sizing
         dc_blocks_total = int(getattr(dc_model, "count", 0) or 0)  # ⭐ DC Block数量
-        dc_block_mwh = float(getattr(dc_model, "capacity_mwh", get_standard_container_mwh()) or get_standard_container_mwh())
+        if dc_total_blocks_hint > 0:
+            dc_blocks_total = dc_total_blocks_hint
+        dc_block_mwh = float(
+            getattr(dc_model, "capacity_mwh", get_standard_container_mwh()) or get_standard_container_mwh()
+        )
+        if dc_total_mwh_hint > 0 and dc_blocks_total > 0:
+            dc_block_mwh = dc_total_mwh_hint / dc_blocks_total
         target_mw = float(dc_data.get("target_mw", stage13_output.get("poi_power_req_mw", 10.0)))
         target_mwh = float(dc_data.get("mwh", stage13_output.get("poi_energy_req_mwh", 0.0)))
         
@@ -123,10 +134,15 @@ def show():
     )
     st.session_state["project_name"] = project_name
 
+    total_energy_mwh = dc_total_mwh_hint if dc_total_mwh_hint > 0 else dc_blocks_total * dc_block_mwh
+
     # ========== Display DC System Summary ==========
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("DC Blocks", f"{dc_blocks_total} × 20ft")
-    col2.metric("DC Capacity", f"{dc_blocks_total * dc_block_mwh:.1f} MWh")
+    if dc_cabinet_count > 0:
+        col1.metric("DC Blocks", f"{dc_blocks_total} total (C{dc_container_count}+B{dc_cabinet_count})")
+    else:
+        col1.metric("DC Blocks", f"{dc_blocks_total} × 20ft")
+    col2.metric("DC Capacity", f"{total_energy_mwh:.1f} MWh")
     col3.metric("POI Power Req.", f"{target_mw:.1f} MW")
     col4.metric("POI Energy Req.", f"{target_mwh:.0f} MWh")
 
@@ -252,7 +268,7 @@ def show():
             warnings = []
             
             # Check energy
-            total_energy = dc_blocks_total * dc_block_mwh
+            total_energy = total_energy_mwh
             if total_energy < target_mwh * 0.95:
                 errors.append(f"❌ Insufficient energy: {total_energy:.0f} MWh < {target_mwh:.0f} MWh")
             elif total_energy > target_mwh * 1.05:
@@ -293,9 +309,12 @@ def show():
             
             with summary_cols[0]:
                 st.write("**DC Side:**")
-                st.write(f"- Total DC Blocks: {dc_blocks_total} × 20ft")
+                if dc_cabinet_count > 0:
+                    st.write(f"- Total DC Blocks: {dc_blocks_total} (Container {dc_container_count}, Cabinet {dc_cabinet_count})")
+                else:
+                    st.write(f"- Total DC Blocks: {dc_blocks_total} × 20ft")
                 st.write(f"- DC Blocks per AC Block: ~{dc_blocks_total/num_blocks:.1f} avg")
-                st.write(f"- Total DC Energy: {dc_blocks_total * dc_block_mwh:.1f} MWh")
+                st.write(f"- Total DC Energy: {total_energy:.1f} MWh")
             
             with summary_cols[1]:
                 st.write("**AC Side:**")
@@ -336,6 +355,8 @@ def show():
                 "overhead_mw": overhead,
                 "dc_blocks_per_ac": selected_option.dc_blocks_per_ac,
                 "dc_allocation_plan": dc_allocation_plan,  # ⭐ NEW DETAILED PLAN
+                "dc_blocks_total": dc_blocks_total,
+                "dc_total_mwh": total_energy,
                 "poi_power_mw": target_mw,
                 "poi_energy_mwh": target_mwh,
                 "grid_kv": mv_kv,

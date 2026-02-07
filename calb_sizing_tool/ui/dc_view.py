@@ -1459,6 +1459,7 @@ def show():
         ]
         dc_results["results_dict"] = ok_results
         dc_results["report_order"] = report_order
+        active_mode = first_success_key(ok_results, modes_to_run)
 
         # Tabs Display
         st.markdown("<div class='calb-card'>", unsafe_allow_html=True)
@@ -1545,37 +1546,53 @@ div[data-testid="stDataFrame"] div[role="rowheader"] {
 
                     # Pack data for Session State (For AC/SLD)
                     # We only pack the FIRST valid result as the 'active' one for now, or the user preferred one
-                    if mode == "container_only": 
-                        # Construct DCBlockResult Pydantic Object
-                        container_unit = get_standard_container_mwh()  # Standard 314Ah (3.2V) container default
-                        if not s2['block_config_table'].empty:
-                            # Try to extract actual unit capacity from the first row
-                            try:
-                                container_unit = float(s2['block_config_table'].iloc[0]['Unit Capacity (MWh)'])
-                            except:
-                                pass
+                    if active_mode and mode == active_mode:
+                        container_count = int(s2.get("container_count", 0))
+                        cabinet_count = int(s2.get("cabinet_count", 0))
+                        total_blocks = container_count + cabinet_count
+                        total_mwh = float(s2.get("dc_nameplate_bol_mwh", 0.0))
+
+                        # Prefer explicit unit capacity for container-only; otherwise use weighted average.
+                        block_unit_mwh = 0.0
+                        if cabinet_count == 0 and container_count > 0:
+                            block_unit_mwh = total_mwh / container_count if container_count else 0.0
+                            block_table = s2.get("block_config_table")
+                            if block_table is not None and not block_table.empty:
+                                try:
+                                    block_unit_mwh = float(block_table.iloc[0]["Unit Capacity (MWh)"])
+                                except Exception:
+                                    pass
+                        if block_unit_mwh <= 0:
+                            block_unit_mwh = (
+                                total_mwh / total_blocks if total_blocks > 0 else get_standard_container_mwh()
+                            )
 
                         dc_res = DCBlockResult(
                             block_id="DC-Block",
-                            container_model="CALB-314Ah", # Ideal: read from config
-                            capacity_mwh=container_unit,
+                            container_model="CALB-314Ah",  # Ideal: read from config
+                            capacity_mwh=block_unit_mwh,
                             voltage_v=1200.0,
-                            count=int(s2.get('container_count', 0))
+                            count=total_blocks,
                         )
 
-                        st.session_state['dc_result_summary'] = {
-                            "mwh": s2['dc_nameplate_bol_mwh'],
+                        st.session_state["dc_result_summary"] = {
+                            "mwh": total_mwh,
                             "target_mw": poi_power,
-                            "voltage": 1200, 
-                            "container_count": int(s2.get('container_count', 0)),
-                            "dc_block": dc_res  # Pass the object for AC view
+                            "voltage": 1200,
+                            "container_count": container_count,
+                            "cabinet_count": cabinet_count,
+                            "total_blocks": total_blocks,
+                            "mode": active_mode,
+                            "dc_block": dc_res,  # Pass the object for AC view
                         }
-                        
+
                         # Also pack for legacy interface if needed
                         st.session_state["stage13_output"] = pack_stage13_output(
-                            s1, s2, s3_meta, 
-                            dc_block_total_qty=int(s2.get('container_count', 0)),
-                            selected_scenario=mode,
+                            s1,
+                            s2,
+                            s3_meta,
+                            dc_block_total_qty=total_blocks,
+                            selected_scenario=active_mode,
                             poi_nominal_voltage_kv=poi_nominal_voltage_kv,
                             poi_frequency_hz=poi_frequency_hz,
                             stage3_df=s3_df,

@@ -106,7 +106,12 @@ def show():
         or st.session_state.get("stage13_output")
         or {}
     )
-    ac_output = ac_results or st.session_state.get("ac_output") or {}
+    ac_output = {}
+    if isinstance(ac_results, dict):
+        ac_output.update(ac_results)
+    ss_ac_output = st.session_state.get("ac_output")
+    if isinstance(ss_ac_output, dict):
+        ac_output.update(ss_ac_output)
 
     if not stage13_output or not ac_output:
         st.warning("Run DC sizing and AC sizing first to enable report export.")
@@ -155,9 +160,13 @@ def show():
     }
 
     st.subheader("Downloads")
-    
-    # V2.1 is now the standard report format
-    report_template = "V2.1 (Beta)"
+
+    # V2.1 is now the standard report format (with an optional Guoxia branded variant)
+    report_template = st.selectbox(
+        "Report Template",
+        ["V2.1 (Beta)", "V2.1 (Guoxia)"],
+        index=0,
+    )
     
     c_d1, c_d2 = st.columns(2)
 
@@ -188,12 +197,40 @@ def show():
             project_inputs=project_inputs_for_report,
             scenario_ids=stage13_output.get("selected_scenario", "container_only"),
         )
-        comb_bytes = export_report_v2_1(ctx)
-        file_suffix = "Combined_V2_1"
+        brand = None
+        version = "V2.1"
+        filename_prefix = "CALB"
         button_label = "Download Combined Report V2.1"
 
-        version = "V2.1"
-        proposal_filename = make_proposal_filename(project_name, version=version)
+        if report_template == "V2.1 (Guoxia)":
+            guoxia_logo = Path("GUOXIA-LOGO.png")
+            if not guoxia_logo.exists():
+                st.warning("GUOXIA-LOGO.png not found. Falling back to default logo.")
+                guoxia_logo = None
+
+            brand = {
+                "logo_path": guoxia_logo,
+                "header_title": "Confidential Sizing Report (V2.1 Guoxia)",
+                "header_lines": [
+                    "Guoxia Technology Co., Ltd.",
+                    "HKEX: 02655 (GUOXIA TECH)",
+                    "Confidential Sizing Report (V2.1 Guoxia)",
+                ],
+                "footer_lines": [
+                    "© 2026 Guoxia Technology Co., Ltd. All rights reserved.",
+                    "HKEX: 02655 (GUOXIA TECH) | Document Classification: Confidential",
+                ],
+                "cover_title": "Guoxia Technology Utility-Scale ESS Sizing Report (V2.1)",
+                "tool_version": "V2.1 Guoxia",
+            }
+            version = "V2.1-GUOXIA"
+            filename_prefix = "GUOXIA"
+            button_label = "Download Combined Report V2.1 (Guoxia)"
+
+        comb_bytes = export_report_v2_1(ctx, brand=brand)
+        proposal_filename = make_proposal_filename(
+            project_name, version=version, prefix=filename_prefix
+        )
         st.download_button(
             button_label,
             comb_bytes,
